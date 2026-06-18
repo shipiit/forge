@@ -1,153 +1,93 @@
 import { Header, Footer } from '../components/Layout';
+import { ScrollProgress } from '../components/ScrollProgress';
 import { CodeBlock } from '../components/CodeBlock';
 
 const GH = 'https://github.com/shipiit/forge/blob/main';
+const ext = { target: '_blank', rel: 'noopener noreferrer' } as const;
 
 const COMMANDS: [string, string][] = [
-  ['label `agent-fix` / open issue', 'Posts a detailed analysis (root cause + proposed fix)'],
-  ['`/fix`', 'Implements the fix, writes tests, opens a PR'],
+  ['label agent-fix / open issue', 'Posts a detailed analysis (root cause + proposed fix)'],
+  ['/fix', 'Implements the fix, writes tests, opens a PR'],
   ['open a PR (automatic)', 'Code + security review with inline suggestions'],
-  ['`/review` · `/security`', 'On-demand full or security-only review'],
-  ['`/audit`', 'Full-repository security scan + Dependabot CVEs'],
-  ['`@shipit-forge …`', 'Answer, or push a follow-up commit on a PR'],
+  ['/review · /security', 'On-demand full or security-only review'],
+  ['/audit', 'Full-repository security scan + Dependabot CVEs'],
+  ['@shipit-forge …', 'Answer, or push a follow-up commit on a PR'],
 ];
 
-function Cmd({ text }: { text: string }) {
-  // render `code` spans inside a table cell
-  const parts = text.split(/`([^`]+)`/);
-  return (
-    <>
-      {parts.map((p, i) => (i % 2 ? <code key={i}>{p}</code> : <span key={i}>{p}</span>))}
-    </>
-  );
+const TOC = [['quickstart', 'Quick start'], ['provider', 'Configure a model'], ['deploy', 'Deploy 24/7'], ['commands', 'Commands'], ['install', 'Action vs App'], ['faq', 'FAQ']];
+
+function H({ id, children }: { id: string; children: React.ReactNode }) {
+  return <h2 id={id} className="display mt-14 scroll-mt-24 text-3xl first:mt-0">{children}</h2>;
 }
 
 export function Docs() {
   return (
     <>
+      <ScrollProgress />
       <Header />
-      <div className="wrap doc">
-        <aside className="toc">
-          <a href="#quickstart">Quick start</a>
-          <a href="#provider">Configure a model</a>
-          <a href="#deploy">Deploy 24/7</a>
-          <a href="#commands">Commands</a>
-          <a href="#install">Action vs App</a>
-          <a href="#faq">FAQ</a>
+      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-12 px-7 pt-14 md:grid-cols-[210px_1fr]">
+        <aside className="sticky top-24 hidden self-start border-l border-white/[0.08] pl-4 md:block">
+          {TOC.map(([id, label]) => (
+            <a key={id} href={`#${id}`} className="block py-1.5 text-sm text-muted hover:text-text">{label}</a>
+          ))}
         </aside>
 
-        <main>
-          <div className="eyebrow">Documentation</div>
-          <h1 style={{ fontSize: 38, letterSpacing: '-.02em' }}>
-            Up and running in <span className="grad">minutes.</span>
-          </h1>
+        <main className="pb-16">
+          <span className="eyebrow">Documentation</span>
+          <h1 className="display mt-6 text-[clamp(40px,6vw,64px)]">Up and running<br /><span className="dim">in minutes.</span></h1>
 
-          <h2 id="quickstart">Quick start (no credentials)</h2>
-          <p className="sub">The engine runs locally with a built-in fake provider — no API keys needed.</p>
-          <CodeBlock
-            label="bash"
-            code={`git clone https://github.com/shipiit/forge.git && cd forge
+          <H id="quickstart">Quick start</H>
+          <p className="text-muted">The engine runs locally with a built-in fake provider — no API keys needed.</p>
+          <CodeBlock label="bash" code={`git clone https://github.com/shipiit/forge.git && cd forge
 npm install && npm run build && npm test
-# run the agent on any repo with the credential-free demo provider
-node dist/cli.js fix --repo /path/to/repo --task "fix the failing login test" --provider fake`}
-          />
+node dist/cli.js fix --repo /path/to/repo --task "fix the failing login test" --provider fake`} />
 
-          <h2 id="provider">Configure a model</h2>
-          <p className="sub">
-            Pick Vertex Gemini, AWS Bedrock, OpenAI, or Anthropic — your key, saved to a gitignored <code>.env</code>.
-          </p>
-          <CodeBlock label="forge setup" code={`node dist/cli.js setup   # interactive: choose provider, paste your key`} />
-          <p>
-            Full per-provider setup: <a href={`${GH}/deploy/PROVIDERS.md`}>PROVIDERS.md</a>.
-          </p>
+          <H id="provider">Configure a model</H>
+          <p className="text-muted">Pick Vertex Gemini, AWS Bedrock, OpenAI, or Anthropic — your key, saved to a gitignored <code className="text-white/80">.env</code>.</p>
+          <CodeBlock label="forge setup" code={`node dist/cli.js setup   # choose provider, paste your key`} />
+          <p className="text-muted">Full per-provider setup: <a href={`${GH}/deploy/PROVIDERS.md`} {...ext}>PROVIDERS.md</a>.</p>
 
-          <h2 id="deploy">Deploy 24/7 (your repo, your keys)</h2>
-          <div className="grid g3" style={{ marginTop: 6 }}>
-            <div className="card">
-              <div className="ic">▲</div>
-              <h3>Render</h3>
-              <p>
-                Connect the repo → builds the Dockerfile → set env vars. <a href={`${GH}/deploy/RENDER.md`}>Guide ↗</a>
-              </p>
-            </div>
-            <div className="card">
-              <div className="ic">☁️</div>
-              <h3>Cloud Run</h3>
-              <p>
-                One command: <code>./deploy/cloudrun.sh</code>. <a href={`${GH}/deploy/DEPLOY.md`}>Guide ↗</a>
-              </p>
-            </div>
-            <div className="card">
-              <div className="ic">🐳</div>
-              <h3>Any Docker host</h3>
-              <p>Railway, Fly.io, a VPS — it just needs a public HTTPS URL.</p>
-            </div>
+          <H id="deploy">Deploy 24/7</H>
+          <div className="mt-4 grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] md:grid-cols-3">
+            {[
+              ['Render', 'Connect the repo → builds the Dockerfile. ', `${GH}/deploy/RENDER.md`],
+              ['Cloud Run', 'One command: ./deploy/cloudrun.sh. ', `${GH}/deploy/DEPLOY.md`],
+              ['Any Docker host', 'Railway, Fly.io, a VPS — public HTTPS URL.', GH],
+            ].map(([t, d, href]) => (
+              <div key={t} className="bg-[rgb(11_11_14)] p-6">
+                <h3 className="text-lg font-semibold">{t}</h3>
+                <p className="mt-1.5 text-sm text-muted">{d}<a href={href} {...ext}>Guide ↗</a></p>
+              </div>
+            ))}
           </div>
 
-          <h2 id="commands">Commands</h2>
-          <table className="cfg">
-            <thead>
-              <tr>
-                <th>Trigger</th>
-                <th>What Forge does</th>
-              </tr>
-            </thead>
-            <tbody>
-              {COMMANDS.map(([t, d]) => (
-                <tr key={t}>
-                  <td>
-                    <Cmd text={t} />
-                  </td>
-                  <td>{d}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <h2 id="install">Two ways to install</h2>
-          <div className="grid g2">
-            <div className="card">
-              <h3>⚡ GitHub Action</h3>
-              <p>
-                Add one workflow file + your key as a secret. No server, runs in your CI, each org uses its own
-                credentials. <a href={`${GH}/deploy/GITHUB_ACTIONS.md`}>Setup ↗</a>
-              </p>
-            </div>
-            <div className="card">
-              <h3>🤖 Hosted App</h3>
-              <p>
-                Install org-wide with one click; you host the server (one-click permissions screen like any GitHub
-                App). <a href={`${GH}/deploy/DEPLOY.md`}>Setup ↗</a>
-              </p>
-            </div>
+          <H id="commands">Commands</H>
+          <div className="overflow-hidden rounded-xl border border-white/[0.08]">
+            {COMMANDS.map(([t, d], i) => (
+              <div key={t} className={`grid grid-cols-1 gap-1 px-5 py-3.5 sm:grid-cols-[280px_1fr] ${i ? 'border-t border-white/[0.08]' : ''}`}>
+                <code className="text-white/85">{t}</code>
+                <span className="text-sm text-muted">{d}</span>
+              </div>
+            ))}
           </div>
 
-          <h2 id="faq">FAQ</h2>
-          <details className="faq">
-            <summary>Does it burn tokens 24/7?</summary>
-            <p>
-              No. The server idles for free; the model only runs on a real event. No polling. The CI auto-fix loop is
-              bounded to 2 attempts.
-            </p>
-          </details>
-          <details className="faq">
-            <summary>Does it auto-approve PRs?</summary>
-            <p>Never. It only comments or requests changes — approval is always left to a human.</p>
-          </details>
-          <details className="faq">
-            <summary>Is the security data up to date?</summary>
-            <p>
-              Yes — the model's knowledge plus live Dependabot alerts from GitHub's Advisory Database, and optional
-              CodeQL/SARIF ingestion.
-            </p>
-          </details>
-          <details className="faq">
-            <summary>Where does my code go?</summary>
-            <p>
-              Only to the LLM provider you configured, using your key. Repos are cloned into ephemeral sandboxes and
-              deleted after each run. Secrets never touch the repo.
-            </p>
-          </details>
+          <H id="install">Two ways to install</H>
+          <div className="grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] md:grid-cols-2">
+            <div className="bg-[rgb(11_11_14)] p-6"><h3 className="text-lg font-semibold">⚡ GitHub Action</h3><p className="mt-1.5 text-sm text-muted">One workflow file + your key as a secret. No server, runs in your CI. <a href={`${GH}/deploy/GITHUB_ACTIONS.md`} {...ext}>Setup ↗</a></p></div>
+            <div className="bg-[rgb(11_11_14)] p-6"><h3 className="text-lg font-semibold">🤖 Hosted App</h3><p className="mt-1.5 text-sm text-muted">Install org-wide with one click; you host the server. <a href={`${GH}/deploy/DEPLOY.md`} {...ext}>Setup ↗</a></p></div>
+          </div>
+
+          <H id="faq">FAQ</H>
+          {[
+            ['Does it burn tokens 24/7?', 'No. The server idles for free; the model only runs on a real event. The CI auto-fix loop is bounded to 2 attempts.'],
+            ['Does it auto-approve PRs?', 'Never. It only comments or requests changes — approval is left to a human.'],
+            ['Where does my code go?', 'Only to the LLM provider you configured. Repos are cloned into ephemeral sandboxes and deleted after each run.'],
+          ].map(([q, a]) => (
+            <details key={q} className="row-line py-1">
+              <summary className="flex cursor-pointer list-none items-center justify-between py-4 font-semibold marker:hidden">{q}<span className="text-2xl font-light text-muted">+</span></summary>
+              <p className="pb-4 text-muted">{a}</p>
+            </details>
+          ))}
         </main>
       </div>
       <Footer />

@@ -29,13 +29,13 @@ export function LogoHero() {
           <stop offset="1" stopColor="#22D3EE" />
         </linearGradient>
       </defs>
-      <g className="anvil" transform="translate(128,168)">
+      <g className="animate-floaty" transform="translate(128,168)">
         <rect x="20" y="150" width="216" height="40" rx="12" fill="url(#acc)" />
         <path d="M36 70 H224 a32 32 0 0 1 -32 44 H96 l-16 12 H52 a14 14 0 0 1 -14 -14 V70 Z" fill="#E9EEFF" />
       </g>
-      <g className="spark" transform="translate(364,184)">
+      <g style={{ transformOrigin: '364px 184px' }} className="animate-spinslow" transform="translate(364,184)">
         <path d="M0 -44 l12 36 36 12 -36 12 -12 36 -12 -36 -36 -12 36 -12 Z" fill="url(#spk)" />
-        <circle className="glowdot" cx="0" cy="0" r="10" fill="#fff" />
+        <circle className="animate-dotpulse" cx="0" cy="0" r="10" fill="#fff" />
       </g>
     </svg>
   );
