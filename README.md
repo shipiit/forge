@@ -10,19 +10,24 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 
 <br/>
 
+[![Website](https://img.shields.io/badge/website-shipiit.github.io%2Fforge-7C5CFF.svg?logo=githubpages&logoColor=white)](https://shipiit.github.io/forge/)
 [![CI](https://github.com/shipiit/forge/actions/workflows/ci.yml/badge.svg)](https://github.com/shipiit/forge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22D3EE.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-88%20passing-FF8A3D.svg)](#testing)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-7C5CFF.svg)](#contributing)
+[![Tests](https://img.shields.io/badge/tests-88%20passing-FF8A3D.svg)](#-testing)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-7C5CFF.svg)](#-contributing)
 
 <br/>
 
 **Providers:**
 &nbsp;`Vertex AI Gemini`&nbsp;·&nbsp;`AWS Bedrock`&nbsp;·&nbsp;`OpenAI`&nbsp;·&nbsp;`Anthropic`
 
-[Quick start](#-quick-start-no-credentials) · [Deploy](#-deploy-as-a-github-app) · [How it works](#-how-it-works) · [Config](#-configuration) · [Roadmap](#-roadmap)
+<br/>
+
+### 🌐 [**shipiit.github.io/forge**](https://shipiit.github.io/forge/) &nbsp;·&nbsp; [Live examples](https://shipiit.github.io/forge/examples) &nbsp;·&nbsp; [Docs](https://shipiit.github.io/forge/docs)
+
+<sub>**On this page:** [Quick start](#-quick-start-no-credentials) · [Deploy as an App](#-deploy-as-a-github-app) · [Use as an Action](#-use-it-as-a-github-action-no-server-your-own-keys) · [How it works](#-how-it-works) · [Config](#-configuration) · [Roadmap](#-roadmap)</sub>
 
 </div>
 
@@ -38,6 +43,22 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 | 👋 | **Invite as a reviewer** — request `@shipit-forge` on any PR and it reviews on demand | Add it as a PR reviewer |
 | 💬 | **Answer @mentions** — explains code on issues; on a PR it can **push a follow-up commit** to the branch | Comment `@shipit-forge <ask>` |
 | 🖼️ | **Reads screenshots** — pulls images out of issue/PR bodies and feeds them to vision models | Automatic |
+
+---
+
+## 🧭 Three ways to install & run it
+
+Pick the one that fits — they all share the same engine.
+
+| | Best for | Install | Run |
+|---|---|---|---|
+| **① CLI / local** | Trying it on your machine, scripting, CI of your own | `git clone https://github.com/shipiit/forge.git && cd forge && npm install && npm run build` | `node dist/cli.js fix --repo /path/to/repo --task "…" --provider fake` |
+| **② GitHub Action** | Per-repo or per-org, **your own keys**, zero infra | Copy [`examples/forge.yml`](./examples/forge.yml) → `.github/workflows/forge.yml`, add a provider secret | Label an issue `agent-fix`, comment `/review`, or `@shipit-forge …` — it runs in **your** Actions |
+| **③ Hosted GitHub App** | Org-wide, one-click install for many repos | Deploy the webhook server (Render / Cloud Run / Docker), then register via `app.yml` | Install on the org → events trigger it automatically on a server **you** host |
+
+> **Not sure?** Start with **① CLI + `--provider fake`** (no keys, 2 min). Want it on GitHub without hosting → **② Action**. Want org-wide one-click → **③ App**. Full per-distribution credential setup for all four providers: **[`deploy/PROVIDERS.md`](./deploy/PROVIDERS.md)**.
+
+Jump to: [① CLI](#-installation) · [② Action](#-use-it-as-a-github-action-no-server-your-own-keys) · [③ App](#-deploy-as-a-github-app)
 
 ---
 
@@ -359,3 +380,19 @@ Issues and PRs welcome. Run `npm test` before pushing — and feel free to let F
 ## License
 
 [MIT](./LICENSE) © Rahul Raj
+
+---
+
+<div align="center">
+
+<img src="./assets/logo.svg" alt="ShipIT Forge logo" width="84" height="84" />
+
+### ShipIT Forge
+
+**Autonomous GitHub coding agent** — fixes issues, opens PRs, reviews code with a security lens.
+
+[🌐 Website](https://shipiit.github.io/forge/) &nbsp;·&nbsp; [📂 Examples](https://shipiit.github.io/forge/examples) &nbsp;·&nbsp; [📖 Docs](https://shipiit.github.io/forge/docs) &nbsp;·&nbsp; [⭐ GitHub](https://github.com/shipiit/forge)
+
+<sub>Built by <a href="https://github.com/iamrraj">Rahul Raj</a> · MIT licensed · Made with 🔨</sub>
+
+</div>
