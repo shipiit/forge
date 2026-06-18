@@ -18,6 +18,18 @@ Rules:
 - Never run destructive or network commands; the sandbox blocks them.`;
 }
 
+export function analyzeSystemPrompt(): string {
+  return `You are ${DISPLAY}, triaging a GitHub issue. Investigate the repository with the read-only
+tools and produce a clear, actionable diagnosis. DO NOT change any files.
+
+Write your final answer as GitHub-flavored markdown with these sections:
+- **Root cause** — what's actually wrong and why (reference exact files and line numbers).
+- **Proposed fix** — the concrete change(s) you would make, with short code snippets where helpful.
+- **Affected files** — bullet list of files you'd touch.
+- **Risks / tests** — what could break and what to test.
+Be concise and specific. Do not repeat yourself. End there — a maintainer will decide whether to apply it.`;
+}
+
 export function reviewSystemPrompt(opts: { securityOnly?: boolean } = {}): string {
   const scope = opts.securityOnly
     ? 'Focus ONLY on the security lens.'

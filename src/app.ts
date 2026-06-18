@@ -1,13 +1,15 @@
 import type { Probot, Context } from 'probot';
 import { createLLMClient } from './providers/index.js';
 import type { ProviderId } from './providers/types.js';
-import { handleIssueFix, handlePrReview, handleMention, handlePrFollowup, type HandlerDeps } from './github/handlers.js';
+import { handleIssueFix, handleIssueAnalyze, handlePrReview, handleMention, handlePrFollowup, type HandlerDeps } from './github/handlers.js';
 import type { OctokitLike } from './github/pr.js';
 import { redactSecrets } from './util/resilience.js';
 import { mergeConfig, defaultConfig, type ForgeConfig } from './config.js';
 
-const PROVIDER = (process.env.LLM_PROVIDER || 'anthropic') as ProviderId;
-const MENTION = (process.env.FORGE_DISPLAY_HANDLE || '@shipit-forge').toLowerCase();
+// Read env lazily (inside functions): .env is loaded by Probot AFTER this module
+// is imported, so module-level reads would miss it.
+const provider = (): ProviderId => (process.env.LLM_PROVIDER || 'anthropic') as ProviderId;
+const mentionHandle = (): string => (process.env.FORGE_DISPLAY_HANDLE || '@shipit-forge').toLowerCase();
 
 /** Load per-repo config from .github/agent.yml, merged over env-seeded defaults. */
 async function loadConfig(context: Context): Promise<ForgeConfig> {
@@ -24,7 +26,7 @@ async function deps(context: Context, config: ForgeConfig): Promise<HandlerDeps>
   const auth = (await context.octokit.auth({ type: 'installation' })) as { token: string };
   return {
     octokit: context.octokit as unknown as OctokitLike,
-    client: createLLMClient({ provider: PROVIDER, model: config.model }),
+    client: createLLMClient({ provider: provider(), model: config.model }),
     token: auth.token,
     log: (msg: string) => context.log.info(redactSecrets(msg)),
     testCommand: config.testCommand,
@@ -34,12 +36,12 @@ async function deps(context: Context, config: ForgeConfig): Promise<HandlerDeps>
 }
 
 export default function app(probot: Probot): void {
-  // --- Fix an issue ---
+  // --- Analyze a new issue (default): post a detailed diagnosis comment, no PR. ---
   probot.on('issues.opened', async (context) => {
     const config = await loadConfig(context);
-    if (config.autoFix !== 'opened') return;
+    if (config.autoFix === 'off') return;
     const { repository, issue } = context.payload;
-    await handleIssueFix(await deps(context, config), {
+    await handleIssueAnalyze(await deps(context, config), {
       owner: repository.owner.login,
       repo: repository.name,
       defaultBranch: repository.default_branch,
@@ -49,12 +51,13 @@ export default function app(probot: Probot): void {
     });
   });
 
+  // --- Labeled with the trigger label → analyze too (PR happens on /fix). ---
   probot.on('issues.labeled', async (context) => {
     const config = await loadConfig(context);
     if (config.autoFix === 'off') return;
     if (context.payload.label?.name !== config.triggerLabel) return;
     const { repository, issue } = context.payload;
-    await handleIssueFix(await deps(context, config), {
+    await handleIssueAnalyze(await deps(context, config), {
       owner: repository.owner.login,
       repo: repository.name,
       defaultBranch: repository.default_branch,
@@ -117,8 +120,8 @@ export default function app(probot: Probot): void {
       });
       return;
     }
-    if (body.toLowerCase().includes(MENTION)) {
-      const question = body.replace(new RegExp(MENTION, 'ig'), '').trim() || 'Please help with this thread.';
+    if (body.toLowerCase().includes(mentionHandle())) {
+      const question = body.replace(new RegExp(mentionHandle(), 'ig'), '').trim() || 'Please help with this thread.';
       const d = await deps(context, config);
       if (isPr) {
         // On a PR, the agent can push a follow-up commit to the PR branch.
@@ -133,9 +136,9 @@ export default function app(probot: Probot): void {
   probot.on('pull_request_review_comment.created', async (context) => {
     const config = await loadConfig(context);
     const body = (context.payload.comment.body || '').trim();
-    if (!body.toLowerCase().includes(MENTION)) return;
+    if (!body.toLowerCase().includes(mentionHandle())) return;
     const { repository, pull_request } = context.payload;
-    const question = body.replace(new RegExp(MENTION, 'ig'), '').trim() || 'Please address this comment.';
+    const question = body.replace(new RegExp(mentionHandle(), 'ig'), '').trim() || 'Please address this comment.';
     await handlePrFollowup(await deps(context, config), {
       owner: repository.owner.login,
       repo: repository.name,
