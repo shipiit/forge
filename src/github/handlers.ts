@@ -4,7 +4,7 @@ import type { LLMClient } from '../providers/types.js';
 import { runAgent } from '../agent/loop.js';
 import { editToolset, reviewToolset } from '../agent/tools/registry.js';
 import { orchestratorToolset } from '../agent/subagent.js';
-import { fixSystemPrompt, reviewSystemPrompt, mentionSystemPrompt } from '../agent/prompts.js';
+import { fixSystemPrompt, reviewSystemPrompt, mentionSystemPrompt, analyzeSystemPrompt } from '../agent/prompts.js';
 import { detectTestCommand } from '../agent/tools/tests.js';
 import { runCommand } from '../agent/tools/bash.js';
 import { buildRepoMap } from '../agent/repomap.js';
@@ -38,7 +38,104 @@ export interface HandlerDeps {
 }
 
 /** Fix an issue end-to-end: clone → investigate/edit → verify → open PR → comment. */
+/** Prevent duplicate concurrent runs for the same issue (multiple triggers + smee re-delivery). */
+const inFlight = new Set<string>();
+
+/** Collapse repeated lines and cap length so a rambling model summary stays readable. */
+export function cleanSummary(text: string, maxChars = 1200): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of (text || '').split('\n')) {
+    const line = raw.trimEnd();
+    const key = line.trim();
+    if (key && seen.has(key)) continue; // drop duplicate non-empty lines (model repetition)
+    if (key) seen.add(key);
+    out.push(line);
+  }
+  let s = out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (s.length > maxChars) s = s.slice(0, maxChars).trimEnd() + ' …';
+  return s || 'Applied a fix.';
+}
+
+/**
+ * Default issue behavior: investigate (read-only) and post ONE detailed diagnosis
+ * comment (root cause + proposed fix). Does NOT open a PR — a maintainer requests
+ * that with `/fix`. This is the "take a look and tell me what to fix" flow.
+ */
+export async function handleIssueAnalyze(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; defaultBranch: string; issueNumber: number; issueTitle: string; issueBody: string | null },
+): Promise<void> {
+  const { octokit, client, token, log } = deps;
+  const lockKey = `analyze:${args.owner}/${args.repo}#${args.issueNumber}`;
+  if (inFlight.has(lockKey)) {
+    log(`Duplicate trigger for issue #${args.issueNumber}; already analyzing, skipping.`);
+    return;
+  }
+  inFlight.add(lockKey);
+  const wsOps = deps.workspace ?? realWorkspace;
+  try {
+    const commentsRes = await octokit.rest.issues.listComments({ owner: args.owner, repo: args.repo, issue_number: args.issueNumber });
+    const comments: CommentLike[] = commentsRes.data
+      .filter((c) => c.body && !isFromForge(c.user?.login))
+      .map((c) => ({ user: c.user?.login ?? 'user', body: c.body! }));
+
+    const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: args.defaultBranch }, token);
+    try {
+      const repoMap = await buildRepoMap(ws.dir);
+      const initialContent = await buildIssueContent(
+        { number: args.issueNumber, title: args.issueTitle, body: args.issueBody },
+        comments,
+        token,
+        log,
+      );
+      initialContent.unshift({ type: 'text', text: repoMap });
+
+      const result = await runAgent({
+        client,
+        system: analyzeSystemPrompt(),
+        initialContent,
+        tools: reviewToolset(), // read-only: no edits
+        limits: { maxIterations: MAX_ITER, maxOutputTokens: 6144 },
+        cwd: ws.dir,
+        onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+      });
+
+      await octokit.rest.issues.createComment({
+        owner: args.owner,
+        repo: args.repo,
+        issue_number: args.issueNumber,
+        body:
+          `### 🔍 ${DISPLAY} — analysis of #${args.issueNumber}\n\n` +
+          `${cleanSummary(result.finalText, 4000)}\n\n` +
+          `---\n_Want me to implement this and open a PR — with an automated **security + code review** and tests run on the change? Comment **\`/fix\`** and I'll do it._`,
+      });
+    } finally {
+      await ws.cleanup();
+    }
+  } finally {
+    inFlight.delete(lockKey);
+  }
+}
+
 export async function handleIssueFix(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; defaultBranch: string; issueNumber: number; issueTitle: string; issueBody: string | null },
+): Promise<void> {
+  const lockKey = `fix:${args.owner}/${args.repo}#${args.issueNumber}`;
+  if (inFlight.has(lockKey)) {
+    deps.log(`Duplicate trigger for issue #${args.issueNumber}; already running, skipping.`);
+    return;
+  }
+  inFlight.add(lockKey);
+  try {
+    await doIssueFix(deps, args);
+  } finally {
+    inFlight.delete(lockKey);
+  }
+}
+
+async function doIssueFix(
   deps: HandlerDeps,
   args: { owner: string; repo: string; defaultBranch: string; issueNumber: number; issueTitle: string; issueBody: string | null },
 ): Promise<void> {
@@ -58,14 +155,6 @@ export async function handleIssueFix(
     log(`fix PR already open for issue #${args.issueNumber} (${existing.data[0]!.html_url}); skipping.`);
     return;
   }
-
-  // Progress comment so humans know Forge picked it up.
-  await octokit.rest.issues.createComment({
-    owner: args.owner,
-    repo: args.repo,
-    issue_number: args.issueNumber,
-    body: `🛠️ ${DISPLAY} is investigating this issue and will open a PR with a fix shortly…`,
-  });
 
   const commentsRes = await octokit.rest.issues.listComments({ owner: args.owner, repo: args.repo, issue_number: args.issueNumber });
   const comments: CommentLike[] = commentsRes.data
@@ -106,57 +195,76 @@ export async function handleIssueFix(
       testsPassed = /exit_code: 0/.test(testOutput);
     }
 
-    const committed = await wsOps.commitAll(ws, `fix: address issue #${args.issueNumber}\n\n${result.finalText}`.slice(0, 4000));
+    const summary = cleanSummary(result.finalText);
+    const committed = await wsOps.commitAll(ws, `fix: ${args.issueTitle}\n\n${summary}`.slice(0, 2000));
     if (!committed) {
       await octokit.rest.issues.createComment({
         owner: args.owner,
         repo: args.repo,
         issue_number: args.issueNumber,
-        body: `🤔 ${DISPLAY} investigated but did not produce a code change.\n\n${result.finalText}`,
+        body: `### 🤔 ${DISPLAY} — no change made\n\n${summary}`,
       });
       return;
     }
+
+    // Capture the diff once: used for self-review and the changed-files list.
+    const diff = await wsOps.diffHead(ws);
+    const changedFiles = [...diff.matchAll(/^\+\+\+ b\/(.+)$/gm)].map((m) => m[1]).filter((f) => f && f !== '/dev/null');
+
     // Multi-pass self-review: the agent critiques its own diff before opening the PR.
     let selfReviewNote = '';
     let selfBlocker = false;
-    if (deps.selfReview) {
-      const diff = await wsOps.diffHead(ws);
-      if (diff.trim()) {
-        const reviewRes = await runAgent({
-          client,
-          system: reviewSystemPrompt(),
-          initialContent: [{ type: 'text', text: `Review your own change for the issue below before it becomes a PR. Be strict about correctness and regressions.\n\nIssue: ${args.issueTitle}\n\nDiff:\n\`\`\`diff\n${diff}\n\`\`\`` }],
-          tools: reviewToolset(),
-          limits: { maxIterations: MAX_ITER, maxOutputTokens: 4096 },
-          cwd: ws.dir,
-        });
-        const selfFindings = parseFindings(reviewRes.finalText);
-        selfBlocker = selfFindings.some((f) => f.severity === 'critical' || f.severity === 'high');
-        if (selfFindings.length > 0) {
-          selfReviewNote =
-            `\n\n## 🔁 Self-review\n` +
-            selfFindings.map((f) => `- ${f.severity.toUpperCase()} \`${f.file}:${f.endLine}\` — ${f.title}`).join('\n');
-        }
-      }
+    if (deps.selfReview && diff.trim()) {
+      const reviewRes = await runAgent({
+        client,
+        system: reviewSystemPrompt(),
+        initialContent: [{ type: 'text', text: `Review your own change before it becomes a PR. Be strict about correctness and regressions.\n\nIssue: ${args.issueTitle}\n\nDiff:\n\`\`\`diff\n${diff}\n\`\`\`` }],
+        tools: reviewToolset(),
+        limits: { maxIterations: MAX_ITER, maxOutputTokens: 4096 },
+        cwd: ws.dir,
+      });
+      const selfFindings = parseFindings(reviewRes.finalText);
+      selfBlocker = selfFindings.some((f) => f.severity === 'critical' || f.severity === 'high');
+      const sec = selfFindings.filter((f) => f.lens === 'security');
+      const qual = selfFindings.filter((f) => f.lens === 'quality');
+      const fmt = (f: (typeof selfFindings)[number]) =>
+        `- **${f.severity.toUpperCase()}** \`${f.file}:${f.endLine}\` — **${f.title}**${f.body ? `: ${f.body}` : ''}`;
+      selfReviewNote =
+        `\n\n## 🛡️ Automated review (security + code)\n` +
+        `**Security checks:** ${sec.length ? '\n' + sec.map(fmt).join('\n') : '✅ no security issues found.'}\n\n` +
+        `**Code review:** ${qual.length ? '\n' + qual.map(fmt).join('\n') : '✅ no code-quality issues found.'}`;
     }
 
     await wsOps.pushBranch(ws, branch);
+
+    const verify =
+      testsPassed === null ? 'No test suite detected — not auto-verified.'
+      : testsPassed ? '✅ Project tests pass after the change.'
+      : '⚠️ Tests did **not** pass — opened as a draft for review.';
+    const filesBlock = changedFiles.length ? changedFiles.map((f) => `- \`${f}\``).join('\n') : '_(see the PR diff)_';
 
     const pr = await openPullRequest(octokit, {
       owner: args.owner,
       repo: args.repo,
       title: `Fix: ${args.issueTitle}`.slice(0, 250),
-      body: composeFixPrBody({ issueNumber: args.issueNumber, summary: result.finalText, testsPassed, testOutput: testOutput.slice(-4000) }) + selfReviewNote,
+      body: composeFixPrBody({ issueNumber: args.issueNumber, summary, testsPassed, testOutput: testOutput.slice(-3000) }) + selfReviewNote,
       head: branch,
       base: args.defaultBranch,
       draft: testsPassed === false || selfBlocker,
     });
 
+    // ONE rich comment on the issue — root cause + reasoning, files, verification, PR link.
     await octokit.rest.issues.createComment({
       owner: args.owner,
       repo: args.repo,
       issue_number: args.issueNumber,
-      body: `🔧 ${DISPLAY} opened ${pr.url} with a proposed fix.`,
+      body:
+        `### 🔧 ${DISPLAY} — fix ready in ${pr.url}\n\n` +
+        `**What I found & changed**\n\n${summary}\n\n` +
+        `**Files changed**\n${filesBlock}\n\n` +
+        `**Verification**\n${verify}\n\n` +
+        `Review and merge ${pr.url} to apply the fix.` +
+        (selfReviewNote ? `\n${selfReviewNote}` : ''),
     });
   } finally {
     await ws.cleanup();

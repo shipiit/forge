@@ -83,9 +83,9 @@ describe('handleIssueFix (integration)', () => {
 
     await handleIssueFix(deps, { owner: 'o', repo: 'r', defaultBranch: 'main', issueNumber: 7, issueTitle: 'add is wrong', issueBody: 'subtracts instead of adds' });
 
-    // progress comment + final comment
-    expect(calls.comments.length).toBe(2);
-    expect(calls.comments[0].body).toMatch(/investigating/i);
+    // ONE rich comment (no separate progress comment)
+    expect(calls.comments.length).toBe(1);
+    expect(calls.comments[0].body).toMatch(/fix ready|What I found/i);
     // PR opened with the right branch and base
     expect(calls.prs).toHaveLength(1);
     expect(calls.prs[0]).toMatchObject({ head: 'forge/issue-7', base: 'main' });
@@ -121,7 +121,7 @@ describe('handleIssueFix (integration)', () => {
 
     expect(calls.prs).toHaveLength(1);
     expect(calls.prs[0].draft).toBe(true); // blocker → draft
-    expect(calls.prs[0].body).toMatch(/Self-review/);
+    expect(calls.prs[0].body).toMatch(/Automated review/);
     expect(calls.prs[0].body).toMatch(/Edge case not handled/);
   });
 
