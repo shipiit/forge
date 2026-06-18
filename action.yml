@@ -2,7 +2,7 @@ name: 'ShipIT Forge'
 description: 'Autonomous coding agent — fixes issues, opens PRs, and reviews PRs (with a security lens). Bring your own LLM key.'
 author: 'Rahul Raj'
 branding:
-  icon: 'tool'
+  icon: 'git-pull-request'
   color: 'orange'
 
 inputs:
