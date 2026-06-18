@@ -1,5 +1,9 @@
 import type { LLMClient, ProviderId } from './types.js';
 import { FakeLLMClient } from './fake.js';
+import { AnthropicAdapter } from './anthropic.js';
+import { OpenAIAdapter } from './openai.js';
+import { VertexAdapter } from './vertex.js';
+import { BedrockAdapter } from './bedrock.js';
 
 export interface ProviderConfig {
   provider: ProviderId;
@@ -34,24 +38,26 @@ function demoScript(task: string) {
 }
 
 /**
- * Build an {@link LLMClient} from configuration. Real provider adapters
- * (Anthropic, OpenAI, Vertex Gemini, Bedrock) are wired in subsequent slices;
- * for now the factory supports the credential-free `fake` provider used by the
- * test suite and the local demo.
+ * Build an {@link LLMClient} from configuration. The provider is chosen by
+ * `config.provider`; credentials are read from the standard environment
+ * variables for that provider (see README). The `fake` provider needs no
+ * credentials and is used by tests and the local demo.
  */
 export function createLLMClient(config: ProviderConfig, opts: { demoTask?: string } = {}): LLMClient {
   switch (config.provider) {
     case 'fake':
       return new FakeLLMClient(opts.demoTask ? demoScript(opts.demoTask) : []);
     case 'anthropic':
+      return new AnthropicAdapter({ apiKey: process.env.ANTHROPIC_API_KEY, model: config.model });
     case 'openai':
+      return new OpenAIAdapter({ apiKey: process.env.OPENAI_API_KEY, model: config.model });
     case 'vertex':
+      return new VertexAdapter({ model: config.model });
     case 'bedrock':
-      throw new Error(
-        `Provider "${config.provider}" adapter is not wired yet (coming in the provider-adapter slice). ` +
-          'Use --provider fake for a credential-free local run.',
-      );
+      return new BedrockAdapter({ model: config.model });
     default:
       throw new Error(`Unknown provider: ${config.provider as string}`);
   }
 }
+
+export { FakeLLMClient } from './fake.js';
