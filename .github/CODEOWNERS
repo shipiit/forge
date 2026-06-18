@@ -1,0 +1,8 @@
+# Code owners for ShipIT Forge
+#
+# Every pull request automatically requests a review from the owner below,
+# and (with branch protection on `main`) requires their approval before merge.
+# The ShipIT Forge agent posts an automated security/code review on each PR,
+# but it never approves — the admin makes the final call.
+
+*       @iamrraj
