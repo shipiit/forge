@@ -29,6 +29,7 @@ async function deps(context: Context, config: ForgeConfig): Promise<HandlerDeps>
     log: (msg: string) => context.log.info(redactSecrets(msg)),
     testCommand: config.testCommand,
     sarifPath: config.sarifPath,
+    selfReview: true,
   };
 }
 

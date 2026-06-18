@@ -26,6 +26,8 @@ export interface HandlerDeps {
   client: LLMClient;
   token: string; // installation token for clone + image download
   log: (msg: string) => void;
+  /** Run a self-review pass over the fix diff before opening the PR (default true). */
+  selfReview?: boolean;
   /** Optional explicit test command override (from .github/agent.yml). */
   testCommand?: string;
   /** Workspace operations; defaults to real git. Overridden in tests. */
@@ -111,16 +113,40 @@ export async function handleIssueFix(
       });
       return;
     }
+    // Multi-pass self-review: the agent critiques its own diff before opening the PR.
+    let selfReviewNote = '';
+    let selfBlocker = false;
+    if (deps.selfReview) {
+      const diff = await wsOps.diffHead(ws);
+      if (diff.trim()) {
+        const reviewRes = await runAgent({
+          client,
+          system: reviewSystemPrompt(),
+          initialContent: [{ type: 'text', text: `Review your own change for the issue below before it becomes a PR. Be strict about correctness and regressions.\n\nIssue: ${args.issueTitle}\n\nDiff:\n\`\`\`diff\n${diff}\n\`\`\`` }],
+          tools: reviewToolset(),
+          limits: { maxIterations: MAX_ITER, maxOutputTokens: 4096 },
+          cwd: ws.dir,
+        });
+        const selfFindings = parseFindings(reviewRes.finalText);
+        selfBlocker = selfFindings.some((f) => f.severity === 'critical' || f.severity === 'high');
+        if (selfFindings.length > 0) {
+          selfReviewNote =
+            `\n\n## 🔁 Self-review\n` +
+            selfFindings.map((f) => `- ${f.severity.toUpperCase()} \`${f.file}:${f.endLine}\` — ${f.title}`).join('\n');
+        }
+      }
+    }
+
     await wsOps.pushBranch(ws, branch);
 
     const pr = await openPullRequest(octokit, {
       owner: args.owner,
       repo: args.repo,
       title: `Fix: ${args.issueTitle}`.slice(0, 250),
-      body: composeFixPrBody({ issueNumber: args.issueNumber, summary: result.finalText, testsPassed, testOutput: testOutput.slice(-4000) }),
+      body: composeFixPrBody({ issueNumber: args.issueNumber, summary: result.finalText, testsPassed, testOutput: testOutput.slice(-4000) }) + selfReviewNote,
       head: branch,
       base: args.defaultBranch,
-      draft: testsPassed === false,
+      draft: testsPassed === false || selfBlocker,
     });
 
     await octokit.rest.issues.createComment({

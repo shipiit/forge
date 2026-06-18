@@ -78,6 +78,16 @@ export interface WorkspacePort {
   createBranch(ws: Workspace, branch: string): Promise<void>;
   commitAll(ws: Workspace, message: string): Promise<boolean>;
   pushBranch(ws: Workspace, branch: string): Promise<void>;
+  diffHead(ws: Workspace): Promise<string>;
 }
 
-export const realWorkspace: WorkspacePort = { clone: cloneRepo, createBranch, commitAll, pushBranch };
+/** Unified diff of the most recent commit (HEAD~1..HEAD), for self-review. */
+export async function diffHead(ws: Workspace): Promise<string> {
+  try {
+    return await ws.git.diff(['HEAD~1', 'HEAD']);
+  } catch {
+    return '';
+  }
+}
+
+export const realWorkspace: WorkspacePort = { clone: cloneRepo, createBranch, commitAll, pushBranch, diffHead };

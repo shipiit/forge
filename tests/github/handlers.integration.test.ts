@@ -30,6 +30,9 @@ function fakeWorkspace(seed: Record<string, string>): { port: WorkspacePort; pus
     async pushBranch(_ws, branch) {
       pushed.push(branch);
     },
+    async diffHead() {
+      return 'diff --git a/sum.js b/sum.js\n@@ -1 +1 @@\n-export const add=(a,b)=>a-b;\n+export const add=(a,b)=>a+b;\n';
+    },
   };
   return { port, pushed, cleanup: async () => dir && fs.rm(dir, { recursive: true, force: true }) };
 }
@@ -88,6 +91,38 @@ describe('handleIssueFix (integration)', () => {
     expect(calls.prs[0]).toMatchObject({ head: 'forge/issue-7', base: 'main' });
     expect(calls.prs[0].body).toMatch(/Closes #7/);
     expect(ws.pushed).toEqual(['forge/issue-7']);
+  });
+
+  it('runs a self-review pass and opens a draft PR when it flags a blocker', async () => {
+    const ws = fakeWorkspace({ 'sum.js': 'export const add=(a,b)=>a-b;\n' });
+    cleanups.push(ws.cleanup);
+    const { octokit, calls } = fakeOctokit();
+
+    const selfFinding = JSON.stringify([
+      { file: 'sum.js', startLine: 1, endLine: 1, lens: 'quality', severity: 'high', category: 'bug', title: 'Edge case not handled', body: 'x' },
+    ]);
+    const script: ChatResult[] = [
+      // fix pass
+      { text: '', toolCalls: [{ id: '1', name: 'write_file', args: { path: 'sum.js', content: 'export const add=(a,b)=>a+b;\n' } }], usage, stopReason: 'tool_use' },
+      { text: 'Fixed.', toolCalls: [], usage, stopReason: 'end' },
+      // self-review pass returns a HIGH finding
+      { text: selfFinding, toolCalls: [], usage, stopReason: 'end' },
+    ];
+    const deps: HandlerDeps = {
+      octokit,
+      client: new FakeLLMClient(script),
+      token: 't',
+      log: () => {},
+      workspace: ws.port,
+      selfReview: true,
+    };
+
+    await handleIssueFix(deps, { owner: 'o', repo: 'r', defaultBranch: 'main', issueNumber: 3, issueTitle: 'bug', issueBody: null });
+
+    expect(calls.prs).toHaveLength(1);
+    expect(calls.prs[0].draft).toBe(true); // blocker → draft
+    expect(calls.prs[0].body).toMatch(/Self-review/);
+    expect(calls.prs[0].body).toMatch(/Edge case not handled/);
   });
 
   it('is idempotent: skips when a fix PR is already open', async () => {

@@ -287,9 +287,13 @@ typecheck + tests + build on every push.
 - [x] Live provider smoke run (verified on Vertex Gemini 2.5 Pro)
 - [x] Follow-up commits when @mentioned on a PR
 - [x] Secure `forge setup` wizard (paste/point-to credentials, gitignored)
-- [ ] Recorded handler integration tests (mocked Octokit)
-- [ ] CodeQL/SARIF ingestion · multi-pass self-review · sub-agents
-- [ ] npm package + GitHub Marketplace listing
+- [x] Recorded handler integration tests (mocked Octokit)
+- [x] Cost tracking (per-run token + USD estimate)
+- [x] CodeQL/SARIF ingestion (merge scanner findings into review)
+- [x] Multi-pass self-review (agent critiques its own diff → draft PR on blockers)
+- [x] npm-publishable package (`files`, bin, `prepublishOnly`)
+- [ ] GitHub Action distribution (per-org credentials, no server) — in progress
+- [ ] Sub-agents for very large tasks · GitHub Marketplace listing
 
 ---
 
