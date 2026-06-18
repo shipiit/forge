@@ -3,5 +3,7 @@ dist/
 *.log
 .env
 .env.*
+*.pem
+.forge/
 .DS_Store
 coverage/
