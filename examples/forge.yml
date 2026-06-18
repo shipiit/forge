@@ -14,9 +14,15 @@ on:
     types: [created]
 
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: write        # edit code, push fix branches
+  issues: write          # read issues, post comments
+  pull-requests: write   # open PRs, post reviews + inline comments
+  checks: read           # read CI check results
+  statuses: read         # read commit statuses
+  actions: write         # read logs + re-run failed workflows (CI auto-fix)
+  # NOTE: GITHUB_TOKEN cannot push changes to .github/workflows/** by design.
+  # If a fix must edit a workflow file, run the hosted App (APP_ID/PRIVATE_KEY below),
+  # whose App permission `workflows: write` allows it.
 
 jobs:
   forge:

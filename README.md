@@ -264,7 +264,7 @@ on:
   issue_comment: { types: [created] }
   pull_request: { types: [opened, synchronize, review_requested] }
   pull_request_review_comment: { types: [created] }
-permissions: { contents: write, pull-requests: write, issues: write }
+permissions: { contents: write, pull-requests: write, issues: write, checks: read, statuses: read, actions: write }
 jobs:
   forge:
     runs-on: ubuntu-latest

@@ -21,15 +21,21 @@ default_events:
   - workflow_run
 
 default_permissions:
-  # Read/write code so it can push fix branches.
+  # Read/write code so it can push fix branches and edit files.
   contents: write
-  # Open PRs and post reviews.
+  # Open PRs and post reviews / inline comments.
   pull_requests: write
   # Read issues and post comments.
   issues: write
-  # Read repo metadata.
+  # Read repo metadata (always required).
   metadata: read
-  # Read CI/check results when verifying.
+  # Read CI/check results when verifying a fix or auto-fixing CI.
   checks: read
+  # Read commit statuses (legacy status API used by some CI providers).
+  statuses: read
+  # Read & re-run GitHub Actions workflow runs (CI auto-fix loop).
+  actions: write
+  # Read & write workflow files under .github/workflows (e.g. when a fix touches CI).
+  workflows: write
   # Read Dependabot alerts (live CVE data from GitHub's Advisory Database).
   vulnerability_alerts: read
