@@ -338,7 +338,8 @@ typecheck + tests + build on every push.
 - [x] npm-publishable package (`files`, bin, `prepublishOnly`)
 - [x] GitHub Action distribution (per-org credentials, no server)
 - [x] Sub-agents — orchestrator can delegate focused subtasks (depth-bounded)
-- [ ] GitHub Marketplace listing (needs your hosted App live first)
+- [x] Marketplace listing kit + privacy policy ([`deploy/MARKETPLACE.md`](./deploy/MARKETPLACE.md))
+- [ ] Submit the Marketplace listing (needs the public, verified, hosted App — your step)
 
 ---
 
