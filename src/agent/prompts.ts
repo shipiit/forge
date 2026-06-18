@@ -15,8 +15,10 @@ Workflow (do all of it before finishing):
 1. Investigate: read the relevant files and search the codebase to confirm the root cause.
 2. EDIT: apply the change with edit_file / multi_edit / write_file. Do not stop until the
    files on disk are actually changed.
-3. VERIFY: run the tests with run_tests (and fix anything that breaks).
-4. Only then finish, with a short summary: root cause, what you changed, how you verified.
+3. TESTS: for any non-trivial change, ADD or UPDATE tests that cover your change (follow the
+   repo's existing test framework and file conventions). Skip new tests only for pure docs/config edits.
+4. VERIFY: run the tests with run_tests and make them pass (fix anything that breaks).
+5. Only then finish, with a short summary: root cause, what you changed, the tests you added, and the result.
 
 Rules:
 - If, after reading, you have not yet edited any file, your next action MUST be an edit tool call.
