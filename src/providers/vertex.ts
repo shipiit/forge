@@ -1,21 +1,19 @@
-import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleGenAI } from '@google/genai';
 import type { ChatRequest, ChatResult, LLMClient, Msg, ProviderId, StopReason, ToolSpec } from './types.js';
 
 const DEFAULT_MODEL = 'gemini-2.5-pro';
 
-/** Minimal shape of the Gemini generateContent call we depend on (for testability). */
+/** Minimal shape of the @google/genai generateContent call we depend on (for testability). */
 export interface GeminiLike {
   generateContent(req: Record<string, unknown>): Promise<GeminiResponse>;
 }
 
 interface GeminiResponse {
-  response: {
-    candidates?: Array<{
-      content: { parts: Array<GeminiPart> };
-      finishReason?: string;
-    }>;
-    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
-  };
+  candidates?: Array<{
+    content?: { parts?: Array<GeminiPart> };
+    finishReason?: string;
+  }>;
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
 }
 
 type GeminiPart =
@@ -74,7 +72,7 @@ export function mapGeminiStop(reason: string | undefined, hasToolCall: boolean):
 }
 
 export function fromGeminiResponse(res: GeminiResponse): ChatResult {
-  const cand = res.response.candidates?.[0];
+  const cand = res.candidates?.[0];
   const parts = cand?.content?.parts ?? [];
   let text = '';
   const toolCalls = [];
@@ -85,7 +83,7 @@ export function fromGeminiResponse(res: GeminiResponse): ChatResult {
       toolCalls.push({ id: `${part.functionCall.name}-${i++}`, name: part.functionCall.name, args: part.functionCall.args ?? {} });
     }
   }
-  const usage = res.response.usageMetadata ?? {};
+  const usage = res.usageMetadata ?? {};
   return {
     text,
     toolCalls,
@@ -109,24 +107,26 @@ export class VertexAdapter implements LLMClient {
     this.injected = opts.client;
   }
 
-  private getModel(system: string): GeminiLike {
+  private models(): GeminiLike {
     if (this.injected) return this.injected;
-    const vertex = new VertexAI({ project: this.project, location: this.location });
-    return vertex.getGenerativeModel({
-      model: this.model,
-      systemInstruction: system,
-    }) as unknown as GeminiLike;
+    // Vertex mode uses Application Default Credentials (GOOGLE_APPLICATION_CREDENTIALS).
+    const ai = new GoogleGenAI({ vertexai: true, project: this.project, location: this.location });
+    return ai.models as unknown as GeminiLike;
   }
 
   async chat(req: ChatRequest): Promise<ChatResult> {
-    const model = this.getModel(req.system);
-    const body: Record<string, unknown> = {
-      contents: toGeminiContents(req.messages),
-      generationConfig: { maxOutputTokens: req.maxTokens },
+    const config: Record<string, unknown> = {
+      systemInstruction: req.system,
+      maxOutputTokens: req.maxTokens,
     };
     const tools = toGeminiTools(req.tools);
-    if (tools.length > 0) body.tools = tools;
-    const res = await model.generateContent(body);
+    if (tools.length > 0) config.tools = tools;
+
+    const res = await this.models().generateContent({
+      model: this.model,
+      contents: toGeminiContents(req.messages),
+      config,
+    });
     return fromGeminiResponse(res);
   }
 }

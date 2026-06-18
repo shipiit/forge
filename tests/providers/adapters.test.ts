@@ -89,28 +89,28 @@ describe('Vertex Gemini adapter', () => {
 
   it('parses functionCall responses with synthesized ids', () => {
     const res = fromGeminiResponse({
-      response: {
-        candidates: [{ content: { parts: [{ functionCall: { name: 'read_file', args: { path: 'z' } } }] } }],
-        usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 6 },
-      },
+      candidates: [{ content: { parts: [{ functionCall: { name: 'read_file', args: { path: 'z' } } }] } }],
+      usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 6 },
     });
     expect(res.toolCalls[0]).toMatchObject({ name: 'read_file', args: { path: 'z' } });
     expect(res.stopReason).toBe('tool_use');
     expect(res.usage).toEqual({ inputTokens: 5, outputTokens: 6 });
   });
 
-  it('round-trips through chat() with an injected model', async () => {
+  it('round-trips through chat() with an injected model (@google/genai shape)', async () => {
     let body: any;
     const adapter = new VertexAdapter({
       client: {
         async generateContent(req) {
           body = req;
-          return { response: { candidates: [{ content: { parts: [{ text: 'done' }] }, finishReason: 'STOP' }] } };
+          return { candidates: [{ content: { parts: [{ text: 'done' }] }, finishReason: 'STOP' }] };
         },
       },
     });
     const res = await adapter.chat({ system: 'S', messages: convo, tools, maxTokens: 50 });
-    expect(body.tools[0].functionDeclarations[0].name).toBe('read_file');
+    expect(body.model).toBeDefined();
+    expect(body.config.systemInstruction).toBe('S');
+    expect(body.config.tools[0].functionDeclarations[0].name).toBe('read_file');
     expect(res.text).toBe('done');
     expect(res.stopReason).toBe('end');
   });

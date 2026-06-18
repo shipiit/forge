@@ -14,7 +14,7 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 [![License: MIT](https://img.shields.io/badge/License-MIT-22D3EE.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-76%20passing-FF8A3D.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-88%20passing-FF8A3D.svg)](#testing)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-7C5CFF.svg)](#contributing)
 
 <br/>
@@ -41,19 +41,39 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 
 ---
 
-## 🚀 Quick start (no credentials)
+## 📦 Installation
 
-The agent engine runs locally with a built-in **fake provider** — no API keys needed.
+**Prerequisites:** [Node.js](https://nodejs.org) **≥ 20** (22 recommended), `git`, and (optional but
+faster search) [`ripgrep`](https://github.com/BurntSushi/ripgrep).
 
 ```bash
-git clone https://github.com/shipiit/forge.git && cd forge
+# 1. Clone
+git clone https://github.com/shipiit/forge.git
+cd forge
+
+# 2. Install dependencies
 npm install
-npm test                 # 76 tests, all green
+
+# 3. Build (compiles TypeScript → dist/)
 npm run build
 
-# Run the agent against any local repo using the credential-free demo provider:
-node dist/cli.js fix --repo /path/to/repo --task "fix the failing login test" --provider fake
+# 4. Verify everything works (88 unit + integration tests)
+npm test
 ```
+
+That's it — you now have the `forge` CLI at `node dist/cli.js`. (Optionally `npm link` to get a
+global `forge` command.)
+
+## 🚀 Quick start (no credentials)
+
+The agent engine runs locally with a built-in **fake provider** — no API keys needed, great for a
+first look:
+
+```bash
+node dist/cli.js fix --repo /path/to/any/repo --task "fix the failing login test" --provider fake
+```
+
+It clones nothing (works on the path you give), runs the tool loop, and prints what changed.
 
 ### Configure a provider securely — `forge setup`
 
@@ -106,8 +126,28 @@ node dist/cli.js fix --repo /path/to/repo --task "…" --provider vertex
 
 See [`.env.example`](./.env.example) for every provider's variables.
 
-> **Verified live:** the agent has been run end-to-end against Vertex AI Gemini 2.5 Pro — it read a
-> buggy file, fixed it, ran the tests, and confirmed they pass. ✅
+### Test it end-to-end with a real model (2 minutes)
+
+Make a tiny buggy repo and let Forge fix it:
+
+```bash
+# 1. A throwaway repo with a deliberate bug + a test
+mkdir /tmp/forge-try && cd /tmp/forge-try && git init -q
+printf 'export const add = (a, b) => a - b; // bug\n' > sum.js
+printf "import test from 'node:test'; import assert from 'node:assert'; import {add} from './sum.js';\ntest('adds', () => assert.strictEqual(add(2,3), 5));\n" > sum.test.js
+printf '{"type":"module","scripts":{"test":"node --test"}}\n' > package.json
+git add -A && git commit -qm init
+
+# 2. Point Forge at it with your provider (Vertex shown)
+cd -                                   # back to the forge repo
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+node dist/cli.js fix --repo /tmp/forge-try \
+  --task "add() subtracts instead of adding; fix it so the tests pass" \
+  --provider vertex --model gemini-2.5-pro
+```
+
+Forge will read `sum.js`, change `a - b` → `a + b`, run `node --test`, confirm it passes, and print
+the diff. *(This exact flow is verified working against Vertex AI Gemini 2.5 Pro.)* ✅
 
 ---
 
@@ -131,6 +171,27 @@ registration page driven by [`app.yml`](./app.yml). GitHub hands back `APP_ID`, 
 
 **3. Install on your org** — App page → **Install App** → your org → **All repositories**. Done —
 Forge now sees issues and PRs across the org automatically.
+
+**4. Invite & test it** — in any repo of that org:
+- open an issue and add the label **`agent-fix`** (or comment **`/fix`**) → Forge opens a fix PR;
+- open a PR → Forge auto-reviews it; or **request `@shipit-forge` as a reviewer** on an existing PR;
+- comment **`/review`**, **`/security`**, or **`@shipit-forge <ask>`** anywhere.
+
+> **Watch it work:** the server logs every event and tool call (with secrets redacted). For Docker,
+> `docker logs -f <container>`. A failed run still comments on the issue/PR explaining what happened.
+
+### Run locally without deploying (for development)
+
+You can receive real GitHub webhooks on your laptop using a proxy — no hosting needed:
+
+```bash
+cp .env.example .env        # fill in APP_ID, PRIVATE_KEY, WEBHOOK_SECRET + your provider vars
+npm run dev                 # starts the webhook server with hot reload
+# Probot prints a smee.io proxy URL on first run; set it as the App's webhook URL.
+```
+
+This is the fastest way to **try the App end-to-end and invite it on a test PR** before committing to
+a hosting provider.
 
 ---
 
@@ -188,7 +249,7 @@ issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
 ## 🧪 Testing
 
 ```bash
-npm test         # vitest — 76 unit tests
+npm test         # vitest — 88 unit + integration tests
 npm run typecheck
 ```
 
