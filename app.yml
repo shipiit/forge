@@ -1,8 +1,13 @@
 # GitHub App manifest — used to create the ShipIT Forge App in one click.
 # Probot serves a registration page at "/" that uses this manifest.
+#
+# Icon/logo cannot be set via the manifest — upload assets/logo.svg (or a PNG export)
+# in the App's Settings → "Display information" → Logo after registration.
 name: ShipIT Forge
 description: Autonomous coding agent — fixes issues, opens PRs, and reviews PRs (with a security lens).
 url: https://github.com/shipiit/forge
+# public: false keeps the App installable only on orgs/accounts you administer — best while testing.
+# Flip to true later (then it can be installed on ANY org and listed on the GitHub Marketplace).
 public: false
 
 default_events:

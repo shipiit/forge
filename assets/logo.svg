@@ -1,0 +1,35 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ShipIT Forge logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1020"/>
+      <stop offset="0.55" stop-color="#131A33"/>
+      <stop offset="1" stop-color="#1B1030"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="120" y1="300" x2="392" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#FF4D67"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="300" y1="120" x2="420" y2="200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7C5CFF"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <g filter="url(#glow)" transform="translate(128,168)">
+    <!-- anvil base -->
+    <rect x="20" y="150" width="216" height="40" rx="12" fill="url(#accent)"/>
+    <!-- anvil body -->
+    <path d="M36 70 H224 a32 32 0 0 1 -32 44 H96 l-16 12 H52 a14 14 0 0 1 -14 -14 V70 Z" fill="#E9EEFF"/>
+    <!-- spark / star -->
+    <g transform="translate(236,16)">
+      <path d="M0 -40 l12 36 36 12 -36 12 -12 36 -12 -36 -36 -12 36 -12 Z" fill="url(#spark)"/>
+      <circle cx="0" cy="0" r="9" fill="#FFFFFF"/>
+    </g>
+  </g>
+</svg>

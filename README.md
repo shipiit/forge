@@ -165,12 +165,31 @@ docker run -p 3000:3000 --env-file .env shipit-forge
 # any host works: Cloud Run, Fly.io, Render, Railway, a VM — it just needs a public HTTPS URL.
 ```
 
-**2. Register the GitHub App (one click)** — open the server's public URL; Probot serves a
-registration page driven by [`app.yml`](./app.yml). GitHub hands back `APP_ID`, `PRIVATE_KEY`, and
-`WEBHOOK_SECRET` — put them (plus your provider vars) in the server env and restart.
+**2. Register the GitHub App (one click)**
 
-**3. Install on your org** — App page → **Install App** → your org → **All repositories**. Done —
-Forge now sees issues and PRs across the org automatically.
+With the server running, open its URL (e.g. `http://localhost:3000` in dev, or your public URL).
+Probot serves a **registration page** driven by [`app.yml`](./app.yml):
+
+1. Click **Register a GitHub App** → it redirects you to GitHub with the name, permissions, and
+   events pre-filled from `app.yml`.
+2. Pick the **owner** — choose your **organization** (e.g. `shipiit`) so the App belongs to the org.
+3. Confirm. GitHub creates the App and redirects back; Probot **automatically writes** `APP_ID`,
+   `PRIVATE_KEY`, and `WEBHOOK_SECRET` into your `.env`. Add your provider vars and restart.
+
+Prefer manual? GitHub → **Settings → Developer settings → GitHub Apps → New GitHub App**, then copy
+the permissions/events from [`app.yml`](./app.yml).
+
+> **Keep it private while testing.** `app.yml` has `public: false`, so only orgs **you administer**
+> can install it — perfect for trying it inside your own org first. Flip to `public: true` later to
+> allow any org and to list it on the Marketplace.
+
+**Set the App icon** — in the App's **Settings → Display information → Logo**, upload
+[`assets/logo.png`](./assets/logo.png) (the anvil-and-spark mark). A 512×512 and a 1024×1024
+([`logo-1024.png`](./assets/logo-1024.png)) export are included.
+
+**3. Install on your org (test it)** — App page → **Install App** → your org → pick **one test repo**
+(or All repositories). Then open an issue with the `agent-fix` label, or request `@shipit-forge` on a
+PR, and watch it work. Once it behaves, widen to all repos and/or make it public.
 
 **4. Invite & test it** — in any repo of that org:
 - open an issue and add the label **`agent-fix`** (or comment **`/fix`**) → Forge opens a fix PR;
