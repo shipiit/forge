@@ -79,17 +79,20 @@ Model [gemini-2.5-pro]:
 Provide the service-account key. Either:
   • a path to the JSON file, or
   • paste the JSON, then a line with just END
-path or paste> {            ← paste the whole service-account JSON here
-  "type": "service_account",
-  ...
-}
-END
+path or paste> <paste your service-account JSON, or a file path>
 ✅ Wrote .env (chmod 600) and updated .gitignore. Your secrets are gitignored.
 ```
 
-For **Vertex**, you can paste the full service-account JSON (it's validated and saved to
-`.forge/vertex-sa.json`, `chmod 600`, gitignored) **or** point to an existing JSON file path. Either
-way nothing secret is ever committed.
+**Setting up Vertex AI credentials (step by step):**
+
+1. In Google Cloud Console → **IAM & Admin → Service Accounts**, create a service account (or reuse one).
+2. Give it the **Vertex AI User** role (`roles/aiplatform.user`).
+3. **Keys → Add key → JSON** to download the key file. Keep it private — never commit it.
+4. Run `forge setup`, choose **Vertex AI Gemini**, enter your project id, and either **paste the JSON**
+   or give the **path** to the downloaded file.
+
+When you paste, the JSON is validated and saved to `.forge/vertex-sa.json` (`chmod 600`, gitignored);
+when you give a path, it's referenced in place. Either way nothing secret is ever committed.
 
 ### Or set env vars manually
 
