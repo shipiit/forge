@@ -159,22 +159,22 @@ the diff. *(This exact flow is verified working against Vertex AI Gemini 2.5 Pro
 > but the agent runs on **your** server. GitHub sends webhooks → your server clones the repo, calls
 > the model, and opens the PR/review. Docker is just a portable way to run that server anywhere.
 
-**1. Deploy the webhook server**
+**1. Deploy the webhook server** (runs 24/7 — no laptop). Pick a host:
 
-Fastest path (Google Cloud Run, one command — see [`deploy/DEPLOY.md`](./deploy/DEPLOY.md)):
+- **No GCP, easiest:** [Render](./deploy/RENDER.md) — connect the repo, set env vars, done (uses [`render.yaml`](./render.yaml)).
+- **Google Cloud Run** (one command): see [`deploy/DEPLOY.md`](./deploy/DEPLOY.md)
+  ```bash
+  PROJECT=your-gcp-project-id APP_ID=… WEBHOOK_SECRET=… \
+    PRIVATE_KEY_FILE=./shipit-forge.private-key.pem ./deploy/cloudrun.sh
+  ```
+- **Any host with Docker** (Railway, Fly.io, a VPS):
+  ```bash
+  docker build -t shipit-forge . && docker run -p 3000:3000 --env-file .env shipit-forge
+  ```
 
-```bash
-PROJECT=your-gcp-project-id APP_ID=… WEBHOOK_SECRET=… \
-  PRIVATE_KEY_FILE=./shipit-forge.private-key.pem ./deploy/cloudrun.sh
-```
-
-Or any host with Docker:
-
-```bash
-docker build -t shipit-forge .
-docker run -p 3000:3000 --env-file .env shipit-forge
-# Cloud Run, Fly.io, Render, Railway, a VM — it just needs a public HTTPS URL.
-```
+It's a standard Node/Docker app — it just needs a **public HTTPS URL**. Set the provider/App env vars
+(see [`deploy/PROVIDERS.md`](./deploy/PROVIDERS.md)); on non-GCP hosts pass the Vertex key as
+`VERTEX_CREDENTIALS_JSON` (the server writes it to a file at boot). Never set `WEBHOOK_PROXY_URL` in production.
 
 **2. Register the GitHub App (one click)**
 

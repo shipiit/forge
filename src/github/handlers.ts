@@ -93,6 +93,14 @@ export async function handleIssueAnalyze(
       .filter((c) => c.body && !isFromForge(c.user?.login))
       .map((c) => ({ user: c.user?.login ?? 'user', body: c.body! }));
 
+    // Acknowledge immediately, then edit THIS comment in place with the result (no spam).
+    const ack = await octokit.rest.issues.createComment({
+      owner: args.owner,
+      repo: args.repo,
+      issue_number: args.issueNumber,
+      body: `👀 **${DISPLAY}** is analyzing issue #${args.issueNumber}… I'll update this comment with my findings shortly.`,
+    });
+
     const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: args.defaultBranch }, token);
     try {
       const repoMap = await buildRepoMap(ws.dir);
@@ -114,10 +122,10 @@ export async function handleIssueAnalyze(
         onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
       });
 
-      await octokit.rest.issues.createComment({
+      await octokit.rest.issues.updateComment({
         owner: args.owner,
         repo: args.repo,
-        issue_number: args.issueNumber,
+        comment_id: ack.data.id,
         body:
           `### 🔍 ${DISPLAY} — analysis of #${args.issueNumber}\n\n` +
           `${cleanSummary(result.finalText, 4000)}\n\n` +
@@ -169,6 +177,14 @@ async function doIssueFix(
     return;
   }
 
+  // Acknowledge immediately, then edit THIS comment in place with the result.
+  const ack = await octokit.rest.issues.createComment({
+    owner: args.owner,
+    repo: args.repo,
+    issue_number: args.issueNumber,
+    body: `🛠️ **${DISPLAY}** is working on a fix for #${args.issueNumber} — investigating, editing, running tests, and opening a PR. I'll update this comment when done.`,
+  });
+
   const commentsRes = await octokit.rest.issues.listComments({ owner: args.owner, repo: args.repo, issue_number: args.issueNumber });
   const comments: CommentLike[] = commentsRes.data
     .filter((c) => c.body && !isFromForge(c.user?.login))
@@ -211,10 +227,10 @@ async function doIssueFix(
     const summary = cleanSummary(result.finalText);
     const committed = await wsOps.commitAll(ws, `fix: ${args.issueTitle}\n\n${summary}`.slice(0, 2000));
     if (!committed) {
-      await octokit.rest.issues.createComment({
+      await octokit.rest.issues.updateComment({
         owner: args.owner,
         repo: args.repo,
-        issue_number: args.issueNumber,
+        comment_id: ack.data.id,
         body: `### 🤔 ${DISPLAY} — no change made\n\n${summary}`,
       });
       return;
@@ -266,11 +282,11 @@ async function doIssueFix(
       draft: testsPassed === false || selfBlocker,
     });
 
-    // ONE rich comment on the issue — root cause + reasoning, files, verification, PR link.
-    await octokit.rest.issues.createComment({
+    // Update the ack comment in place — root cause + reasoning, files, verification, PR link.
+    await octokit.rest.issues.updateComment({
       owner: args.owner,
       repo: args.repo,
-      issue_number: args.issueNumber,
+      comment_id: ack.data.id,
       body:
         `### 🔧 ${DISPLAY} — fix ready in ${pr.url}\n\n` +
         `**What I found & changed**\n\n${summary}\n\n` +
