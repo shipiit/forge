@@ -5,7 +5,7 @@ import { fixSystemPrompt, reviewSystemPrompt, mentionSystemPrompt } from '../age
 import { detectTestCommand } from '../agent/tools/tests.js';
 import { runCommand } from '../agent/tools/bash.js';
 import { buildIssueContent, buildReviewContent, type CommentLike } from './context.js';
-import { buildReviewPayload, parseFindings } from './review.js';
+import { buildReviewPayload, parseFindings, parseDiffValidLines } from './review.js';
 import {
   cloneRepo,
   createBranch,
@@ -28,6 +28,8 @@ export interface HandlerDeps {
   client: LLMClient;
   token: string; // installation token for clone + image download
   log: (msg: string) => void;
+  /** Optional explicit test command override (from .github/agent.yml). */
+  testCommand?: string;
 }
 
 /** Fix an issue end-to-end: clone → investigate/edit → verify → open PR → comment. */
@@ -58,14 +60,14 @@ export async function handleIssueFix(
       client,
       system: fixSystemPrompt(),
       initialContent,
-      tools: editToolset(),
+      tools: editToolset({ testCommand: deps.testCommand }),
       limits: { maxIterations: MAX_ITER, maxOutputTokens: 8192 },
       cwd: ws.dir,
       onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
     });
 
     // Verify with the project's tests, if any.
-    const testCmd = await detectTestCommand(ws.dir);
+    const testCmd = await detectTestCommand(ws.dir, deps.testCommand);
     let testsPassed: boolean | null = null;
     let testOutput = '';
     if (testCmd) {
@@ -141,7 +143,8 @@ export async function handlePrReview(
     });
 
     const findings = parseFindings(result.finalText);
-    const payload = buildReviewPayload(findings, { displayName: DISPLAY, securityOnly: args.securityOnly });
+    const validLines = parseDiffValidLines(diff);
+    const payload = buildReviewPayload(findings, { displayName: DISPLAY, securityOnly: args.securityOnly, validLines });
     await octokit.rest.pulls.createReview({
       owner: args.owner,
       repo: args.repo,

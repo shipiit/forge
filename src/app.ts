@@ -3,30 +3,41 @@ import { createLLMClient } from './providers/index.js';
 import type { ProviderId } from './providers/types.js';
 import { handleIssueFix, handlePrReview, handleMention, type HandlerDeps } from './github/handlers.js';
 import type { OctokitLike } from './github/pr.js';
+import { redactSecrets } from './util/resilience.js';
+import { mergeConfig, defaultConfig, type ForgeConfig } from './config.js';
 
 const PROVIDER = (process.env.LLM_PROVIDER || 'anthropic') as ProviderId;
-const TRIGGER_LABEL = process.env.FORGE_TRIGGER_LABEL || 'agent-fix';
-const AUTO_FIX = (process.env.FORGE_AUTO_FIX || 'label') as 'label' | 'opened' | 'off';
-const AUTO_REVIEW = (process.env.FORGE_AUTO_REVIEW || 'always') as 'always' | 'requested' | 'off';
 const MENTION = (process.env.FORGE_DISPLAY_HANDLE || '@shipit-forge').toLowerCase();
 
+/** Load per-repo config from .github/agent.yml, merged over env-seeded defaults. */
+async function loadConfig(context: Context): Promise<ForgeConfig> {
+  try {
+    const raw = await context.config('agent.yml');
+    return mergeConfig(raw);
+  } catch {
+    return defaultConfig();
+  }
+}
+
 /** Build the dependency bundle for a handler from a Probot context. */
-async function deps(context: Context): Promise<HandlerDeps> {
+async function deps(context: Context, config: ForgeConfig): Promise<HandlerDeps> {
   const auth = (await context.octokit.auth({ type: 'installation' })) as { token: string };
   return {
     octokit: context.octokit as unknown as OctokitLike,
-    client: createLLMClient({ provider: PROVIDER }),
+    client: createLLMClient({ provider: PROVIDER, model: config.model }),
     token: auth.token,
-    log: (msg: string) => context.log.info(msg),
+    log: (msg: string) => context.log.info(redactSecrets(msg)),
+    testCommand: config.testCommand,
   };
 }
 
 export default function app(probot: Probot): void {
   // --- Fix an issue ---
   probot.on('issues.opened', async (context) => {
-    if (AUTO_FIX !== 'opened') return;
+    const config = await loadConfig(context);
+    if (config.autoFix !== 'opened') return;
     const { repository, issue } = context.payload;
-    await handleIssueFix(await deps(context), {
+    await handleIssueFix(await deps(context, config), {
       owner: repository.owner.login,
       repo: repository.name,
       defaultBranch: repository.default_branch,
@@ -37,10 +48,11 @@ export default function app(probot: Probot): void {
   });
 
   probot.on('issues.labeled', async (context) => {
-    if (AUTO_FIX === 'off') return;
-    if (context.payload.label?.name !== TRIGGER_LABEL) return;
+    const config = await loadConfig(context);
+    if (config.autoFix === 'off') return;
+    if (context.payload.label?.name !== config.triggerLabel) return;
     const { repository, issue } = context.payload;
-    await handleIssueFix(await deps(context), {
+    await handleIssueFix(await deps(context, config), {
       owner: repository.owner.login,
       repo: repository.name,
       defaultBranch: repository.default_branch,
@@ -52,9 +64,10 @@ export default function app(probot: Probot): void {
 
   // --- Review a PR automatically ---
   probot.on(['pull_request.opened', 'pull_request.synchronize'], async (context) => {
-    if (AUTO_REVIEW !== 'always') return;
+    const config = await loadConfig(context);
+    if (config.autoReview !== 'always') return;
     const { repository, pull_request } = context.payload;
-    await handlePrReview(await deps(context), {
+    await handlePrReview(await deps(context, config), {
       owner: repository.owner.login,
       repo: repository.name,
       pullNumber: pull_request.number,
@@ -63,8 +76,9 @@ export default function app(probot: Probot): void {
 
   // --- Review when invited as a reviewer ---
   probot.on('pull_request.review_requested', async (context) => {
+    const config = await loadConfig(context);
     const { repository, pull_request } = context.payload;
-    await handlePrReview(await deps(context), {
+    await handlePrReview(await deps(context, config), {
       owner: repository.owner.login,
       repo: repository.name,
       pullNumber: pull_request.number,
@@ -73,6 +87,7 @@ export default function app(probot: Probot): void {
 
   // --- Commands & mentions on issues and PRs ---
   probot.on('issue_comment.created', async (context) => {
+    const config = await loadConfig(context);
     const body = (context.payload.comment.body || '').trim();
     const { repository, issue } = context.payload;
     const isPr = Boolean(issue.pull_request);
@@ -83,7 +98,7 @@ export default function app(probot: Probot): void {
     };
 
     if (/^\/fix\b/i.test(body) && !isPr) {
-      await handleIssueFix(await deps(context), {
+      await handleIssueFix(await deps(context, config), {
         ...base,
         issueNumber: issue.number,
         issueTitle: issue.title,
@@ -92,7 +107,7 @@ export default function app(probot: Probot): void {
       return;
     }
     if (isPr && /^\/(review|security)\b/i.test(body)) {
-      await handlePrReview(await deps(context), {
+      await handlePrReview(await deps(context, config), {
         owner: base.owner,
         repo: base.repo,
         pullNumber: issue.number,
@@ -102,7 +117,7 @@ export default function app(probot: Probot): void {
     }
     if (body.toLowerCase().includes(MENTION)) {
       const question = body.replace(new RegExp(MENTION, 'ig'), '').trim();
-      await handleMention(await deps(context), {
+      await handleMention(await deps(context, config), {
         ...base,
         issueNumber: issue.number,
         question: question || 'Please help with this thread.',

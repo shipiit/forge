@@ -1,6 +1,7 @@
 import type { ContentPart, LLMClient, Msg } from '../providers/types.js';
 import { type Tool, type ToolContext } from './tools/types.js';
 import { indexTools } from './tools/registry.js';
+import { withRetry } from '../util/resilience.js';
 
 export interface AgentLimits {
   maxIterations: number;
@@ -52,7 +53,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
   for (let n = 1; n <= limits.maxIterations; n++) {
     onEvent?.({ type: 'iteration', n });
-    const res = await client.chat({ system, messages, tools: toolSpecs, maxTokens: limits.maxOutputTokens });
+    const res = await withRetry(() => client.chat({ system, messages, tools: toolSpecs, maxTokens: limits.maxOutputTokens }));
     usage.inputTokens += res.usage.inputTokens;
     usage.outputTokens += res.usage.outputTokens;
 

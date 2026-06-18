@@ -3,6 +3,7 @@ import {
   buildReviewPayload,
   chooseEvent,
   parseFindings,
+  parseDiffValidLines,
   renderFindingBody,
   type ReviewFinding,
 } from '../../src/github/review.js';
@@ -61,6 +62,45 @@ describe('review payload', () => {
     const payload = buildReviewPayload([ssrf, nit], { securityOnly: true });
     expect(payload.comments).toHaveLength(1);
     expect(payload.comments[0].path).toBe('app/views.py');
+  });
+
+  it('routes findings outside the diff into the summary instead of inline comments', () => {
+    // Only line 71 is valid in the diff for app/views.py; nit at util.py:10 is not in the diff.
+    const validLines = new Map([['app/views.py', new Set([68, 69, 70, 71])]]);
+    const payload = buildReviewPayload([ssrf, nit], { validLines });
+    expect(payload.comments).toHaveLength(1); // only the ssrf finding is inline-able
+    expect(payload.comments[0].path).toBe('app/views.py');
+    expect(payload.body).toContain('Additional findings (outside the diff)');
+    expect(payload.body).toContain('app/util.py:10');
+  });
+});
+
+describe('parseDiffValidLines', () => {
+  const diff = [
+    'diff --git a/app/views.py b/app/views.py',
+    '--- a/app/views.py',
+    '+++ b/app/views.py',
+    '@@ -10,3 +10,4 @@ def handler():',
+    ' context_line',
+    '+added_line_11',
+    '+added_line_12',
+    ' context_line_13',
+  ].join('\n');
+
+  it('marks added and context lines on the new side as commentable', () => {
+    const map = parseDiffValidLines(diff);
+    const lines = map.get('app/views.py')!;
+    expect(lines.has(10)).toBe(true); // context
+    expect(lines.has(11)).toBe(true); // added
+    expect(lines.has(12)).toBe(true); // added
+    expect(lines.has(13)).toBe(true); // context
+    expect(lines.has(99)).toBe(false);
+  });
+
+  it('does not count removed lines and ignores /dev/null', () => {
+    const d = ['--- a/x', '+++ /dev/null', '@@ -1,2 +0,0 @@', '-gone', '-gone2'].join('\n');
+    const map = parseDiffValidLines(d);
+    expect(map.size).toBe(0);
   });
 });
 
