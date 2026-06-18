@@ -230,7 +230,8 @@ runs Forge in its **own** CI with its **own** provider key. This is the per-org-
 
 1. Add your provider key as a repo/org **secret** (Settings → Secrets and variables → Actions),
    e.g. `VERTEX_SA_JSON`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`.
-2. Copy [`examples/forge-action.yml`](./examples/forge-action.yml) to `.github/workflows/forge.yml`:
+2. Copy [`examples/forge.yml`](./examples/forge.yml) to `.github/workflows/forge.yml` (full guide,
+   incl. acting as your own App bot like Claude: [`deploy/GITHUB_ACTIONS.md`](./deploy/GITHUB_ACTIONS.md)):
 
 ```yaml
 name: ShipIT Forge

@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Octokit } from '@octokit/rest';
+import { createAppAuth } from '@octokit/auth-app';
 import { createLLMClient } from './providers/index.js';
 import type { ProviderId } from './providers/types.js';
 import { defaultConfig } from './config.js';
@@ -25,6 +26,23 @@ async function main(): Promise<void> {
   if (!eventName || !eventPath) throw new Error('Not running in a GitHub Actions event context.');
 
   const payload = JSON.parse(await fs.readFile(eventPath, 'utf8'));
+  const [repoOwner, repoName] = (process.env.GITHUB_REPOSITORY || '/').split('/');
+
+  // If a GitHub App's credentials are provided, act AS the app (its bot identity +
+  // permissions, like Claude's app). Otherwise fall back to the workflow token.
+  const appId = process.env.APP_ID || process.env.INPUT_APP_ID;
+  const privateKey = (process.env.PRIVATE_KEY || process.env.INPUT_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  let effectiveToken = token;
+  if (appId && privateKey && repoOwner && repoName) {
+    try {
+      const appOctokit = new Octokit({ authStrategy: createAppAuth, auth: { appId, privateKey } });
+      const inst = await appOctokit.rest.apps.getRepoInstallation({ owner: repoOwner, repo: repoName });
+      const auth = (await appOctokit.auth({ type: 'installation', installationId: inst.data.id })) as { token: string };
+      effectiveToken = auth.token;
+    } catch (err) {
+      console.log(`App auth unavailable (${(err as Error).message}); using the workflow token.`);
+    }
+  }
 
   // If a Vertex service-account JSON is provided inline (secret), materialize it.
   const saJson = process.env.VERTEX_CREDENTIALS_JSON || process.env.INPUT_VERTEX_CREDENTIALS_JSON;
@@ -51,11 +69,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  const octokit = new Octokit({ auth: token }) as unknown as OctokitLike;
+  const octokit = new Octokit({ auth: effectiveToken }) as unknown as OctokitLike;
   const deps: HandlerDeps = {
     octokit,
     client: createLLMClient({ provider, model: config.model }),
-    token, // GITHUB_TOKEN can clone the repo over HTTPS
+    token: effectiveToken, // used to clone the repo over HTTPS
     log,
     testCommand: config.testCommand,
     sarifPath: config.sarifPath,

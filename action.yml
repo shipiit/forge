@@ -17,6 +17,12 @@ inputs:
   vertex-credentials-json:
     description: 'Vertex AI service-account JSON (paste from a secret). Optional.'
     required: false
+  app-id:
+    description: 'GitHub App ID — if set (with private-key), Forge acts as your App bot. Optional.'
+    required: false
+  private-key:
+    description: 'GitHub App private key (PEM). Optional; enables acting as the App.'
+    required: false
 
 runs:
   using: 'docker'
