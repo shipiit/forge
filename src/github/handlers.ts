@@ -181,6 +181,58 @@ export async function handlePrReview(
   }
 }
 
+/**
+ * Respond to an @mention on a PR by actually changing code: clone the PR head
+ * branch, let the agent edit + verify, then push a follow-up commit to that same
+ * branch and comment a summary. Falls back to a read-only reply if no change was
+ * produced. This is what lets reviewers say "@forge fix this" and get a commit.
+ */
+export async function handlePrFollowup(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; pullNumber: number; question: string },
+): Promise<void> {
+  const { octokit, client, token, log } = deps;
+  const pr = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
+  const headRef = pr.data.head.ref;
+
+  const ws = await cloneRepo({ owner: args.owner, repo: args.repo, ref: headRef }, token);
+  try {
+    const repoMap = await buildRepoMap(ws.dir);
+    const result = await runAgent({
+      client,
+      system: mentionSystemPrompt(),
+      initialContent: [
+        { type: 'text', text: repoMap },
+        { type: 'text', text: `You are working on the branch of PR #${args.pullNumber}. Request:\n\n${args.question}\n\nIf code changes are needed, make them and verify with tests.` },
+      ],
+      tools: editToolset({ testCommand: deps.testCommand }),
+      limits: { maxIterations: MAX_ITER, maxOutputTokens: 8192 },
+      cwd: ws.dir,
+      onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+    });
+
+    const committed = await commitAll(ws, `forge: ${args.question}`.slice(0, 200) + `\n\n${result.finalText}`.slice(0, 3000));
+    if (committed) {
+      await pushBranch(ws, headRef);
+      await octokit.rest.issues.createComment({
+        owner: args.owner,
+        repo: args.repo,
+        issue_number: args.pullNumber,
+        body: `🔧 ${DISPLAY} pushed a follow-up commit to \`${headRef}\`.\n\n${result.finalText}`,
+      });
+    } else {
+      await octokit.rest.issues.createComment({
+        owner: args.owner,
+        repo: args.repo,
+        issue_number: args.pullNumber,
+        body: result.finalText || `${DISPLAY} reviewed the request but made no code change.`,
+      });
+    }
+  } finally {
+    await ws.cleanup();
+  }
+}
+
 /** Respond to an @mention with a contextual reply (read-only). */
 export async function handleMention(
   deps: HandlerDeps,

@@ -1,7 +1,7 @@
 import type { Probot, Context } from 'probot';
 import { createLLMClient } from './providers/index.js';
 import type { ProviderId } from './providers/types.js';
-import { handleIssueFix, handlePrReview, handleMention, type HandlerDeps } from './github/handlers.js';
+import { handleIssueFix, handlePrReview, handleMention, handlePrFollowup, type HandlerDeps } from './github/handlers.js';
 import type { OctokitLike } from './github/pr.js';
 import { redactSecrets } from './util/resilience.js';
 import { mergeConfig, defaultConfig, type ForgeConfig } from './config.js';
@@ -116,12 +116,29 @@ export default function app(probot: Probot): void {
       return;
     }
     if (body.toLowerCase().includes(MENTION)) {
-      const question = body.replace(new RegExp(MENTION, 'ig'), '').trim();
-      await handleMention(await deps(context, config), {
-        ...base,
-        issueNumber: issue.number,
-        question: question || 'Please help with this thread.',
-      });
+      const question = body.replace(new RegExp(MENTION, 'ig'), '').trim() || 'Please help with this thread.';
+      const d = await deps(context, config);
+      if (isPr) {
+        // On a PR, the agent can push a follow-up commit to the PR branch.
+        await handlePrFollowup(d, { owner: base.owner, repo: base.repo, pullNumber: issue.number, question });
+      } else {
+        await handleMention(d, { ...base, issueNumber: issue.number, question });
+      }
     }
+  });
+
+  // --- @mention inside a PR review-comment thread → follow-up commit ---
+  probot.on('pull_request_review_comment.created', async (context) => {
+    const config = await loadConfig(context);
+    const body = (context.payload.comment.body || '').trim();
+    if (!body.toLowerCase().includes(MENTION)) return;
+    const { repository, pull_request } = context.payload;
+    const question = body.replace(new RegExp(MENTION, 'ig'), '').trim() || 'Please address this comment.';
+    await handlePrFollowup(await deps(context, config), {
+      owner: repository.owner.login,
+      repo: repository.name,
+      pullNumber: pull_request.number,
+      question,
+    });
   });
 }

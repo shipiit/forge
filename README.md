@@ -36,7 +36,7 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 | 🔍 | **Review a PR** — inline comments + summary verdict, quality **and** security lenses | Open a PR, or comment `/review` |
 | 🛡️ | **Security review** — flags SSRF, injection, secrets, authz… with **severity** + a **suggested-fix** block | Auto on PRs, or comment `/security` |
 | 👋 | **Invite as a reviewer** — request `@shipit-forge` on any PR and it reviews on demand | Add it as a PR reviewer |
-| 💬 | **Answer @mentions** — explains code or proposes changes in context | Comment `@shipit-forge <ask>` |
+| 💬 | **Answer @mentions** — explains code on issues; on a PR it can **push a follow-up commit** to the branch | Comment `@shipit-forge <ask>` |
 | 🖼️ | **Reads screenshots** — pulls images out of issue/PR bodies and feeds them to vision models | Automatic |
 
 ---
@@ -204,8 +204,10 @@ typecheck + tests + build on every push.
 - [x] 4 provider adapters + vision
 - [x] GitHub App: issue→PR, PR review, security lens, @mentions
 - [x] Review line-safety, `.github/agent.yml`, secret redaction, CI
-- [ ] Live provider smoke run + recorded integration tests
-- [ ] Follow-up commits when @mentioned on a PR
+- [x] Live provider smoke run (verified on Vertex Gemini 2.5 Pro)
+- [x] Follow-up commits when @mentioned on a PR
+- [x] Secure `forge setup` wizard (paste/point-to credentials, gitignored)
+- [ ] Recorded handler integration tests (mocked Octokit)
 - [ ] CodeQL/SARIF ingestion · multi-pass self-review · sub-agents
 - [ ] npm package + GitHub Marketplace listing
 
