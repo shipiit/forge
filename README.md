@@ -63,11 +63,6 @@ issue/PR event → agent loop (LLM + tools over a cloned repo) → verify (tests
 - **Agent loop** (`src/agent/loop.ts`) drives chat → tool calls → results → repeat, with iteration
   and token limits.
 
-## Design docs
-
-- Spec: [`docs/superpowers/specs/2026-06-18-github-coding-agent-design.md`](docs/superpowers/specs/2026-06-18-github-coding-agent-design.md)
-- Plan: [`docs/superpowers/plans/2026-06-18-shipit-forge-slice1-engine-cli.md`](docs/superpowers/plans/2026-06-18-shipit-forge-slice1-engine-cli.md)
-
 ## License
 
 MIT © Rahul Raj
