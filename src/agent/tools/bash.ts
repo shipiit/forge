@@ -38,28 +38,48 @@ export async function runCommand(
   }
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  // Run in its own process group (detached) so we can kill the whole tree on
+  // timeout. execa's built-in timeout only signals the shell; a grandchild like
+  // `sleep` would survive and keep the output pipe open, hanging the call. We
+  // manage the timeout ourselves and SIGKILL the negative pid (the group).
+  const subprocess = execa(command, {
+    cwd: ctx.cwd,
+    shell: true,
+    reject: false,
+    detached: true,
+    maxBuffer: 10 * 1024 * 1024,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  });
+
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    try {
+      if (subprocess.pid) process.kill(-subprocess.pid, 'SIGKILL');
+    } catch {
+      subprocess.kill('SIGKILL');
+    }
+  }, timeoutMs);
+
   try {
-    const result = await execa(command, {
-      cwd: ctx.cwd,
-      shell: true,
-      timeout: timeoutMs,
-      reject: false,
-      maxBuffer: 10 * 1024 * 1024,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    });
-    const { stdout, stderr, exitCode } = result;
-    if (result.timedOut) {
+    const result = await subprocess;
+    if (timedOut) {
       return [{ type: 'tool_result', toolCallId: '', content: `Command timed out after ${timeoutMs}ms: ${command}`, isError: true }];
     }
+    const { stdout, stderr, exitCode } = result;
     let body = [stdout, stderr].filter(Boolean).join('\n');
     if (body.length > MAX_OUTPUT_CHARS) {
       body = body.slice(0, MAX_OUTPUT_CHARS) + `\n... (output truncated at ${MAX_OUTPUT_CHARS} chars)`;
     }
     return textPart(`exit_code: ${exitCode}\n${body}`);
   } catch (err) {
-    const e = err as Error & { timedOut?: boolean };
-    const reason = e.timedOut ? `timed out after ${opts.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms` : e.message;
-    return [{ type: 'tool_result', toolCallId: '', content: `Command failed: ${reason}`, isError: true }];
+    if (timedOut) {
+      return [{ type: 'tool_result', toolCallId: '', content: `Command timed out after ${timeoutMs}ms: ${command}`, isError: true }];
+    }
+    return [{ type: 'tool_result', toolCallId: '', content: `Command failed: ${(err as Error).message}`, isError: true }];
+  } finally {
+    clearTimeout(timer);
   }
 }
 
