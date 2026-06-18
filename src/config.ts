@@ -14,6 +14,8 @@ export interface ForgeConfig {
   reviewDepth: 'light' | 'standard' | 'deep';
   /** Globs to ignore when reviewing/searching. */
   ignorePaths: string[];
+  /** Optional path (in the repo) to a SARIF file to ingest during review. */
+  sarifPath?: string;
 }
 
 /** Defaults, seeded from environment variables (so ops can set org-wide defaults). */
@@ -26,6 +28,7 @@ export function defaultConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig
     testCommand: env.FORGE_TEST_COMMAND || undefined,
     reviewDepth: (env.FORGE_REVIEW_DEPTH as ForgeConfig['reviewDepth']) || 'standard',
     ignorePaths: [],
+    sarifPath: env.FORGE_SARIF_PATH || undefined,
   };
 }
 
@@ -47,5 +50,6 @@ export function mergeConfig(raw: unknown, base: ForgeConfig = defaultConfig()): 
     testCommand: typeof r.test_command === 'string' ? r.test_command : base.testCommand,
     reviewDepth: enumOr(r.review_depth, ['light', 'standard', 'deep'] as const, base.reviewDepth),
     ignorePaths: Array.isArray(r.ignore_paths) ? r.ignore_paths.filter((p): p is string => typeof p === 'string') : base.ignorePaths,
+    sarifPath: typeof r.sarif_path === 'string' ? r.sarif_path : base.sarifPath,
   };
 }

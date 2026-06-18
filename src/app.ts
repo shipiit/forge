@@ -28,6 +28,7 @@ async function deps(context: Context, config: ForgeConfig): Promise<HandlerDeps>
     token: auth.token,
     log: (msg: string) => context.log.info(redactSecrets(msg)),
     testCommand: config.testCommand,
+    sarifPath: config.sarifPath,
   };
 }
 

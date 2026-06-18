@@ -1,3 +1,5 @@
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import type { LLMClient } from '../providers/types.js';
 import { runAgent } from '../agent/loop.js';
 import { editToolset, reviewToolset } from '../agent/tools/registry.js';
@@ -7,6 +9,7 @@ import { runCommand } from '../agent/tools/bash.js';
 import { buildRepoMap } from '../agent/repomap.js';
 import { buildIssueContent, buildReviewContent, type CommentLike } from './context.js';
 import { buildReviewPayload, parseFindings, parseDiffValidLines } from './review.js';
+import { parseSarif } from './sarif.js';
 import { realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
   composeFixPrBody,
@@ -27,6 +30,8 @@ export interface HandlerDeps {
   testCommand?: string;
   /** Workspace operations; defaults to real git. Overridden in tests. */
   workspace?: WorkspacePort;
+  /** Optional path (in the repo) to a SARIF file to ingest during review. */
+  sarifPath?: string;
 }
 
 /** Fix an issue end-to-end: clone → investigate/edit → verify → open PR → comment. */
@@ -163,6 +168,19 @@ export async function handlePrReview(
     });
 
     const findings = parseFindings(result.finalText);
+
+    // Optionally merge static-analysis (SARIF) findings, e.g. from CodeQL.
+    if (deps.sarifPath) {
+      try {
+        const sarifText = await fs.readFile(path.join(ws.dir, deps.sarifPath), 'utf8');
+        const sarifFindings = parseSarif(sarifText);
+        findings.push(...sarifFindings);
+        log(`ingested ${sarifFindings.length} SARIF finding(s) from ${deps.sarifPath}`);
+      } catch (err) {
+        log(`SARIF ingest skipped: ${(err as Error).message}`);
+      }
+    }
+
     const validLines = parseDiffValidLines(diff);
     const payload = buildReviewPayload(findings, { displayName: DISPLAY, securityOnly: args.securityOnly, validLines });
     await octokit.rest.pulls.createReview({

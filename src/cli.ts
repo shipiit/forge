@@ -7,6 +7,7 @@ import { runAgent } from './agent/loop.js';
 import { editToolset } from './agent/tools/registry.js';
 import { fixSystemPrompt } from './agent/prompts.js';
 import { runSetup } from './setup.js';
+import { estimateCost, formatCost } from './util/cost.js';
 
 const program = new Command();
 program
@@ -51,7 +52,9 @@ program
     });
 
     console.log(`\n💬 ${result.finalText}`);
+    const cost = estimateCost(result.usage, opts.model || client.id);
     console.log(`\n📊 ${result.iterations} iterations, stopped by: ${result.stoppedBy}`);
+    console.log(`💰 ${formatCost(cost)}`);
 
     // Show what changed in the repo (including new/untracked files).
     const { stdout } = await execa('git', ['status', '--short'], { cwd: opts.repo, reject: false });
