@@ -5,7 +5,7 @@ import { runAgent } from '../agent/loop.js';
 import { editToolset, reviewToolset } from '../agent/tools/registry.js';
 import { orchestratorToolset } from '../agent/subagent.js';
 import { fixSystemPrompt, reviewSystemPrompt, mentionSystemPrompt, analyzeSystemPrompt } from '../agent/prompts.js';
-import { detectTestCommand } from '../agent/tools/tests.js';
+import { detectTestCommand, detectInstallCommand } from '../agent/tools/tests.js';
 import { runCommand } from '../agent/tools/bash.js';
 import { buildRepoMap } from '../agent/repomap.js';
 import { buildIssueContent, buildReviewContent, type CommentLike } from './context.js';
@@ -193,6 +193,14 @@ async function doIssueFix(
   const ws = await wsOps.clone(repoRef, token);
   try {
     await wsOps.createBranch(ws, branch);
+
+    // Install dependencies once (best-effort) so the agent's run_tests works in a fresh clone.
+    const installCmd = await detectInstallCommand(ws.dir);
+    if (installCmd) {
+      log(`installing dependencies: ${installCmd}`);
+      await runCommand(installCmd, { cwd: ws.dir, supportsVision: client.supportsVision }, { timeoutMs: 300_000 });
+    }
+
     const repoMap = await buildRepoMap(ws.dir);
     const initialContent = await buildIssueContent(
       { number: args.issueNumber, title: args.issueTitle, body: args.issueBody },
@@ -313,6 +321,17 @@ async function doPrReview(
   args: { owner: string; repo: string; pullNumber: number; securityOnly?: boolean },
 ): Promise<void> {
   const { octokit, client, token, log } = deps;
+
+  // Acknowledge first (like the issue/fix flows), then post the formal review and
+  // update this comment with a one-line verdict.
+  const scope = args.securityOnly ? 'security review' : 'code + security review';
+  const ack = await octokit.rest.issues.createComment({
+    owner: args.owner,
+    repo: args.repo,
+    issue_number: args.pullNumber,
+    body: `👀 **${DISPLAY}** is running a ${scope} on this PR… I'll post my review shortly.`,
+  });
+
   const prRes = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
   const diff = await fetchPrDiff(octokit, args.owner, args.repo, args.pullNumber);
 
@@ -363,6 +382,16 @@ async function doPrReview(
       event: payload.event,
       body: payload.body,
       comments: payload.comments,
+    });
+
+    // Update the ack comment with a one-line verdict pointing to the review.
+    const verdict = payload.event === 'REQUEST_CHANGES' ? '🔴 requested changes' : '💬 commented (no blocking issues)';
+    const sec = findings.filter((f) => f.lens === 'security').length;
+    await octokit.rest.issues.updateComment({
+      owner: args.owner,
+      repo: args.repo,
+      comment_id: ack.data.id,
+      body: `### 🔍 ${DISPLAY} reviewed this PR — ${verdict}\n\n${findings.length} finding(s) (${sec} security). See the review above for inline details and suggested fixes.`,
     });
   } finally {
     await ws.cleanup();

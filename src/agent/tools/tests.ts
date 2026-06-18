@@ -42,6 +42,22 @@ export async function detectTestCommand(cwd: string, override?: string): Promise
   return null;
 }
 
+/**
+ * Detect the command that installs the project's dependencies, so tests can
+ * actually run in a fresh clone (which has no node_modules / venv). Returns null
+ * when nothing is detected.
+ */
+export async function detectInstallCommand(cwd: string): Promise<string | null> {
+  if (await exists(path.join(cwd, 'pnpm-lock.yaml'))) return 'pnpm install --frozen-lockfile';
+  if (await exists(path.join(cwd, 'yarn.lock'))) return 'yarn install --frozen-lockfile';
+  if (await exists(path.join(cwd, 'package-lock.json'))) return 'npm ci';
+  if (await exists(path.join(cwd, 'package.json'))) return 'npm install';
+  if (await exists(path.join(cwd, 'requirements.txt'))) return 'pip install -r requirements.txt';
+  if (await exists(path.join(cwd, 'pyproject.toml'))) return 'pip install -e . || pip install .';
+  if (await exists(path.join(cwd, 'go.mod'))) return 'go mod download';
+  return null;
+}
+
 export function makeRunTestsTool(override?: string): Tool {
   return {
     spec: {
