@@ -38,8 +38,26 @@ export const search: Tool = {
 
     const useRg = await hasRipgrep();
     const [cmd, cmdArgs] = useRg
-      ? (['rg', ['--line-number', '--no-heading', '--color=never', pattern, '.']] as const)
-      : (['grep', ['-rnI', '--', pattern, '.']] as const);
+      ? ([
+          'rg',
+          [
+            '--line-number',
+            '--no-heading',
+            '--color=never',
+            '--glob',
+            '!.git',
+            '--glob',
+            '!node_modules',
+            '--glob',
+            '!dist',
+            pattern,
+            '.',
+          ],
+        ] as const)
+      : ([
+          'grep',
+          ['-rnI', '--exclude-dir=.git', '--exclude-dir=node_modules', '--exclude-dir=dist', '--', pattern, '.'],
+        ] as const);
 
     try {
       const { stdout } = await execa(cmd, [...cmdArgs], {
