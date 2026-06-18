@@ -67,3 +67,17 @@ export async function commitAll(ws: Workspace, message: string): Promise<boolean
 export async function pushBranch(ws: Workspace, branch: string): Promise<void> {
   await ws.git.push(['-u', 'origin', branch]);
 }
+
+/**
+ * The set of workspace operations the handlers depend on. Bundling them behind
+ * an interface lets tests inject a fake (no real git/network) while production
+ * uses {@link realWorkspace}.
+ */
+export interface WorkspacePort {
+  clone(repoRef: RepoRef, token: string): Promise<Workspace>;
+  createBranch(ws: Workspace, branch: string): Promise<void>;
+  commitAll(ws: Workspace, message: string): Promise<boolean>;
+  pushBranch(ws: Workspace, branch: string): Promise<void>;
+}
+
+export const realWorkspace: WorkspacePort = { clone: cloneRepo, createBranch, commitAll, pushBranch };

@@ -7,13 +7,7 @@ import { runCommand } from '../agent/tools/bash.js';
 import { buildRepoMap } from '../agent/repomap.js';
 import { buildIssueContent, buildReviewContent, type CommentLike } from './context.js';
 import { buildReviewPayload, parseFindings, parseDiffValidLines } from './review.js';
-import {
-  cloneRepo,
-  createBranch,
-  commitAll,
-  pushBranch,
-  type RepoRef,
-} from './workspace.js';
+import { realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
   composeFixPrBody,
   fetchPrDiff,
@@ -31,6 +25,8 @@ export interface HandlerDeps {
   log: (msg: string) => void;
   /** Optional explicit test command override (from .github/agent.yml). */
   testCommand?: string;
+  /** Workspace operations; defaults to real git. Overridden in tests. */
+  workspace?: WorkspacePort;
 }
 
 /** Fix an issue end-to-end: clone → investigate/edit → verify → open PR → comment. */
@@ -39,6 +35,7 @@ export async function handleIssueFix(
   args: { owner: string; repo: string; defaultBranch: string; issueNumber: number; issueTitle: string; issueBody: string | null },
 ): Promise<void> {
   const { octokit, client, token, log } = deps;
+  const wsOps = deps.workspace ?? realWorkspace;
   const repoRef: RepoRef = { owner: args.owner, repo: args.repo, ref: args.defaultBranch };
   const branch = `forge/issue-${args.issueNumber}`;
 
@@ -67,9 +64,9 @@ export async function handleIssueFix(
     .filter((c) => c.body && !isFromForge(c.user?.login))
     .map((c) => ({ user: c.user?.login ?? 'user', body: c.body! }));
 
-  const ws = await cloneRepo(repoRef, token);
+  const ws = await wsOps.clone(repoRef, token);
   try {
-    await createBranch(ws, branch);
+    await wsOps.createBranch(ws, branch);
     const repoMap = await buildRepoMap(ws.dir);
     const initialContent = await buildIssueContent(
       { number: args.issueNumber, title: args.issueTitle, body: args.issueBody },
@@ -99,7 +96,7 @@ export async function handleIssueFix(
       testsPassed = /exit_code: 0/.test(testOutput);
     }
 
-    const committed = await commitAll(ws, `fix: address issue #${args.issueNumber}\n\n${result.finalText}`.slice(0, 4000));
+    const committed = await wsOps.commitAll(ws, `fix: address issue #${args.issueNumber}\n\n${result.finalText}`.slice(0, 4000));
     if (!committed) {
       await octokit.rest.issues.createComment({
         owner: args.owner,
@@ -109,7 +106,7 @@ export async function handleIssueFix(
       });
       return;
     }
-    await pushBranch(ws, branch);
+    await wsOps.pushBranch(ws, branch);
 
     const pr = await openPullRequest(octokit, {
       owner: args.owner,
@@ -146,7 +143,7 @@ export async function handlePrReview(
     .filter((c) => c.body && !isFromForge(c.user?.login))
     .map((c) => ({ user: c.user?.login ?? 'user', body: c.body! }));
 
-  const ws = await cloneRepo({ owner: args.owner, repo: args.repo, ref: prRes.data.head.ref }, token);
+  const ws = await (deps.workspace ?? realWorkspace).clone({ owner: args.owner, repo: args.repo, ref: prRes.data.head.ref }, token);
   try {
     const initialContent = await buildReviewContent(
       { number: args.pullNumber, title: prRes.data.title, body: prRes.data.body },
@@ -195,7 +192,8 @@ export async function handlePrFollowup(
   const pr = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
   const headRef = pr.data.head.ref;
 
-  const ws = await cloneRepo({ owner: args.owner, repo: args.repo, ref: headRef }, token);
+  const wsOps = deps.workspace ?? realWorkspace;
+  const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: headRef }, token);
   try {
     const repoMap = await buildRepoMap(ws.dir);
     const result = await runAgent({
@@ -211,9 +209,9 @@ export async function handlePrFollowup(
       onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
     });
 
-    const committed = await commitAll(ws, `forge: ${args.question}`.slice(0, 200) + `\n\n${result.finalText}`.slice(0, 3000));
+    const committed = await wsOps.commitAll(ws, `forge: ${args.question}`.slice(0, 200) + `\n\n${result.finalText}`.slice(0, 3000));
     if (committed) {
-      await pushBranch(ws, headRef);
+      await wsOps.pushBranch(ws, headRef);
       await octokit.rest.issues.createComment({
         owner: args.owner,
         repo: args.repo,
@@ -239,7 +237,7 @@ export async function handleMention(
   args: { owner: string; repo: string; issueNumber: number; question: string; defaultBranch: string },
 ): Promise<void> {
   const { octokit, client, token, log } = deps;
-  const ws = await cloneRepo({ owner: args.owner, repo: args.repo, ref: args.defaultBranch }, token);
+  const ws = await (deps.workspace ?? realWorkspace).clone({ owner: args.owner, repo: args.repo, ref: args.defaultBranch }, token);
   try {
     const repoMap = await buildRepoMap(ws.dir);
     const result = await runAgent({
