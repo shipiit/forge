@@ -14,7 +14,8 @@ describe('mapAlertsToFindings', () => {
     const [f] = mapAlertsToFindings([alert]);
     expect(f).toMatchObject({ lens: 'security', severity: 'high', file: 'package.json', category: 'Dependabot: CVE-2021-23337' });
     expect(f.title).toContain('lodash');
-    expect(f.body).toContain('4.17.21');
+    // version dots are markdown-escaped (renders as 4.17.21 on GitHub)
+    expect(f.body).toContain('4\\.17\\.21');
   });
 
   it('skips non-open alerts and defaults unknown severity to medium', () => {
