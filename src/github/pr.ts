@@ -10,7 +10,8 @@ export interface OctokitLike {
       listReviewComments?(params: Record<string, unknown>): Promise<unknown>;
     };
     issues: {
-      createComment(params: Record<string, unknown>): Promise<unknown>;
+      createComment(params: Record<string, unknown>): Promise<{ data: { id: number } }>;
+      updateComment(params: Record<string, unknown>): Promise<unknown>;
       listComments(params: Record<string, unknown>): Promise<{ data: Array<{ user: { login: string } | null; body?: string }> }>;
     };
   };

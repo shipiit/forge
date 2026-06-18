@@ -39,11 +39,13 @@ function fakeWorkspace(seed: Record<string, string>): { port: WorkspacePort; pus
 
 /** A recording fake Octokit. */
 function fakeOctokit(overrides: Partial<Record<string, unknown>> = {}) {
-  const calls: { comments: any[]; reviews: any[]; prs: any[] } = { comments: [], reviews: [], prs: [] };
+  const calls: { comments: any[]; updates: any[]; reviews: any[]; prs: any[] } = { comments: [], updates: [], reviews: [], prs: [] };
+  let commentId = 0;
   const octokit = {
     rest: {
       issues: {
-        async createComment(p: any) { calls.comments.push(p); },
+        async createComment(p: any) { calls.comments.push(p); return { data: { id: ++commentId } }; },
+        async updateComment(p: any) { calls.updates.push(p); },
         async listComments() { return { data: [] }; },
       },
       pulls: {
@@ -83,9 +85,11 @@ describe('handleIssueFix (integration)', () => {
 
     await handleIssueFix(deps, { owner: 'o', repo: 'r', defaultBranch: 'main', issueNumber: 7, issueTitle: 'add is wrong', issueBody: 'subtracts instead of adds' });
 
-    // ONE rich comment (no separate progress comment)
+    // One ack comment, then edited in place with the result (no spam)
     expect(calls.comments.length).toBe(1);
-    expect(calls.comments[0].body).toMatch(/fix ready|What I found/i);
+    expect(calls.comments[0].body).toMatch(/working on a fix/i);
+    expect(calls.updates.length).toBe(1);
+    expect(calls.updates[0].body).toMatch(/fix ready|What I found/i);
     // PR opened with the right branch and base
     expect(calls.prs).toHaveLength(1);
     expect(calls.prs[0]).toMatchObject({ head: 'forge/issue-7', base: 'main' });

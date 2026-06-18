@@ -1,0 +1,28 @@
+# Render blueprint — one-click deploy of the ShipIT Forge webhook server.
+# In Render: New → Blueprint → connect this repo. Then set the secret env vars below
+# (marked sync:false) in the dashboard, and point your GitHub App's Webhook URL at
+#   https://<your-service>.onrender.com/api/github/webhooks
+services:
+  - type: web
+    name: shipit-forge
+    runtime: docker
+    plan: starter
+    healthCheckPath: /
+    envVars:
+      - key: LLM_PROVIDER
+        value: vertex
+      - key: VERTEX_LOCATION
+        value: us-central1
+      - key: VERTEX_MODEL
+        value: gemini-2.5-pro
+      # --- set these in the Render dashboard (do not commit secrets) ---
+      - key: APP_ID
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: PRIVATE_KEY            # paste the full .pem contents
+        sync: false
+      - key: VERTEX_PROJECT
+        sync: false
+      - key: VERTEX_CREDENTIALS_JSON # paste the service-account JSON (or use another provider's key)
+        sync: false

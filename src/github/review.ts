@@ -35,7 +35,8 @@ export interface ReviewComment {
 }
 
 export interface ReviewPayload {
-  event: 'REQUEST_CHANGES' | 'COMMENT' | 'APPROVE';
+  // ShipIT Forge NEVER approves a PR — only comments or requests changes.
+  event: 'REQUEST_CHANGES' | 'COMMENT';
   body: string;
   comments: ReviewComment[];
 }
@@ -53,7 +54,15 @@ export function renderFindingBody(f: ReviewFinding): string {
 /** Build a summary grouped by severity. */
 export function renderSummary(findings: ReviewFinding[], displayName: string): string {
   if (findings.length === 0) {
-    return `### ${displayName} review\n\n✅ No issues found. Looks good!`;
+    return (
+      `### ${displayName} review\n\n` +
+      `✅ **No blocking issues found.** I reviewed the changed files and ran:\n` +
+      `- 🛡️ **Security checks** — SSRF, injection (SQL/command/template), broken auth/authz, ` +
+      `hardcoded secrets, unsafe deserialization, path traversal, weak crypto.\n` +
+      `- 🔧 **Code review** — correctness, error handling, missing tests, clarity.\n\n` +
+      `Nothing to flag. _This is a comment, not an approval — ${displayName} never approves PRs; ` +
+      `a human reviewer should approve and merge._`
+    );
   }
   const counts = findings.reduce<Record<string, number>>((acc, f) => {
     acc[f.severity] = (acc[f.severity] ?? 0) + 1;
@@ -72,9 +81,11 @@ export function renderSummary(findings: ReviewFinding[], displayName: string): s
   );
 }
 
-/** Choose the review verdict: request changes if any High/Critical finding exists. */
+/**
+ * Choose the review verdict. ShipIT Forge never approves — it requests changes when
+ * there's a High/Critical finding, otherwise comments. Approval is always left to a human.
+ */
 export function chooseEvent(findings: ReviewFinding[]): ReviewPayload['event'] {
-  if (findings.length === 0) return 'APPROVE';
   const hasBlocker = findings.some((f) => SEVERITY_RANK[f.severity] >= SEVERITY_RANK.high);
   return hasBlocker ? 'REQUEST_CHANGES' : 'COMMENT';
 }

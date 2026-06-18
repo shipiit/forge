@@ -50,6 +50,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   const messages: Msg[] = [{ role: 'user', content: initialContent }];
   const usage = { inputTokens: 0, outputTokens: 0 };
   let finalText = '';
+  let nudged = false; // ensure the model actually writes a final answer if it ends empty
 
   for (let n = 1; n <= limits.maxIterations; n++) {
     onEvent?.({ type: 'iteration', n });
@@ -70,6 +71,16 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     }
 
     if (res.toolCalls.length === 0 || res.stopReason === 'end') {
+      // Self-correct: the model tried to finish but produced no text. Nudge it once
+      // to actually write the answer instead of returning an empty result.
+      if (!finalText.trim() && !nudged) {
+        nudged = true;
+        messages.push({
+          role: 'user',
+          content: [{ type: 'text', text: 'You have not written your final answer yet. Write it now, in full, as instructed.' }],
+        });
+        continue;
+      }
       return { finalText, iterations: n, stoppedBy: 'end', messages, usage };
     }
 

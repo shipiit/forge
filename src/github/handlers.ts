@@ -37,9 +37,22 @@ export interface HandlerDeps {
   sarifPath?: string;
 }
 
-/** Fix an issue end-to-end: clone → investigate/edit → verify → open PR → comment. */
-/** Prevent duplicate concurrent runs for the same issue (multiple triggers + smee re-delivery). */
+/** Prevent duplicate concurrent runs for the same target (multiple triggers + smee re-delivery + spam). */
 const inFlight = new Set<string>();
+
+/** Run `fn` only if no run with the same key is in flight; otherwise skip (dedup). */
+async function withLock(key: string, log: (m: string) => void, fn: () => Promise<void>): Promise<void> {
+  if (inFlight.has(key)) {
+    log(`Duplicate trigger (${key}); already running, skipping.`);
+    return;
+  }
+  inFlight.add(key);
+  try {
+    await fn();
+  } finally {
+    inFlight.delete(key);
+  }
+}
 
 /** Collapse repeated lines and cap length so a rambling model summary stays readable. */
 export function cleanSummary(text: string, maxChars = 1200): string {
@@ -54,7 +67,7 @@ export function cleanSummary(text: string, maxChars = 1200): string {
   }
   let s = out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
   if (s.length > maxChars) s = s.slice(0, maxChars).trimEnd() + ' …';
-  return s || 'Applied a fix.';
+  return s || '_(no summary produced)_';
 }
 
 /**
@@ -80,6 +93,14 @@ export async function handleIssueAnalyze(
       .filter((c) => c.body && !isFromForge(c.user?.login))
       .map((c) => ({ user: c.user?.login ?? 'user', body: c.body! }));
 
+    // Acknowledge immediately, then edit THIS comment in place with the result (no spam).
+    const ack = await octokit.rest.issues.createComment({
+      owner: args.owner,
+      repo: args.repo,
+      issue_number: args.issueNumber,
+      body: `👀 **${DISPLAY}** is analyzing issue #${args.issueNumber}… I'll update this comment with my findings shortly.`,
+    });
+
     const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: args.defaultBranch }, token);
     try {
       const repoMap = await buildRepoMap(ws.dir);
@@ -101,10 +122,10 @@ export async function handleIssueAnalyze(
         onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
       });
 
-      await octokit.rest.issues.createComment({
+      await octokit.rest.issues.updateComment({
         owner: args.owner,
         repo: args.repo,
-        issue_number: args.issueNumber,
+        comment_id: ack.data.id,
         body:
           `### 🔍 ${DISPLAY} — analysis of #${args.issueNumber}\n\n` +
           `${cleanSummary(result.finalText, 4000)}\n\n` +
@@ -156,6 +177,14 @@ async function doIssueFix(
     return;
   }
 
+  // Acknowledge immediately, then edit THIS comment in place with the result.
+  const ack = await octokit.rest.issues.createComment({
+    owner: args.owner,
+    repo: args.repo,
+    issue_number: args.issueNumber,
+    body: `🛠️ **${DISPLAY}** is working on a fix for #${args.issueNumber} — investigating, editing, running tests, and opening a PR. I'll update this comment when done.`,
+  });
+
   const commentsRes = await octokit.rest.issues.listComments({ owner: args.owner, repo: args.repo, issue_number: args.issueNumber });
   const comments: CommentLike[] = commentsRes.data
     .filter((c) => c.body && !isFromForge(c.user?.login))
@@ -198,10 +227,10 @@ async function doIssueFix(
     const summary = cleanSummary(result.finalText);
     const committed = await wsOps.commitAll(ws, `fix: ${args.issueTitle}\n\n${summary}`.slice(0, 2000));
     if (!committed) {
-      await octokit.rest.issues.createComment({
+      await octokit.rest.issues.updateComment({
         owner: args.owner,
         repo: args.repo,
-        issue_number: args.issueNumber,
+        comment_id: ack.data.id,
         body: `### 🤔 ${DISPLAY} — no change made\n\n${summary}`,
       });
       return;
@@ -253,11 +282,11 @@ async function doIssueFix(
       draft: testsPassed === false || selfBlocker,
     });
 
-    // ONE rich comment on the issue — root cause + reasoning, files, verification, PR link.
-    await octokit.rest.issues.createComment({
+    // Update the ack comment in place — root cause + reasoning, files, verification, PR link.
+    await octokit.rest.issues.updateComment({
       owner: args.owner,
       repo: args.repo,
-      issue_number: args.issueNumber,
+      comment_id: ack.data.id,
       body:
         `### 🔧 ${DISPLAY} — fix ready in ${pr.url}\n\n` +
         `**What I found & changed**\n\n${summary}\n\n` +
@@ -272,7 +301,14 @@ async function doIssueFix(
 }
 
 /** Review a PR: clone head → analyze diff → post a review with inline findings. */
-export async function handlePrReview(
+export function handlePrReview(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; pullNumber: number; securityOnly?: boolean },
+): Promise<void> {
+  return withLock(`review:${args.owner}/${args.repo}#${args.pullNumber}`, deps.log, () => doPrReview(deps, args));
+}
+
+async function doPrReview(
   deps: HandlerDeps,
   args: { owner: string; repo: string; pullNumber: number; securityOnly?: boolean },
 ): Promise<void> {
@@ -339,7 +375,14 @@ export async function handlePrReview(
  * branch and comment a summary. Falls back to a read-only reply if no change was
  * produced. This is what lets reviewers say "@forge fix this" and get a commit.
  */
-export async function handlePrFollowup(
+export function handlePrFollowup(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; pullNumber: number; question: string },
+): Promise<void> {
+  return withLock(`followup:${args.owner}/${args.repo}#${args.pullNumber}`, deps.log, () => doPrFollowup(deps, args));
+}
+
+async function doPrFollowup(
   deps: HandlerDeps,
   args: { owner: string; repo: string; pullNumber: number; question: string },
 ): Promise<void> {
@@ -387,7 +430,14 @@ export async function handlePrFollowup(
 }
 
 /** Respond to an @mention with a contextual reply (read-only). */
-export async function handleMention(
+export function handleMention(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; issueNumber: number; question: string; defaultBranch: string },
+): Promise<void> {
+  return withLock(`mention:${args.owner}/${args.repo}#${args.issueNumber}`, deps.log, () => doMention(deps, args));
+}
+
+async function doMention(
   deps: HandlerDeps,
   args: { owner: string; repo: string; issueNumber: number; question: string; defaultBranch: string },
 ): Promise<void> {
