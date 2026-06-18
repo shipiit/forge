@@ -329,7 +329,8 @@ typecheck + tests + build on every push.
 - [x] Multi-pass self-review (agent critiques its own diff → draft PR on blockers)
 - [x] npm-publishable package (`files`, bin, `prepublishOnly`)
 - [x] GitHub Action distribution (per-org credentials, no server)
-- [ ] Sub-agents for very large tasks · GitHub Marketplace listing
+- [x] Sub-agents — orchestrator can delegate focused subtasks (depth-bounded)
+- [ ] GitHub Marketplace listing (needs your hosted App live first)
 
 ---
 

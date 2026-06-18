@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { LLMClient } from '../providers/types.js';
 import { runAgent } from '../agent/loop.js';
 import { editToolset, reviewToolset } from '../agent/tools/registry.js';
+import { orchestratorToolset } from '../agent/subagent.js';
 import { fixSystemPrompt, reviewSystemPrompt, mentionSystemPrompt } from '../agent/prompts.js';
 import { detectTestCommand } from '../agent/tools/tests.js';
 import { runCommand } from '../agent/tools/bash.js';
@@ -83,12 +84,14 @@ export async function handleIssueFix(
     );
     initialContent.unshift({ type: 'text', text: repoMap });
 
+    const fixLimits = { maxIterations: MAX_ITER, maxOutputTokens: 8192 };
     const result = await runAgent({
       client,
       system: fixSystemPrompt(),
       initialContent,
-      tools: editToolset({ testCommand: deps.testCommand }),
-      limits: { maxIterations: MAX_ITER, maxOutputTokens: 8192 },
+      // Orchestrator toolset: edit tools + spawn_subagent so big fixes can be split up.
+      tools: orchestratorToolset({ client, limits: fixLimits, depth: 0, maxDepth: 2, testCommand: deps.testCommand }),
+      limits: fixLimits,
       cwd: ws.dir,
       onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
     });
