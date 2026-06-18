@@ -6,15 +6,16 @@
 # already registered (you have APP_ID, WEBHOOK_SECRET, and the downloaded .pem key).
 #
 # Usage:
+#   PROJECT=your-gcp-project-id \
 #   APP_ID=123456 \
 #   WEBHOOK_SECRET=your-webhook-secret \
 #   PRIVATE_KEY_FILE=./shipit-forge.private-key.pem \
 #   ./deploy/cloudrun.sh
 #
-# Optional overrides: PROJECT, REGION, SERVICE, VERTEX_MODEL, RUNTIME_SA, LLM_PROVIDER.
+# Optional overrides: REGION, SERVICE, VERTEX_MODEL, RUNTIME_SA, LLM_PROVIDER.
 set -euo pipefail
 
-PROJECT="${PROJECT:-your-gcp-project-id}"
+PROJECT="${PROJECT:?Set PROJECT=your-gcp-project-id}"
 REGION="${REGION:-us-central1}"
 SERVICE="${SERVICE:-shipit-forge}"
 VERTEX_MODEL="${VERTEX_MODEL:-gemini-2.5-pro}"

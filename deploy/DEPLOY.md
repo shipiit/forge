@@ -6,7 +6,7 @@ guide is for the hosted App.
 
 ## Prerequisites
 - `gcloud` CLI installed and logged in: `gcloud auth login`
-- A GCP project (default in the script: `your-gcp-project-id`)
+- A GCP project (pass it as `PROJECT=your-gcp-project-id` to the script)
 - Node ≥ 20 to run the one-time registration locally
 
 ## Step 1 — Register the GitHub App (once, ever)

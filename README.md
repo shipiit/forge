@@ -164,7 +164,8 @@ the diff. *(This exact flow is verified working against Vertex AI Gemini 2.5 Pro
 Fastest path (Google Cloud Run, one command — see [`deploy/DEPLOY.md`](./deploy/DEPLOY.md)):
 
 ```bash
-APP_ID=… WEBHOOK_SECRET=… PRIVATE_KEY_FILE=./shipit-forge.private-key.pem ./deploy/cloudrun.sh
+PROJECT=your-gcp-project-id APP_ID=… WEBHOOK_SECRET=… \
+  PRIVATE_KEY_FILE=./shipit-forge.private-key.pem ./deploy/cloudrun.sh
 ```
 
 Or any host with Docker:
