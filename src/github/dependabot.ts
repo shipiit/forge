@@ -5,6 +5,11 @@ import type { OctokitLike } from './pr.js';
  * Map GitHub Dependabot alerts (live data from the GitHub Advisory Database) to
  * our normalized findings. Pure + testable.
  */
+/** Neutralize Markdown control chars so untrusted API text can't break the comment. */
+function md(s: unknown): string {
+  return String(s ?? '').replace(/[`*_~<>[\]|\\]/g, '\\$&').replace(/\r?\n/g, ' ');
+}
+
 export function mapAlertsToFindings(alerts: unknown[]): ReviewFinding[] {
   const out: ReviewFinding[] = [];
   for (const raw of alerts) {
@@ -25,13 +30,13 @@ export function mapAlertsToFindings(alerts: unknown[]): ReviewFinding[] {
       lens: 'security',
       severity,
       category: `Dependabot: ${id}`,
-      title: `Vulnerable dependency: ${pkg.name ?? 'unknown'}`,
+      title: `Vulnerable dependency: ${md(pkg.name) || 'unknown'}`,
       body:
-        `${adv.summary ?? 'Known vulnerability in a dependency.'}\n\n` +
-        `Package: \`${pkg.name ?? '?'}\` (${pkg.ecosystem ?? '?'}). ` +
-        `Affected: ${vuln?.vulnerable_version_range ?? '?'}. ` +
-        (patched ? `Fixed in **${patched}** — upgrade to it or later.` : 'No patched version yet.') +
-        (a?.html_url ? `\n\n${a.html_url}` : ''),
+        `${md(adv.summary) || 'Known vulnerability in a dependency.'}\n\n` +
+        `Package: \`${md(pkg.name) || '?'}\` (${md(pkg.ecosystem) || '?'}). ` +
+        `Affected: ${md(vuln?.vulnerable_version_range) || '?'}. ` +
+        (patched ? `Fixed in **${md(patched)}** — upgrade to it or later.` : 'No patched version yet.') +
+        (typeof a?.html_url === 'string' ? `\n\n${a.html_url}` : ''),
     });
   }
   return out;
