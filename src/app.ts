@@ -123,9 +123,13 @@ export default function app(probot: Probot): void {
     if (body.toLowerCase().includes(mentionHandle())) {
       const question = body.replace(new RegExp(mentionHandle(), 'ig'), '').trim() || 'Please help with this thread.';
       const d = await deps(context, config);
+      const wantsFix = /\b(fix|implement|patch|create (a )?pr|open (a )?pr|resolve)\b/i.test(question);
       if (isPr) {
         // On a PR, the agent can push a follow-up commit to the PR branch.
         await handlePrFollowup(d, { owner: base.owner, repo: base.repo, pullNumber: issue.number, question });
+      } else if (wantsFix) {
+        // "@forge fix this / create a PR" on an issue → implement + open a PR (idempotent).
+        await handleIssueFix(d, { ...base, issueNumber: issue.number, issueTitle: issue.title, issueBody: issue.body });
       } else {
         await handleMention(d, { ...base, issueNumber: issue.number, question });
       }

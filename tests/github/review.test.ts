@@ -44,7 +44,7 @@ describe('review payload', () => {
   it('chooses REQUEST_CHANGES when a high/critical finding exists', () => {
     expect(chooseEvent([ssrf, nit])).toBe('REQUEST_CHANGES');
     expect(chooseEvent([nit])).toBe('COMMENT');
-    expect(chooseEvent([])).toBe('APPROVE');
+    expect(chooseEvent([])).toBe('COMMENT'); // never APPROVE
   });
 
   it('builds inline comments at the right lines with multi-line ranges', () => {
