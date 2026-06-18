@@ -1,44 +1,63 @@
-# ShipIT Forge 🔨
+<div align="center">
 
-> An autonomous GitHub coding agent — like a teammate that fixes issues, opens PRs, and reviews
-> pull requests (including a GitHub Advanced Security–style security review). Multi-provider:
-> **Vertex AI Gemini, AWS Bedrock, OpenAI, or Anthropic**. Reads screenshots in issues/PRs (vision).
+<img src="./assets/banner.svg" alt="ShipIT Forge" width="100%" />
 
-ShipIT Forge installs into your organization as a GitHub App. When an issue is opened it
-investigates the repository like a developer, makes a fix on a branch, runs the tests, and opens a
-pull request. When a PR is opened — or Forge is invited as a reviewer — it posts inline review
-comments with severity and suggested fixes.
+<br/>
 
-## Status
+**An autonomous GitHub coding agent — like a teammate that fixes issues, opens PRs, and reviews pull requests (with a GitHub Advanced Security–style security pass).**
 
-Early, actively built. The **agent engine + local CLI** are working and tested today (no
-credentials required, via a built-in fake provider). All four real provider adapters are
-implemented. GitHub App / webhook wiring is the next slice.
+Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 
-| Capability | State |
-|---|---|
-| Agent loop (read/search/edit/bash/tests tools, sandboxed) | ✅ working, tested |
-| Multi-provider (Anthropic, Vertex Gemini, OpenAI, Bedrock) | ✅ adapters + tests |
-| Vision (images in issues/PRs, `read_image`) | ✅ in engine |
-| Local CLI `forge fix` | ✅ working |
-| GitHub App: issue→PR, PR review, @mentions | ✅ implemented |
-| Security-review lens (severity + suggested fix) | ✅ implemented |
-| Advanced tools (multi_edit, glob, git_history) | ✅ implemented |
+<br/>
 
-## Quick start (no credentials)
+[![CI](https://github.com/shipiit/forge/actions/workflows/ci.yml/badge.svg)](https://github.com/shipiit/forge/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22D3EE.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Tests](https://img.shields.io/badge/tests-76%20passing-FF8A3D.svg)](#testing)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-7C5CFF.svg)](#contributing)
+
+<br/>
+
+**Providers:**
+&nbsp;`Vertex AI Gemini`&nbsp;·&nbsp;`AWS Bedrock`&nbsp;·&nbsp;`OpenAI`&nbsp;·&nbsp;`Anthropic`
+
+[Quick start](#-quick-start-no-credentials) · [Deploy](#-deploy-as-a-github-app) · [How it works](#-how-it-works) · [Config](#-configuration) · [Roadmap](#-roadmap)
+
+</div>
+
+---
+
+## ✨ What it does
+
+| | Capability | How you trigger it |
+|---|---|---|
+| 🛠️ | **Fix an issue → open a PR** — investigates the repo, writes the fix on a branch, runs the tests, opens a PR that closes the issue | Label `agent-fix`, or comment `/fix` |
+| 🔍 | **Review a PR** — inline comments + summary verdict, quality **and** security lenses | Open a PR, or comment `/review` |
+| 🛡️ | **Security review** — flags SSRF, injection, secrets, authz… with **severity** + a **suggested-fix** block | Auto on PRs, or comment `/security` |
+| 👋 | **Invite as a reviewer** — request `@shipit-forge` on any PR and it reviews on demand | Add it as a PR reviewer |
+| 💬 | **Answer @mentions** — explains code or proposes changes in context | Comment `@shipit-forge <ask>` |
+| 🖼️ | **Reads screenshots** — pulls images out of issue/PR bodies and feeds them to vision models | Automatic |
+
+---
+
+## 🚀 Quick start (no credentials)
+
+The agent engine runs locally with a built-in **fake provider** — no API keys needed.
 
 ```bash
+git clone https://github.com/shipiit/forge.git && cd forge
 npm install
-npm test                 # 40 tests
+npm test                 # 76 tests, all green
 npm run build
 
-# Run the agent against a local repo using the credential-free demo provider:
+# Run the agent against any local repo using the credential-free demo provider:
 node dist/cli.js fix --repo /path/to/repo --task "fix the failing login test" --provider fake
 ```
 
-## Use a real model
+### Use a real model
 
-Set the provider and its credentials, then drop `--provider fake`:
+Set the provider + its credentials, then drop `--provider fake`:
 
 ```bash
 # Vertex AI Gemini (recommended)
@@ -46,75 +65,122 @@ export LLM_PROVIDER=vertex
 export VERTEX_PROJECT=my-gcp-project
 export VERTEX_LOCATION=us-central1
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-node dist/cli.js fix --repo /path/to/repo --task "..." --provider vertex
+node dist/cli.js fix --repo /path/to/repo --task "…" --provider vertex
 ```
 
-See [`.env.example`](./.env.example) for every provider's variables (Anthropic, OpenAI, Bedrock).
+See [`.env.example`](./.env.example) for every provider's variables.
 
-## Deploy as a GitHub App (use it on any issue/PR in your org)
+---
 
-Forge runs as a small always-on webhook server. You deploy it once, register it as a GitHub App,
-and install that App on your org — then it works on every repo automatically.
+## 🤖 Deploy as a GitHub App
 
-### 1. Deploy the server
+> **Publishing the code ≠ running the agent.** GitHub stores your repo and the App *registration*,
+> but the agent runs on **your** server. GitHub sends webhooks → your server clones the repo, calls
+> the model, and opens the PR/review. Docker is just a portable way to run that server anywhere.
+
+**1. Deploy the webhook server**
 
 ```bash
 docker build -t shipit-forge .
 docker run -p 3000:3000 --env-file .env shipit-forge
-# or any host: Cloud Run, Fly.io, Render, Railway, a VM. It just needs a public HTTPS URL.
+# any host works: Cloud Run, Fly.io, Render, Railway, a VM — it just needs a public HTTPS URL.
 ```
 
-### 2. Register the GitHub App (one click)
+**2. Register the GitHub App (one click)** — open the server's public URL; Probot serves a
+registration page driven by [`app.yml`](./app.yml). GitHub hands back `APP_ID`, `PRIVATE_KEY`, and
+`WEBHOOK_SECRET` — put them (plus your provider vars) in the server env and restart.
 
-With the server running, open its public URL in a browser. Probot serves a registration page that
-uses [`app.yml`](./app.yml) to create the App with the right permissions and events. Follow the
-flow; GitHub writes `APP_ID`, `PRIVATE_KEY`, and `WEBHOOK_SECRET` back for you. Put those (plus your
-LLM provider vars from [`.env.example`](./.env.example)) into the server's environment and restart.
+**3. Install on your org** — App page → **Install App** → your org → **All repositories**. Done —
+Forge now sees issues and PRs across the org automatically.
 
-### 3. Install it on your organization
+---
 
-On the App's page → **Install App** → choose your org → **All repositories** (or pick some).
-That's the "invite to the whole organization" step — from now on Forge sees issues and PRs in those
-repos automatically.
+## 🧩 Configuration
 
-### 4. Use it
+Per-repo via `.github/agent.yml` (all optional), with env-var defaults:
 
-| You do | Forge does |
-|---|---|
-| Add the label **`agent-fix`** to an issue (or comment **`/fix`**) | Investigates, fixes on a branch, runs tests, opens a PR that closes the issue |
-| Open a PR | Auto-reviews it (quality + security), posts inline comments with severity + suggested fixes |
-| **Request `@shipit-forge` as a reviewer** on any PR | Reviews it on demand — this is the "invite on any PR" flow |
-| Comment **`/review`** or **`/security`** on a PR | Full review, or security-only review |
-| Comment **`@shipit-forge <question>`** anywhere | Answers in context using the repo |
+```yaml
+model: gemini-2.5-pro          # provider-specific model id
+trigger_label: agent-fix
+auto_fix: label                # label | opened | off
+auto_review: always            # always | requested | off
+test_command: "npm test"       # else auto-detected
+review_depth: standard         # light | standard | deep
+ignore_paths: ["dist/**", "*.lock"]
+```
 
-### Automation knobs (env vars)
-
-| Var | Default | Effect |
+| Env var | Default | Effect |
 |---|---|---|
-| `FORGE_AUTO_FIX` | `label` | `label` = fix on `agent-fix` label · `opened` = fix **every** new issue automatically · `off` |
-| `FORGE_AUTO_REVIEW` | `always` | `always` = review every PR · `requested` = only when invited/`/review` · `off` |
-| `FORGE_TRIGGER_LABEL` | `agent-fix` | The label that triggers a fix |
 | `LLM_PROVIDER` | `anthropic` | `vertex` · `bedrock` · `openai` · `anthropic` |
+| `FORGE_AUTO_FIX` | `label` | `opened` = attempt a PR on **every** new issue (full auto) |
+| `FORGE_AUTO_REVIEW` | `always` | `requested` = only when invited / `/review` |
+| `MAX_ITERATIONS` | `25` | Max agent tool-loop steps per run |
 
-Set `FORGE_AUTO_FIX=opened` if you want Forge to attempt a PR on **every** issue the moment it's
-created — the fully-automatic mode.
+---
 
-## How it works
+## 🛠️ How it works
 
 ```
-issue/PR event → agent loop (LLM + tools over a cloned repo) → verify (tests) → PR / review
+issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
+                                          │
+                       agent loop ◀───────┘   (LLM + tools, provider-agnostic)
+                       read · search · edit · multi_edit · glob · git_history · run_bash · run_tests
+                                          │
+                       verify (tests) ────┘
+                                          │
+                 ┌────────────────────────┼────────────────────────┐
+                 ▼                         ▼                        ▼
+          open PR (Closes #n)      PR review (inline +        @mention reply
+                                   security + suggestions)
 ```
 
-- **Provider abstraction** (`src/providers`) normalizes chat + tool-calling + images so the loop is
-  provider-agnostic. Adapters: `anthropic.ts`, `vertex.ts`, `openai.ts`, `bedrock.ts`.
-- **Tools** (`src/agent/tools`) — `read_file`, `write_file`, `edit_file`, `multi_edit` (atomic
-  multi-replace), `list_dir`, `glob`, `read_image`, `search`, `git_history` (log/blame),
-  `run_bash` (sandboxed: allow/deny, timeout, no network), `run_tests` (auto-detected).
+- **Provider layer** (`src/providers`) — one `LLMClient` interface; adapters normalize chat +
+  tool-calling + images for Anthropic, Vertex Gemini, OpenAI, Bedrock. Swap providers with one env var.
+- **Tools** (`src/agent/tools`) — `read_file`, `write_file`, `edit_file`, `multi_edit`, `list_dir`,
+  `glob`, `read_image`, `search`, `git_history`, `run_bash` (sandboxed: allow/deny, timeout, no
+  network), `run_tests` (auto-detected).
+- **Agent loop** (`src/agent/loop.ts`) — chat → tool calls → results → repeat, with retries,
+  iteration + token limits, and a repo-map for fast orientation.
 - **GitHub layer** (`src/github`) — vision image extraction, workspace clone/branch/commit/push,
-  PR composer, security-aware review composer; wired to webhooks via Probot (`src/app.ts`).
-- **Agent loop** (`src/agent/loop.ts`) drives chat → tool calls → results → repeat, with iteration
-  and token limits.
+  PR composer, diff-aware security review composer; wired to webhooks in `src/app.ts`.
+
+---
+
+## 🧪 Testing
+
+```bash
+npm test         # vitest — 76 unit tests
+npm run typecheck
+```
+
+Everything is testable **without credentials**: a scripted fake provider drives the agent loop, and
+each real adapter is verified via pure normalization functions + injected mock clients. CI runs
+typecheck + tests + build on every push.
+
+---
+
+## 🗺️ Roadmap
+
+- [x] Agent engine, 11 tools, sandbox, retries
+- [x] 4 provider adapters + vision
+- [x] GitHub App: issue→PR, PR review, security lens, @mentions
+- [x] Review line-safety, `.github/agent.yml`, secret redaction, CI
+- [ ] Live provider smoke run + recorded integration tests
+- [ ] Follow-up commits when @mentioned on a PR
+- [ ] CodeQL/SARIF ingestion · multi-pass self-review · sub-agents
+- [ ] npm package + GitHub Marketplace listing
+
+---
+
+## 🔒 A note on provenance
+
+ShipIT Forge is **original open-source code**. It does not copy or reuse any proprietary source. It
+follows the same public, event-driven pattern as other GitHub coding bots, implemented from scratch.
+
+## 🤝 Contributing
+
+Issues and PRs welcome. Run `npm test` before pushing — and feel free to let Forge review your PR. 😄
 
 ## License
 
-MIT © Rahul Raj
+[MIT](./LICENSE) © Rahul Raj

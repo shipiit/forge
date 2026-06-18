@@ -6,6 +6,7 @@ export interface OctokitLike {
       create(params: Record<string, unknown>): Promise<{ data: { number: number; html_url: string } }>;
       createReview(params: Record<string, unknown>): Promise<unknown>;
       get(params: Record<string, unknown>): Promise<{ data: { body: string | null; title: string; head: { ref: string; sha: string }; base: { ref: string } } }>;
+      list(params: Record<string, unknown>): Promise<{ data: Array<{ number: number; html_url: string }> }>;
       listReviewComments?(params: Record<string, unknown>): Promise<unknown>;
     };
     issues: {

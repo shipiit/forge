@@ -1,0 +1,65 @@
+<svg width="1280" height="320" viewBox="0 0 1280 320" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ShipIT Forge — autonomous GitHub coding agent">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="320" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1020"/>
+      <stop offset="0.55" stop-color="#131A33"/>
+      <stop offset="1" stop-color="#1B1030"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#FF4D67"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#7C5CFF"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="320" rx="20" fill="url(#bg)"/>
+  <!-- subtle grid -->
+  <g opacity="0.07" stroke="#9FB4FF">
+    <path d="M0 80 H1280 M0 160 H1280 M0 240 H1280"/>
+    <path d="M213 0 V320 M426 0 V320 M640 0 V320 M853 0 V320 M1066 0 V320"/>
+  </g>
+
+  <!-- anvil + spark mark -->
+  <g transform="translate(96,108)" filter="url(#glow)">
+    <rect x="0" y="60" width="120" height="22" rx="6" fill="url(#accent)"/>
+    <path d="M10 30 H110 a18 18 0 0 1 -18 24 H40 l-8 6 H14 a8 8 0 0 1 -8 -8 Z" fill="#E9EEFF"/>
+    <circle cx="118" cy="6" r="7" fill="url(#spark)"/>
+    <path d="M118 -16 l5 16 16 5 -16 5 -5 16 -5 -16 -16 -5 16 -5 Z" fill="url(#spark)" opacity="0.9"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="270" y="150" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="76" font-weight="800" fill="#FFFFFF">ShipIT <tspan fill="url(#accent)">Forge</tspan></text>
+  <text x="274" y="196" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="27" font-weight="500" fill="#AEB9E1">Autonomous GitHub coding agent — fixes issues, opens PRs, reviews code.</text>
+
+  <!-- provider chips -->
+  <g font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="600">
+    <g transform="translate(274,232)">
+      <rect width="168" height="40" rx="20" fill="#1E2A52"/><text x="84" y="26" fill="#C9D4FF" text-anchor="middle">Vertex Gemini</text>
+    </g>
+    <g transform="translate(456,232)">
+      <rect width="150" height="40" rx="20" fill="#1E2A52"/><text x="75" y="26" fill="#C9D4FF" text-anchor="middle">AWS Bedrock</text>
+    </g>
+    <g transform="translate(620,232)">
+      <rect width="110" height="40" rx="20" fill="#1E2A52"/><text x="55" y="26" fill="#C9D4FF" text-anchor="middle">OpenAI</text>
+    </g>
+    <g transform="translate(744,232)">
+      <rect width="132" height="40" rx="20" fill="#1E2A52"/><text x="66" y="26" fill="#C9D4FF" text-anchor="middle">Anthropic</text>
+    </g>
+  </g>
+
+  <!-- right-side decorative tokens -->
+  <g transform="translate(1010,70)" font-family="ui-monospace, Menlo, monospace" font-size="16" fill="#5C6BA6" opacity="0.8">
+    <text x="0" y="0">issue → fix → PR</text>
+    <text x="0" y="34">PR → review 🛡️</text>
+    <text x="0" y="68">@shipit-forge</text>
+    <text x="0" y="102">/fix  /review</text>
+    <text x="0" y="136">vision · tools</text>
+  </g>
+</svg>

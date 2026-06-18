@@ -4,6 +4,7 @@ import { editToolset, reviewToolset } from '../agent/tools/registry.js';
 import { fixSystemPrompt, reviewSystemPrompt, mentionSystemPrompt } from '../agent/prompts.js';
 import { detectTestCommand } from '../agent/tools/tests.js';
 import { runCommand } from '../agent/tools/bash.js';
+import { buildRepoMap } from '../agent/repomap.js';
 import { buildIssueContent, buildReviewContent, type CommentLike } from './context.js';
 import { buildReviewPayload, parseFindings, parseDiffValidLines } from './review.js';
 import {
@@ -41,6 +42,26 @@ export async function handleIssueFix(
   const repoRef: RepoRef = { owner: args.owner, repo: args.repo, ref: args.defaultBranch };
   const branch = `forge/issue-${args.issueNumber}`;
 
+  // Idempotency: if a fix PR for this issue is already open, do nothing.
+  const existing = await octokit.rest.pulls.list({
+    owner: args.owner,
+    repo: args.repo,
+    head: `${args.owner}:${branch}`,
+    state: 'open',
+  });
+  if (existing.data.length > 0) {
+    log(`fix PR already open for issue #${args.issueNumber} (${existing.data[0]!.html_url}); skipping.`);
+    return;
+  }
+
+  // Progress comment so humans know Forge picked it up.
+  await octokit.rest.issues.createComment({
+    owner: args.owner,
+    repo: args.repo,
+    issue_number: args.issueNumber,
+    body: `🛠️ ${DISPLAY} is investigating this issue and will open a PR with a fix shortly…`,
+  });
+
   const commentsRes = await octokit.rest.issues.listComments({ owner: args.owner, repo: args.repo, issue_number: args.issueNumber });
   const comments: CommentLike[] = commentsRes.data
     .filter((c) => c.body && !isFromForge(c.user?.login))
@@ -49,12 +70,14 @@ export async function handleIssueFix(
   const ws = await cloneRepo(repoRef, token);
   try {
     await createBranch(ws, branch);
+    const repoMap = await buildRepoMap(ws.dir);
     const initialContent = await buildIssueContent(
       { number: args.issueNumber, title: args.issueTitle, body: args.issueBody },
       comments,
       token,
       log,
     );
+    initialContent.unshift({ type: 'text', text: repoMap });
 
     const result = await runAgent({
       client,
@@ -166,10 +189,11 @@ export async function handleMention(
   const { octokit, client, token, log } = deps;
   const ws = await cloneRepo({ owner: args.owner, repo: args.repo, ref: args.defaultBranch }, token);
   try {
+    const repoMap = await buildRepoMap(ws.dir);
     const result = await runAgent({
       client,
       system: mentionSystemPrompt(),
-      initialContent: [{ type: 'text', text: args.question }],
+      initialContent: [{ type: 'text', text: repoMap }, { type: 'text', text: args.question }],
       tools: reviewToolset(),
       limits: { maxIterations: MAX_ITER, maxOutputTokens: 4096 },
       cwd: ws.dir,
