@@ -8,6 +8,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "forge": "tsx src/cli.ts",
@@ -24,6 +26,8 @@
     "commander": "^12.1.0",
     "execa": "^9.4.0",
     "openai": "^4.104.0",
+    "probot": "^13.4.7",
+    "simple-git": "^3.36.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -30,7 +30,12 @@ and similar. For each problem, assign a severity (critical/high/medium/low/info)
 category (e.g. "CWE-918 SSRF"), explain why it matters, and propose a concrete fix.
 
 You have read-only tools — read files, search, and inspect images. Do not attempt to edit.
-Report findings as structured results referencing exact file and line numbers.`;
+
+When you have finished investigating, output ONLY a JSON array of findings (no prose around it),
+each shaped exactly like:
+{"file":"path","startLine":N,"endLine":N,"lens":"security|quality","severity":"critical|high|medium|low|info","category":"CWE-XXX or short label","title":"...","body":"why it matters","suggestion":"optional replacement code for those lines"}
+Use line numbers from the head version of the PR. Omit "suggestion" when you cannot propose exact
+replacement code. If there are no issues, output [].`;
 }
 
 export function mentionSystemPrompt(): string {

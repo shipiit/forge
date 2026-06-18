@@ -1,0 +1,25 @@
+# GitHub App manifest — used to create the ShipIT Forge App in one click.
+# Probot serves a registration page at "/" that uses this manifest.
+name: ShipIT Forge
+description: Autonomous coding agent — fixes issues, opens PRs, and reviews PRs (with a security lens).
+url: https://github.com/shipiit/forge
+public: false
+
+default_events:
+  - issues
+  - issue_comment
+  - pull_request
+  - pull_request_review
+  - pull_request_review_comment
+
+default_permissions:
+  # Read/write code so it can push fix branches.
+  contents: write
+  # Open PRs and post reviews.
+  pull_requests: write
+  # Read issues and post comments.
+  issues: write
+  # Read repo metadata.
+  metadata: read
+  # Read CI/check results when verifying.
+  checks: read
