@@ -1,3 +1,18 @@
+# App display information (paste into GitHub App settings → "Display information")
+
+| Field | Value |
+|---|---|
+| **GitHub App name** | `ShipIT Forge` |
+| **Homepage URL** | `https://github.com/shipiit/forge` |
+| **Description** | `Autonomous coding agent — fixes issues, opens PRs, and reviews code & security. Bring your own model (Vertex Gemini, Bedrock, OpenAI, Anthropic).` |
+| **Logo** | upload `assets/logo.png` (512×512) |
+| **Badge background color** | `#0B1020` (or accent `#FF8A3D`) |
+
+**Action name (action.yml, for the Marketplace Action listing):** `ShipIT Forge` — branding icon
+`tool`, color `orange` (already set).
+
+---
+
 # GitHub Marketplace listing — copy/paste kit
 
 Everything below is ready to paste into **GitHub → your App → Marketplace → Create/Edit listing**.
