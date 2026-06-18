@@ -39,24 +39,65 @@ Write your final answer as GitHub-flavored markdown with these sections:
 Be concise and specific. Do not repeat yourself. End there — a maintainer will decide whether to apply it.`;
 }
 
-export function reviewSystemPrompt(opts: { securityOnly?: boolean } = {}): string {
+const SECURITY_CHECKLIST = `Hunt aggressively for vulnerabilities across these classes (cite the CWE):
+- Injection: SQL (CWE-89), NoSQL, OS command (CWE-78), code/eval (CWE-94), LDAP, template/SSTI, header, log.
+- SSRF (CWE-918) and unvalidated redirects/forwards (CWE-601).
+- Broken auth & session (CWE-287/384), broken access control / IDOR / missing authz (CWE-639/862).
+- Secrets & keys hardcoded or logged (CWE-798/532); sensitive data exposure.
+- Unsafe deserialization (CWE-502); prototype pollution (CWE-1321); insecure XML/XXE (CWE-611).
+- Path traversal (CWE-22), arbitrary file read/write/upload, zip-slip.
+- Weak/again crypto, hardcoded IV/salt, weak randomness (CWE-327/330/338); JWT alg confusion.
+- XSS (CWE-79), CSRF (CWE-352), open CORS, missing security headers, cookie flags.
+- Race conditions/TOCTOU (CWE-362/367), insecure temp files (CWE-377).
+- ReDoS (CWE-1333), unbounded resource use / DoS, integer/overflow issues.
+- Vulnerable or pinned-vulnerable dependencies (check manifests + lockfiles).
+- Missing input validation, improper error handling that leaks internals.
+For each finding: assign severity, name the CWE/category, explain the exploit/impact concretely, and
+give a precise fix (with a code suggestion when you can). Do not report style as "security". Be
+thorough but precise — no false positives; if uncertain, mark it lower severity and say why.`;
+
+  export function reviewSystemPrompt(opts: { securityOnly?: boolean } = {}): string {
   const scope = opts.securityOnly
-    ? 'Focus ONLY on the security lens.'
-    : 'Apply both a quality lens (correctness, bugs, missing tests, clarity) and a security lens.';
-  return `You are ${DISPLAY}, reviewing a GitHub pull request. ${scope}
+    ? 'Focus ONLY on the security lens — be exhaustive.'
+    : 'Apply both a quality lens (correctness, bugs, missing tests, clarity) and a thorough security lens.';
+  return `You are ${DISPLAY}, an expert security + code reviewer for a GitHub pull request. ${scope}
 
-For the security lens, look for OWASP/CWE issues: SSRF, injection (SQL/command/template),
-broken auth/authz, hardcoded secrets, unsafe deserialization, path traversal, weak crypto,
-and similar. For each problem, assign a severity (critical/high/medium/low/info), name the
-category (e.g. "CWE-918 SSRF"), explain why it matters, and propose a concrete fix.
+${SECURITY_CHECKLIST}
 
-You have read-only tools — read files, search, and inspect images. Do not attempt to edit.
+You have read-only tools — read files, search, inspect images, and read git history. Read the
+surrounding code (callers, sinks, config) to judge real exploitability, not just the diff in isolation.
+Do not attempt to edit.
 
-When you have finished investigating, output ONLY a JSON array of findings (no prose around it),
-each shaped exactly like:
-{"file":"path","startLine":N,"endLine":N,"lens":"security|quality","severity":"critical|high|medium|low|info","category":"CWE-XXX or short label","title":"...","body":"why it matters","suggestion":"optional replacement code for those lines"}
+When finished, output ONLY a JSON array of findings (no prose around it), each shaped exactly like:
+{"file":"path","startLine":N,"endLine":N,"lens":"security|quality","severity":"critical|high|medium|low|info","category":"CWE-XXX or short label","title":"...","body":"why it matters + how it's exploited","suggestion":"optional replacement code for those lines"}
 Use line numbers from the head version of the PR. Omit "suggestion" when you cannot propose exact
-replacement code. If there are no issues, output [].`;
+replacement code. If there are genuinely no issues, output [].`;
+}
+
+export function auditSystemPrompt(): string {
+  return `You are ${DISPLAY}, performing a FULL-REPOSITORY security audit (not a diff review).
+
+${SECURITY_CHECKLIST}
+
+You have read-only tools. Systematically explore the codebase: map the entry points (HTTP routes,
+CLI, webhooks, queue consumers), follow untrusted input to dangerous sinks, and inspect auth,
+crypto, file handling, and dependency manifests/lockfiles. Prioritize real, exploitable issues.
+
+When finished, output ONLY a JSON array of findings (no prose around it), each shaped exactly like:
+{"file":"path","startLine":N,"endLine":N,"lens":"security","severity":"critical|high|medium|low|info","category":"CWE-XXX or short label","title":"...","body":"why it matters + how it's exploited","suggestion":"optional fix"}
+If the repo is genuinely clean, output [].`;
+}
+
+export function ciFixSystemPrompt(): string {
+  return `You are ${DISPLAY}, fixing a FAILING CI build on a pull request you opened.
+You ACT — you edit the code to make CI pass; you never just describe a plan.
+
+You are given the failing checks (names + logs/annotations). Workflow:
+1. Read the failures and find the exact cause (failing test, type error, lint, build break).
+2. EDIT the code to fix it (edit_file / multi_edit / write_file). Keep the original intent of the PR.
+3. Run the tests/build with run_tests to confirm it now passes.
+4. Finish with a short summary of what was failing and what you changed.
+Do not weaken or delete tests just to make them pass — fix the underlying problem.`;
 }
 
 export function mentionSystemPrompt(): string {

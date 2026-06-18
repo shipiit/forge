@@ -1,7 +1,7 @@
 import type { Probot, Context } from 'probot';
 import { createLLMClient } from './providers/index.js';
 import type { ProviderId } from './providers/types.js';
-import { handleIssueFix, handleIssueAnalyze, handlePrReview, handleMention, handlePrFollowup, type HandlerDeps } from './github/handlers.js';
+import { handleIssueFix, handleIssueAnalyze, handlePrReview, handleMention, handlePrFollowup, handleAudit, handleCiFailure, type HandlerDeps } from './github/handlers.js';
 import type { OctokitLike } from './github/pr.js';
 import { redactSecrets } from './util/resilience.js';
 import { mergeConfig, defaultConfig, type ForgeConfig } from './config.js';
@@ -111,6 +111,16 @@ export default function app(probot: Probot): void {
       });
       return;
     }
+    if (/^\/audit\b/i.test(body)) {
+      // Full-repository security audit (works on an issue or a PR thread).
+      await handleAudit(await deps(context, config), {
+        owner: base.owner,
+        repo: base.repo,
+        issueNumber: issue.number,
+        ref: base.defaultBranch,
+      });
+      return;
+    }
     if (isPr && /^\/(review|security)\b/i.test(body)) {
       await handlePrReview(await deps(context, config), {
         owner: base.owner,
@@ -135,6 +145,29 @@ export default function app(probot: Probot): void {
       }
     }
   });
+
+  // --- CI failed on a Forge PR → read logs and push a fix (bounded) ---
+  const onCiCompleted = async (context: Context) => {
+    const config = await loadConfig(context);
+    const p = context.payload as any;
+    const run = p.check_suite ?? p.workflow_run;
+    if (!run || run.conclusion !== 'failure') return;
+    const repository = p.repository;
+    const prs: any[] = run.pull_requests ?? [];
+    for (const pr of prs) {
+      const headBranch: string = pr.head?.ref ?? run.head_branch ?? '';
+      if (!headBranch.startsWith('forge/')) continue; // only its own PRs (token safety)
+      await handleCiFailure(await deps(context, config), {
+        owner: repository.owner.login,
+        repo: repository.name,
+        pullNumber: pr.number,
+        headBranch,
+        headSha: pr.head?.sha ?? run.head_sha,
+      });
+    }
+  };
+  probot.on('check_suite.completed', onCiCompleted);
+  probot.on('workflow_run.completed', onCiCompleted);
 
   // --- @mention inside a PR review-comment thread → follow-up commit ---
   probot.on('pull_request_review_comment.created', async (context) => {

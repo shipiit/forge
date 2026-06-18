@@ -5,6 +5,7 @@ import {
   parseFindings,
   parseDiffValidLines,
   renderFindingBody,
+  renderAuditReport,
   type ReviewFinding,
 } from '../../src/github/review.js';
 
@@ -72,6 +73,21 @@ describe('review payload', () => {
     expect(payload.comments[0].path).toBe('app/views.py');
     expect(payload.body).toContain('Additional findings (outside the diff)');
     expect(payload.body).toContain('app/util.py:10');
+  });
+});
+
+describe('renderAuditReport', () => {
+  it('groups findings by severity, highest first, with suggestions', () => {
+    const report = renderAuditReport([nit, ssrf], 'ShipIT Forge');
+    expect(report).toContain('security audit');
+    expect(report).toContain('Found **2**');
+    // critical (ssrf) should appear before low (nit)
+    expect(report.indexOf('Full server-side request forgery')).toBeLessThan(report.indexOf('Unused import'));
+    expect(report).toContain('```suggestion');
+  });
+
+  it('reports a clean repo', () => {
+    expect(renderAuditReport([], 'ShipIT Forge')).toContain('No vulnerabilities found');
   });
 });
 

@@ -91,6 +91,31 @@ export function chooseEvent(findings: ReviewFinding[]): ReviewPayload['event'] {
 }
 
 /**
+ * Render a full-repo audit report (findings aren't tied to a PR diff, so they go
+ * in one grouped markdown comment rather than inline). Sorted by severity.
+ */
+export function renderAuditReport(findings: ReviewFinding[], displayName: string): string {
+  if (findings.length === 0) {
+    return `### 🛡️ ${displayName} security audit\n\n✅ No vulnerabilities found across the scanned code.`;
+  }
+  const order: ReviewFinding['severity'][] = ['critical', 'high', 'medium', 'low', 'info'];
+  const counts = order.filter((s) => findings.some((f) => f.severity === s)).map((s) => `${SEVERITY_BADGE[s]}: ${findings.filter((f) => f.severity === s).length}`);
+  const sorted = [...findings].sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]);
+  const items = sorted
+    .map(
+      (f) =>
+        `<details><summary>${SEVERITY_BADGE[f.severity]} · \`${f.category}\` · ${f.title} — <code>${f.file}:${f.startLine}</code></summary>\n\n${f.body}\n` +
+        (f.suggestion ? `\n\`\`\`suggestion\n${f.suggestion}\n\`\`\`\n` : '') +
+        `\n</details>`,
+    )
+    .join('\n');
+  return (
+    `### 🛡️ ${displayName} security audit\n\n` +
+    `Found **${findings.length}** issue(s). ${counts.join(' · ')}\n\n${items}`
+  );
+}
+
+/**
  * Parse a unified diff into the set of new-file line numbers that can carry an
  * inline review comment (added `+` lines and context lines on the RIGHT side).
  * GitHub returns 422 for inline comments on any other line, so we use this to

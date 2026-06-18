@@ -16,6 +16,9 @@ default_events:
   - pull_request
   - pull_request_review
   - pull_request_review_comment
+  - check_suite          # auto-fix CI failures on Forge PRs
+  - check_run
+  - workflow_run
 
 default_permissions:
   # Read/write code so it can push fix branches.

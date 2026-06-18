@@ -4,12 +4,12 @@ import type { LLMClient } from '../providers/types.js';
 import { runAgent } from '../agent/loop.js';
 import { editToolset, reviewToolset } from '../agent/tools/registry.js';
 import { orchestratorToolset } from '../agent/subagent.js';
-import { fixSystemPrompt, reviewSystemPrompt, mentionSystemPrompt, analyzeSystemPrompt } from '../agent/prompts.js';
+import { fixSystemPrompt, reviewSystemPrompt, mentionSystemPrompt, analyzeSystemPrompt, auditSystemPrompt, ciFixSystemPrompt } from '../agent/prompts.js';
 import { detectTestCommand, detectInstallCommand } from '../agent/tools/tests.js';
 import { runCommand } from '../agent/tools/bash.js';
 import { buildRepoMap } from '../agent/repomap.js';
 import { buildIssueContent, buildReviewContent, type CommentLike } from './context.js';
-import { buildReviewPayload, parseFindings, parseDiffValidLines } from './review.js';
+import { buildReviewPayload, parseFindings, parseDiffValidLines, renderAuditReport } from './review.js';
 import { parseSarif } from './sarif.js';
 import { realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
@@ -489,6 +489,137 @@ async function doMention(
       issue_number: args.issueNumber,
       body: result.finalText || `${DISPLAY} could not produce a response.`,
     });
+  } finally {
+    await ws.cleanup();
+  }
+}
+
+/** Full-repository security audit (read-only) → one grouped report comment. */
+export function handleAudit(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; issueNumber: number; ref: string },
+): Promise<void> {
+  return withLock(`audit:${args.owner}/${args.repo}#${args.issueNumber}`, deps.log, () => doAudit(deps, args));
+}
+
+async function doAudit(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; issueNumber: number; ref: string },
+): Promise<void> {
+  const { octokit, client, token, log } = deps;
+  const ack = await octokit.rest.issues.createComment({
+    owner: args.owner,
+    repo: args.repo,
+    issue_number: args.issueNumber,
+    body: `🛡️ **${DISPLAY}** is running a full-repository security audit… I'll update this comment with the report.`,
+  });
+  const ws = await (deps.workspace ?? realWorkspace).clone({ owner: args.owner, repo: args.repo, ref: args.ref }, token);
+  try {
+    const repoMap = await buildRepoMap(ws.dir, { maxEntries: 800 });
+    const result = await runAgent({
+      client,
+      system: auditSystemPrompt(),
+      initialContent: [{ type: 'text', text: `${repoMap}\n\nAudit this repository for security vulnerabilities. Be thorough; follow untrusted input to dangerous sinks.` }],
+      tools: reviewToolset(),
+      limits: { maxIterations: Math.max(MAX_ITER, 40), maxOutputTokens: 8192 },
+      cwd: ws.dir,
+      onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+    });
+    const findings = parseFindings(result.finalText);
+    await octokit.rest.issues.updateComment({
+      owner: args.owner,
+      repo: args.repo,
+      comment_id: ack.data.id,
+      body: renderAuditReport(findings, DISPLAY),
+    });
+  } finally {
+    await ws.cleanup();
+  }
+}
+
+const MAX_CI_FIX_ATTEMPTS = 2;
+
+/** When a Forge-authored PR's CI fails, read the failures and push a fix (bounded). */
+export function handleCiFailure(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; pullNumber: number; headBranch: string; headSha: string },
+): Promise<void> {
+  return withLock(`cifix:${args.owner}/${args.repo}#${args.pullNumber}`, deps.log, () => doCiFailure(deps, args));
+}
+
+async function doCiFailure(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; pullNumber: number; headBranch: string; headSha: string },
+): Promise<void> {
+  const { octokit, client, token, log } = deps;
+  // Token safety: only auto-fix CI on Forge's OWN PR branches, and cap attempts.
+  if (!args.headBranch.startsWith('forge/')) {
+    log(`CI failure on ${args.headBranch} is not a Forge branch; skipping.`);
+    return;
+  }
+  const wsOps = deps.workspace ?? realWorkspace;
+
+  // Count prior auto-fix attempts from commit messages to avoid a token-burning loop.
+  const commitsRes = await octokit.rest.repos.listCommits({ owner: args.owner, repo: args.repo, sha: args.headBranch, per_page: 20 });
+  const attempts = commitsRes.data.filter((c) => /^ci-fix:/m.test(c.commit.message)).length;
+  if (attempts >= MAX_CI_FIX_ATTEMPTS) {
+    log(`CI still failing after ${attempts} auto-fix attempts on #${args.pullNumber}; leaving for a human.`);
+    return;
+  }
+
+  // Collect the failing checks (names + summaries) for the head commit.
+  const checks = await octokit.rest.checks.listForRef({ owner: args.owner, repo: args.repo, ref: args.headSha });
+  const failed = checks.data.check_runs.filter((c) => c.conclusion === 'failure' || c.conclusion === 'timed_out');
+  if (failed.length === 0) {
+    log(`No failing checks found for ${args.headSha}; skipping.`);
+    return;
+  }
+  const failureText = failed
+    .map((c) => `### ${c.name}\n${c.output?.summary ?? ''}\n${(c.output?.text ?? '').slice(0, 4000)}`)
+    .join('\n\n')
+    .slice(0, 12000);
+
+  const ack = await octokit.rest.issues.createComment({
+    owner: args.owner,
+    repo: args.repo,
+    issue_number: args.pullNumber,
+    body: `🔁 **${DISPLAY}** — CI failed; I'm reading the logs and pushing a fix (attempt ${attempts + 1}/${MAX_CI_FIX_ATTEMPTS})…`,
+  });
+
+  const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: args.headBranch }, token);
+  try {
+    const installCmd = await detectInstallCommand(ws.dir);
+    if (installCmd) await runCommand(installCmd, { cwd: ws.dir, supportsVision: client.supportsVision }, { timeoutMs: 300_000 });
+    const repoMap = await buildRepoMap(ws.dir);
+    const result = await runAgent({
+      client,
+      system: ciFixSystemPrompt(),
+      initialContent: [
+        { type: 'text', text: repoMap },
+        { type: 'text', text: `CI is failing on PR #${args.pullNumber} (branch ${args.headBranch}). Failing checks:\n\n${failureText}\n\nFix the code so CI passes, then verify with run_tests.` },
+      ],
+      tools: editToolset({ testCommand: deps.testCommand }),
+      limits: { maxIterations: MAX_ITER, maxOutputTokens: 8192 },
+      cwd: ws.dir,
+      onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+    });
+    const committed = await wsOps.commitAll(ws, `ci-fix: resolve failing CI on #${args.pullNumber}\n\n${cleanSummary(result.finalText, 1500)}`);
+    if (committed) {
+      await wsOps.pushBranch(ws, args.headBranch);
+      await octokit.rest.issues.updateComment({
+        owner: args.owner,
+        repo: args.repo,
+        comment_id: ack.data.id,
+        body: `🔁 **${DISPLAY}** pushed a CI fix to \`${args.headBranch}\` (attempt ${attempts + 1}/${MAX_CI_FIX_ATTEMPTS}).\n\n${cleanSummary(result.finalText, 1500)}`,
+      });
+    } else {
+      await octokit.rest.issues.updateComment({
+        owner: args.owner,
+        repo: args.repo,
+        comment_id: ack.data.id,
+        body: `🔁 **${DISPLAY}** could not auto-fix the CI failure. ${cleanSummary(result.finalText, 1500)}`,
+      });
+    }
   } finally {
     await ws.cleanup();
   }
