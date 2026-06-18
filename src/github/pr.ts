@@ -14,6 +14,14 @@ export interface OctokitLike {
       updateComment(params: Record<string, unknown>): Promise<unknown>;
       listComments(params: Record<string, unknown>): Promise<{ data: Array<{ user: { login: string } | null; body?: string }> }>;
     };
+    checks: {
+      listForRef(params: Record<string, unknown>): Promise<{
+        data: { check_runs: Array<{ name: string; conclusion: string | null; details_url?: string; output?: { title?: string | null; summary?: string | null; text?: string | null } }> };
+      }>;
+    };
+    repos: {
+      listCommits(params: Record<string, unknown>): Promise<{ data: Array<{ commit: { message: string } }> }>;
+    };
   };
   request(route: string, params: Record<string, unknown>): Promise<{ data: unknown }>;
 }
