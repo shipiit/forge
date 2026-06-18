@@ -31,3 +31,5 @@ default_permissions:
   metadata: read
   # Read CI/check results when verifying.
   checks: read
+  # Read Dependabot alerts (live CVE data from GitHub's Advisory Database).
+  vulnerability_alerts: read

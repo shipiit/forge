@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>ShipIT Forge</title>
+<script>
+  // GitHub Pages SPA fallback: redirect deep links back to index with the path preserved.
+  sessionStorage.setItem('redirect', location.pathname + location.search + location.hash);
+  location.replace(location.origin + location.pathname.replace(/(\/forge)?\/.*/, '$1/'));
+</script>
+</head>
+<body></body>
+</html>

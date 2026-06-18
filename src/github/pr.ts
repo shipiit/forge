@@ -22,6 +22,9 @@ export interface OctokitLike {
     repos: {
       listCommits(params: Record<string, unknown>): Promise<{ data: Array<{ commit: { message: string } }> }>;
     };
+    dependabot?: {
+      listAlertsForRepo(params: Record<string, unknown>): Promise<{ data: unknown[] }>;
+    };
   };
   request(route: string, params: Record<string, unknown>): Promise<{ data: unknown }>;
 }

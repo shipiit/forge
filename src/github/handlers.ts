@@ -11,6 +11,7 @@ import { buildRepoMap } from '../agent/repomap.js';
 import { buildIssueContent, buildReviewContent, type CommentLike } from './context.js';
 import { buildReviewPayload, parseFindings, parseDiffValidLines, renderAuditReport } from './review.js';
 import { parseSarif } from './sarif.js';
+import { fetchDependabotFindings } from './dependabot.js';
 import { realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
   composeFixPrBody,
@@ -361,6 +362,9 @@ async function doPrReview(
 
     const findings = parseFindings(result.finalText);
 
+    // Merge live Dependabot alerts (current CVEs from GitHub's Advisory Database).
+    findings.push(...(await fetchDependabotFindings(octokit, args.owner, args.repo, log)));
+
     // Optionally merge static-analysis (SARIF) findings, e.g. from CodeQL.
     if (deps.sarifPath) {
       try {
@@ -526,6 +530,8 @@ async function doAudit(
       onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
     });
     const findings = parseFindings(result.finalText);
+    // Merge live Dependabot alerts (current CVEs from GitHub's Advisory Database).
+    findings.push(...(await fetchDependabotFindings(octokit, args.owner, args.repo, log)));
     await octokit.rest.issues.updateComment({
       owner: args.owner,
       repo: args.repo,
