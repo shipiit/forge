@@ -159,10 +159,18 @@ the diff. *(This exact flow is verified working against Vertex AI Gemini 2.5 Pro
 
 **1. Deploy the webhook server**
 
+Fastest path (Google Cloud Run, one command — see [`deploy/DEPLOY.md`](./deploy/DEPLOY.md)):
+
+```bash
+APP_ID=… WEBHOOK_SECRET=… PRIVATE_KEY_FILE=./shipit-forge.private-key.pem ./deploy/cloudrun.sh
+```
+
+Or any host with Docker:
+
 ```bash
 docker build -t shipit-forge .
 docker run -p 3000:3000 --env-file .env shipit-forge
-# any host works: Cloud Run, Fly.io, Render, Railway, a VM — it just needs a public HTTPS URL.
+# Cloud Run, Fly.io, Render, Railway, a VM — it just needs a public HTTPS URL.
 ```
 
 **2. Register the GitHub App (one click)**
