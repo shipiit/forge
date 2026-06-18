@@ -124,7 +124,9 @@ export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 node dist/cli.js fix --repo /path/to/repo --task "…" --provider vertex
 ```
 
-See [`.env.example`](./.env.example) for every provider's variables.
+See [`.env.example`](./.env.example) for every provider's variables, and
+**[`deploy/PROVIDERS.md`](./deploy/PROVIDERS.md)** for step-by-step credential setup for **all four
+providers** (Vertex Gemini, Bedrock, OpenAI, Anthropic) across CLI / Action / App.
 
 ### Test it end-to-end with a real model (2 minutes)
 
