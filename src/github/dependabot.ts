@@ -5,9 +5,15 @@ import type { OctokitLike } from './pr.js';
  * Map GitHub Dependabot alerts (live data from the GitHub Advisory Database) to
  * our normalized findings. Pure + testable.
  */
-/** Neutralize Markdown control chars so untrusted API text can't break the comment. */
+/**
+ * Neutralize Markdown control chars so untrusted API text can't break or inject
+ * into the rendered comment. Escapes the full set of GFM specials (incl. () # + ! .)
+ * for defense-in-depth, and flattens newlines.
+ */
 function md(s: unknown): string {
-  return String(s ?? '').replace(/[`*_~<>[\]|\\]/g, '\\$&').replace(/\r?\n/g, ' ');
+  return String(s ?? '')
+    .replace(/[\\`*_{}[\]()#+.!~<>|=-]/g, '\\$&')
+    .replace(/\r?\n/g, ' ');
 }
 
 export function mapAlertsToFindings(alerts: unknown[]): ReviewFinding[] {
