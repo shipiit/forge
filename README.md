@@ -55,12 +55,45 @@ npm run build
 node dist/cli.js fix --repo /path/to/repo --task "fix the failing login test" --provider fake
 ```
 
-### Use a real model
+### Configure a provider securely — `forge setup`
 
-Set the provider + its credentials, then drop `--provider fake`:
+The easiest, safest way to add your credentials. It writes a **gitignored `.env` with `chmod 600`**
+so secrets never get committed:
 
 ```bash
-# Vertex AI Gemini (recommended)
+node dist/cli.js setup
+```
+
+```
+🔧 ShipIT Forge — provider setup
+
+Which provider?
+  1) Vertex AI Gemini
+  2) Anthropic
+  3) OpenAI
+  4) AWS Bedrock
+> 1
+GCP project id: <your-gcp-project-id>
+Location [us-central1]:
+Model [gemini-2.5-pro]:
+Provide the service-account key. Either:
+  • a path to the JSON file, or
+  • paste the JSON, then a line with just END
+path or paste> {            ← paste the whole service-account JSON here
+  "type": "service_account",
+  ...
+}
+END
+✅ Wrote .env (chmod 600) and updated .gitignore. Your secrets are gitignored.
+```
+
+For **Vertex**, you can paste the full service-account JSON (it's validated and saved to
+`.forge/vertex-sa.json`, `chmod 600`, gitignored) **or** point to an existing JSON file path. Either
+way nothing secret is ever committed.
+
+### Or set env vars manually
+
+```bash
 export LLM_PROVIDER=vertex
 export VERTEX_PROJECT=my-gcp-project
 export VERTEX_LOCATION=us-central1
@@ -69,6 +102,9 @@ node dist/cli.js fix --repo /path/to/repo --task "…" --provider vertex
 ```
 
 See [`.env.example`](./.env.example) for every provider's variables.
+
+> **Verified live:** the agent has been run end-to-end against Vertex AI Gemini 2.5 Pro — it read a
+> buggy file, fixed it, ran the tests, and confirmed they pass. ✅
 
 ---
 

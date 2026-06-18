@@ -6,12 +6,20 @@ import { createLLMClient } from './providers/index.js';
 import { runAgent } from './agent/loop.js';
 import { editToolset } from './agent/tools/registry.js';
 import { fixSystemPrompt } from './agent/prompts.js';
+import { runSetup } from './setup.js';
 
 const program = new Command();
 program
   .name('forge')
   .description('ShipIT Forge — autonomous GitHub coding agent')
   .version('0.1.0');
+
+program
+  .command('setup')
+  .description('Interactively configure a provider + credentials, saved securely to .env')
+  .action(async () => {
+    await runSetup(process.cwd());
+  });
 
 program
   .command('fix')
