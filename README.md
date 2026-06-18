@@ -214,6 +214,42 @@ a hosting provider.
 
 ---
 
+## ⚡ Use it as a GitHub Action (no server, your own keys)
+
+Prefer "just add a file" with **no hosting and no app registration**? Use the Action — each repo/org
+runs Forge in its **own** CI with its **own** provider key. This is the per-org-credentials model
+(like Claude Code's Action).
+
+1. Add your provider key as a repo/org **secret** (Settings → Secrets and variables → Actions),
+   e.g. `VERTEX_SA_JSON`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`.
+2. Copy [`examples/forge-action.yml`](./examples/forge-action.yml) to `.github/workflows/forge.yml`:
+
+```yaml
+name: ShipIT Forge
+on:
+  issues: { types: [opened, labeled] }
+  issue_comment: { types: [created] }
+  pull_request: { types: [opened, synchronize, review_requested] }
+  pull_request_review_comment: { types: [created] }
+permissions: { contents: write, pull-requests: write, issues: write }
+jobs:
+  forge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: shipiit/forge@v1
+        with: { provider: vertex }
+        env:
+          LLM_PROVIDER: vertex
+          VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT }}
+          VERTEX_CREDENTIALS_JSON: ${{ secrets.VERTEX_SA_JSON }}
+```
+
+That's it — label an issue `agent-fix`, comment `/review` on a PR, or `@shipit-forge` anything, and
+it runs in **your** Actions with **your** key and compute. No server to host, nothing to register.
+
+> **Action vs hosted App:** the **Action** = per-org keys, zero infra, runs in their CI. The
+> **App** (above) = one server you host and pay for, one-click install for others. Same engine.
+
 ## 🧩 Configuration
 
 Per-repo via `.github/agent.yml` (all optional), with env-var defaults:
@@ -292,7 +328,7 @@ typecheck + tests + build on every push.
 - [x] CodeQL/SARIF ingestion (merge scanner findings into review)
 - [x] Multi-pass self-review (agent critiques its own diff → draft PR on blockers)
 - [x] npm-publishable package (`files`, bin, `prepublishOnly`)
-- [ ] GitHub Action distribution (per-org credentials, no server) — in progress
+- [x] GitHub Action distribution (per-org credentials, no server)
 - [ ] Sub-agents for very large tasks · GitHub Marketplace listing
 
 ---

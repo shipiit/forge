@@ -1,0 +1,43 @@
+# Example workflow — copy this to .github/workflows/forge.yml in ANY repo to run ShipIT Forge
+# with that org/repo's OWN credentials. No server, no app registration.
+#
+# Add your provider key(s) as repo/org secrets first (Settings → Secrets and variables → Actions).
+
+name: ShipIT Forge
+
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, synchronize, review_requested]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: write        # push fix branches
+  pull-requests: write   # open PRs + reviews
+  issues: write          # comment on issues
+
+jobs:
+  forge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: shipiit/forge@v1
+        with:
+          provider: vertex            # vertex | bedrock | openai | anthropic
+          # vertex-credentials-json: ${{ secrets.VERTEX_SA_JSON }}
+        env:
+          LLM_PROVIDER: vertex
+          # --- Vertex AI Gemini ---
+          VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT }}
+          VERTEX_LOCATION: us-central1
+          VERTEX_MODEL: gemini-2.5-pro
+          VERTEX_CREDENTIALS_JSON: ${{ secrets.VERTEX_SA_JSON }}
+          # --- or OpenAI ---       # OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # --- or Anthropic ---    # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # --- or Bedrock ---      # AWS_REGION / AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+          # Optional behavior:
+          FORGE_AUTO_FIX: label       # label | opened | off
+          FORGE_AUTO_REVIEW: always   # always | requested | off

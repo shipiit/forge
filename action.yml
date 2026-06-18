@@ -1,0 +1,23 @@
+name: 'ShipIT Forge'
+description: 'Autonomous coding agent — fixes issues, opens PRs, and reviews PRs (with a security lens). Bring your own LLM key.'
+author: 'Rahul Raj'
+branding:
+  icon: 'tool'
+  color: 'orange'
+
+inputs:
+  provider:
+    description: 'LLM provider: vertex | bedrock | openai | anthropic'
+    required: false
+    default: 'anthropic'
+  github-token:
+    description: 'Token used to read the event, clone, and open PRs/reviews. Needs contents+PR+issues write.'
+    required: false
+    default: ${{ github.token }}
+  vertex-credentials-json:
+    description: 'Vertex AI service-account JSON (paste from a secret). Optional.'
+    required: false
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile.action'
