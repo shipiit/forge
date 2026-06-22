@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions & discussion
+    url: https://github.com/shipiit/forge/issues
+    about: Ask a usage question or start a discussion.
+  - name: 📖 Documentation
+    url: https://shipiit.github.io/forge/docs
+    about: Setup, provider configuration, commands, and FAQ.
+  - name: 🔒 Report a security vulnerability
+    url: mailto:rahul@iamrraj.com
+    about: Please email security issues privately — do not open a public issue.

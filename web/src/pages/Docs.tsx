@@ -1,6 +1,7 @@
 import { Header, Footer } from '../components/Layout';
 import { ScrollProgress } from '../components/ScrollProgress';
 import { CodeBlock } from '../components/CodeBlock';
+import { ProviderSetup } from '../components/ProviderSetup';
 
 const GH = 'https://github.com/shipiit/forge/blob/main';
 const ext = { target: '_blank', rel: 'noopener noreferrer' } as const;
@@ -43,9 +44,14 @@ npm install && npm run build && npm test
 node dist/cli.js fix --repo /path/to/repo --task "fix the failing login test" --provider fake`} />
 
           <H id="provider">Configure a model</H>
-          <p className="text-muted">Pick Vertex Gemini, AWS Bedrock, OpenAI, or Anthropic — your key, saved to a gitignored <code className="text-white/80">.env</code>.</p>
-          <CodeBlock label="forge setup" code={`node dist/cli.js setup   # choose provider, paste your key`} />
-          <p className="text-muted">Full per-provider setup: <a href={`${GH}/deploy/PROVIDERS.md`} {...ext}>PROVIDERS.md</a>.</p>
+          <p className="text-muted">Bring your own model — pick a provider, get its credentials, and the same env vars work everywhere (CLI, GitHub Action secrets, hosted App). The quickest path is the wizard:</p>
+          <CodeBlock label="forge setup" code={`node dist/cli.js setup   # choose a provider, paste your key — writes a gitignored .env (chmod 600)`} />
+          <p className="mt-4 text-muted">Or follow the detailed steps for your provider below 👇</p>
+          <ProviderSetup />
+          <p className="mt-5 text-sm text-muted">
+            Per-repo override (no secret change) via <a href={`${GH}/deploy/PROVIDERS.md`} {...ext}>PROVIDERS.md</a> and <code className="text-white/80">.github/agent.yml</code>:{' '}
+            <code className="text-white/80">model: gemini-2.5-pro</code>. All four default models are vision-capable, so Forge reads screenshots in issues &amp; PRs automatically.
+          </p>
 
           <H id="deploy">Deploy 24/7</H>
           <div className="mt-4 grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] md:grid-cols-3">

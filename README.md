@@ -375,7 +375,12 @@ follows the same public, event-driven pattern as other GitHub coding bots, imple
 
 ## 🤝 Contributing
 
-Issues and PRs welcome. Run `npm test` before pushing — and feel free to let Forge review your PR. 😄
+Issues and PRs welcome! Read **[CONTRIBUTING.md](./CONTRIBUTING.md)** for the dev setup, project layout,
+how to add a provider, and the PR checklist. Use the **issue templates** (🐛 bug / 💡 feature) when
+opening an issue. Run `npm test` before pushing — and feel free to let Forge review your PR. 😄
+
+> `main` is protected: every change lands via PR, ShipIT Forge auto-reviews it (security + code), and a
+> maintainer gives the final approval.
 
 ## License
 

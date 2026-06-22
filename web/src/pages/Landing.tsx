@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowRight, ShieldAlert, Check, GitPullRequest } from 'lucide-react';
+import { ArrowRight, ShieldAlert, Check, GitPullRequest, Wrench, Search, ScanSearch, RefreshCw, MessageSquare } from 'lucide-react';
 import { Header, Footer } from '../components/Layout';
 import { ScrollProgress, RingDot } from '../components/ScrollProgress';
 import { HeroDemo } from '../components/HeroDemo';
@@ -56,6 +56,61 @@ export function Landing() {
           <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.12 }} className="relative">
             <div className="absolute -right-2 -top-9 hidden lg:block"><RingDot /></div>
             <HeroDemo />
+          </motion.div>
+        </div>
+      </section>
+
+      {/* WHAT IT DOES */}
+      <section id="what" className="border-t border-white/[0.07] px-7 py-24">
+        <div className="mx-auto max-w-7xl">
+          <motion.div {...rise}>
+            <span className="eyebrow">What it does</span>
+            <h2 className="display mt-6 text-[clamp(34px,5vw,60px)]">A teammate that<br /><span className="dim">works on GitHub events.</span></h2>
+            <p className="mt-5 max-w-2xl text-muted">
+              ShipIT Forge listens to real GitHub activity — issues, pull requests, failing checks, and @mentions —
+              and acts on them autonomously. It investigates, edits code, writes tests, and reviews diffs, but it
+              <span className="text-text"> never merges or approves on its own</span>. Every change is a pull request you control.
+            </p>
+          </motion.div>
+
+          <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { I: Wrench, t: 'Fix an issue → open a PR', trig: 'Label agent-fix · /fix', d: 'Investigates the repo, finds the root cause, edits the code, adds a regression test, runs the suite, and opens a PR that closes the issue.' },
+              { I: Search, t: 'Review every pull request', trig: 'Automatic · /review', d: 'Inline comments and a summary verdict across two lenses — code quality and security — clamped precisely to the changed lines.' },
+              { I: ShieldAlert, t: 'GitHub-Security-style scan', trig: 'Auto on PRs · /security', d: 'Flags SSRF, injection, secrets, broken authz, unsafe deserialization — each with a severity and a suggested-fix block. Merges live Dependabot CVEs.' },
+              { I: ScanSearch, t: 'Whole-repository audit', trig: '/audit', d: 'Scans the entire repo (not just a diff), follows untrusted input to dangerous sinks, and posts one grouped, severity-sorted report.' },
+              { I: RefreshCw, t: 'Auto-fix failing CI', trig: 'On red checks', d: 'Reads the failing logs, corrects the code, re-runs the tests, and pushes a ci-fix commit — bounded to 2 attempts so it never loops.' },
+              { I: MessageSquare, t: 'Answer @mentions', trig: '@shipit-forge …', d: 'Explains code on issues, and on a PR can push a follow-up commit to the branch. Reads screenshots embedded in issues and PRs via vision.' },
+            ].map((e, i) => (
+              <motion.div key={e.t} {...rise} transition={{ ...rise.transition, delay: (i % 3) * 0.07 }} className="bg-[rgb(11_11_14)] p-7">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5"><e.I size={18} /></span>
+                <h3 className="mt-5 text-lg font-semibold">{e.t}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted">{e.d}</p>
+                <code className="mt-4 inline-block rounded-full border border-white/10 px-2.5 py-0.5 text-[11px] text-white/60">{e.trig}</code>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* providers + run-anywhere strip */}
+          <motion.div {...rise} className="mt-6 grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] md:grid-cols-2">
+            <div className="bg-[rgb(11_11_14)] p-7">
+              <div className="text-xs uppercase tracking-[0.18em] text-muted">Bring your own model</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {['Vertex AI Gemini', 'AWS Bedrock', 'OpenAI', 'Anthropic'].map((p) => (
+                  <span key={p} className="rounded-full border border-white/12 px-3 py-1 text-sm text-white/80">{p}</span>
+                ))}
+              </div>
+              <p className="mt-3 text-sm text-muted">One key, saved to a gitignored <code className="text-white/70">.env</code>. Swap providers with a single env var; all default models read images.</p>
+            </div>
+            <div className="bg-[rgb(11_11_14)] p-7">
+              <div className="text-xs uppercase tracking-[0.18em] text-muted">Run it three ways</div>
+              <div className="mt-3 space-y-2 text-sm">
+                <div className="flex gap-3"><span className="text-white/50">①</span><span><span className="font-medium text-text">CLI / local</span> — try it on any repo, no account, with the built-in fake provider.</span></div>
+                <div className="flex gap-3"><span className="text-white/50">②</span><span><span className="font-medium text-text">GitHub Action</span> — one workflow file, your own key, runs in your CI. No server.</span></div>
+                <div className="flex gap-3"><span className="text-white/50">③</span><span><span className="font-medium text-text">Hosted App</span> — install org-wide with one click; you host the webhook server.</span></div>
+              </div>
+              <Link to="/docs" className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted hover:text-text">Setup guide <ArrowRight size={14} /></Link>
+            </div>
           </motion.div>
         </div>
       </section>
