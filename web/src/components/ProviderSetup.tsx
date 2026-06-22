@@ -133,7 +133,14 @@ AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...`,
 
 export function ProviderSetup() {
   const [active, setActive] = useState('anthropic');
+  const [usage, setUsage] = useState(0);
   const p = PROVIDERS.find((x) => x.key === active)!;
+  const USAGES = [
+    { tab: 'CLI', label: 'terminal', code: p.cli },
+    { tab: 'GitHub Action', label: '.github/workflows/forge.yml', code: p.action },
+    { tab: 'Hosted App', label: 'server env', code: p.app },
+  ] as const;
+  const u = USAGES[usage];
 
   return (
     <div className="mt-5">
@@ -183,14 +190,28 @@ export function ProviderSetup() {
           <p className="mt-6 mb-2 text-xs uppercase tracking-[0.16em] text-muted">Environment variables</p>
           <CodeBlock label=".env" code={p.env} />
 
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            {([['① CLI', p.cli], ['② GitHub Action', p.action], ['③ Hosted App', p.app]] as const).map(([label, code]) => (
-              <div key={label}>
-                <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted">{label}</p>
-                <CodeBlock label="" code={code} />
-              </div>
-            ))}
+          {/* usage switcher — full width, no clipping */}
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted">Use it</p>
+            <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-0.5">
+              {USAGES.map((x, i) => (
+                <button
+                  key={x.tab}
+                  onClick={() => setUsage(i)}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition ${
+                    i === usage ? 'bg-white/10 text-white' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  <span className="mr-1 tabular-nums text-white/40">{i + 1}</span>{x.tab}
+                </button>
+              ))}
+            </div>
           </div>
+          <AnimatePresence mode="wait">
+            <motion.div key={u.tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }} className="mt-2">
+              <CodeBlock label={u.label} code={u.code} />
+            </motion.div>
+          </AnimatePresence>
         </motion.div>
       </AnimatePresence>
 

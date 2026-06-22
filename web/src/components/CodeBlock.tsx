@@ -23,7 +23,7 @@ export function CodeBlock({ label, code }: { label: string; code: string }) {
           {copied ? 'copied' : 'copy'}
         </button>
       </div>
-      <pre className="overflow-auto px-4 py-3.5 font-mono text-[13px] leading-7 text-[#dbe4ff]">{code}</pre>
+      <pre className="overflow-x-auto px-4 py-3.5 font-mono text-[13px] leading-6 text-[#dbe4ff]">{code}</pre>
     </div>
   );
 }
