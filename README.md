@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/banner.svg" alt="ShipIT Forge" width="100%" />
+<img src="./assets/banner.png" alt="ShipIT Forge — autonomous GitHub coding agent" width="100%" />
 
 <br/>
 
