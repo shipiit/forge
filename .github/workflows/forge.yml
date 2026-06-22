@@ -1,0 +1,50 @@
+# ShipIT Forge — auto-review every pull request on this repo (using Vertex Gemini).
+# Scoped to PRs only: it reviews new PRs / new commits, and responds to /review,
+# /security, and @shipit-forge comments on a PR. It never auto-approves or merges.
+#
+# Required repo configuration (Settings → Secrets and variables → Actions):
+#   • Secret   VERTEX_SA_JSON  = the full Vertex service-account JSON
+#   • Variable VERTEX_PROJECT  = your GCP project id
+# Note: secrets are NOT exposed to PRs opened from forks, so Forge runs on
+# same-repo (branch) PRs. That is the safe default.
+
+name: ShipIT Forge (PR review)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review_comment:
+    types: [created]
+  issue_comment:
+    types: [created]
+
+# Only run comment events when they're on a pull request (not plain issues).
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: read
+  statuses: read
+  actions: write
+
+concurrency:
+  group: forge-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    # PR events always run; comment events only when on a PR.
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || (github.event_name == 'issue_comment' && github.event.issue.pull_request) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: shipiit/forge@v1
+        with:
+          provider: vertex
+          vertex-credentials-json: ${{ secrets.VERTEX_SA_JSON }}
+        env:
+          LLM_PROVIDER: vertex
+          VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT }}
+          VERTEX_LOCATION: us-central1
+          VERTEX_MODEL: gemini-2.5-pro
+          FORGE_AUTO_REVIEW: always
+          GITHUB_TOKEN: ${{ github.token }}

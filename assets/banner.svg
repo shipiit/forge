@@ -1,65 +1,70 @@
 <svg width="1280" height="320" viewBox="0 0 1280 320" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ShipIT Forge — autonomous GitHub coding agent">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="320" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#0B1020"/>
-      <stop offset="0.55" stop-color="#131A33"/>
-      <stop offset="1" stop-color="#1B1030"/>
-    </linearGradient>
     <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#FF8A3D"/>
-      <stop offset="1" stop-color="#FF4D67"/>
+      <stop stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#ec4899"/>
     </linearGradient>
-    <linearGradient id="spark" x1="0" y1="0" x2="1" y2="0">
-      <stop stop-color="#7C5CFF"/>
-      <stop offset="1" stop-color="#22D3EE"/>
-    </linearGradient>
-    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="9" result="b"/>
+    <radialGradient id="glowA" cx="0.5" cy="0.5" r="0.5">
+      <stop stop-color="#a78bfa" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#a78bfa" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.5" cy="0.5" r="0.5">
+      <stop stop-color="#ec4899" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ec4899" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="1.4" cy="1.4" r="1.4" fill="#ffffff" fill-opacity="0.05"/>
+    </pattern>
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
       <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
+    <clipPath id="round"><rect width="1280" height="320" rx="28"/></clipPath>
   </defs>
 
-  <rect width="1280" height="320" rx="20" fill="url(#bg)"/>
-  <!-- subtle grid -->
-  <g opacity="0.07" stroke="#9FB4FF">
-    <path d="M0 80 H1280 M0 160 H1280 M0 240 H1280"/>
-    <path d="M213 0 V320 M426 0 V320 M640 0 V320 M853 0 V320 M1066 0 V320"/>
-  </g>
+  <g clip-path="url(#round)">
+    <rect width="1280" height="320" fill="#070709"/>
+    <rect width="1280" height="320" fill="url(#dots)"/>
+    <ellipse cx="1140" cy="20" rx="520" ry="320" fill="url(#glowA)"/>
+    <ellipse cx="60" cy="320" rx="460" ry="300" fill="url(#glowB)"/>
+    <rect x="0.5" y="0.5" width="1279" height="319" rx="28" fill="none" stroke="#ffffff" stroke-opacity="0.08"/>
 
-  <!-- anvil + spark mark -->
-  <g transform="translate(96,108)" filter="url(#glow)">
-    <rect x="0" y="60" width="120" height="22" rx="6" fill="url(#accent)"/>
-    <path d="M10 30 H110 a18 18 0 0 1 -18 24 H40 l-8 6 H14 a8 8 0 0 1 -8 -8 Z" fill="#E9EEFF"/>
-    <circle cx="118" cy="6" r="7" fill="url(#spark)"/>
-    <path d="M118 -16 l5 16 16 5 -16 5 -5 16 -5 -16 -16 -5 16 -5 Z" fill="url(#spark)" opacity="0.9"/>
-  </g>
+    <!-- anvil + spark mark -->
+    <g transform="translate(80,118)">
+      <g filter="url(#soft)">
+        <rect x="0" y="62" width="116" height="20" rx="6" fill="url(#accent)"/>
+        <path d="M10 30 H108 a17 17 0 0 1 -17 23 H40 l-8 6 H15 a8 8 0 0 1 -8 -8 Z" fill="#f5f6fa"/>
+      </g>
+      <path d="M120 -14 l5.5 17 17 5.5 -17 5.5 -5.5 17 -5.5 -17 -17 -5.5 17 -5.5 Z" fill="url(#accent)"/>
+      <circle cx="120" cy="8.5" r="5.5" fill="#fce7f3"/>
+    </g>
 
-  <!-- wordmark -->
-  <text x="270" y="150" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="76" font-weight="800" fill="#FFFFFF">ShipIT <tspan fill="url(#accent)">Forge</tspan></text>
-  <text x="274" y="196" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="27" font-weight="500" fill="#AEB9E1">Autonomous GitHub coding agent — fixes issues, opens PRs, reviews code.</text>
+    <!-- wordmark -->
+    <text x="248" y="150" font-family="Helvetica, Arial, sans-serif" font-size="72" font-weight="800" letter-spacing="-1.5" fill="#f5f6fa">SHIPIT <tspan fill="#7e8294">FORGE</tspan></text>
+    <rect x="250" y="170" width="118" height="3" rx="1.5" fill="url(#accent)"/>
 
-  <!-- provider chips -->
-  <g font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="600">
-    <g transform="translate(274,232)">
-      <rect width="168" height="40" rx="20" fill="#1E2A52"/><text x="84" y="26" fill="#C9D4FF" text-anchor="middle">Vertex Gemini</text>
-    </g>
-    <g transform="translate(456,232)">
-      <rect width="150" height="40" rx="20" fill="#1E2A52"/><text x="75" y="26" fill="#C9D4FF" text-anchor="middle">AWS Bedrock</text>
-    </g>
-    <g transform="translate(620,232)">
-      <rect width="110" height="40" rx="20" fill="#1E2A52"/><text x="55" y="26" fill="#C9D4FF" text-anchor="middle">OpenAI</text>
-    </g>
-    <g transform="translate(744,232)">
-      <rect width="132" height="40" rx="20" fill="#1E2A52"/><text x="66" y="26" fill="#C9D4FF" text-anchor="middle">Anthropic</text>
-    </g>
-  </g>
+    <!-- tagline -->
+    <text x="250" y="206" font-family="Helvetica, Arial, sans-serif" font-size="22" font-weight="500" fill="#9b9fad">Fixes issues · opens PRs · reviews code &amp; security.</text>
 
-  <!-- right-side decorative tokens -->
-  <g transform="translate(1010,70)" font-family="ui-monospace, Menlo, monospace" font-size="16" fill="#5C6BA6" opacity="0.8">
-    <text x="0" y="0">issue → fix → PR</text>
-    <text x="0" y="34">PR → review 🛡️</text>
-    <text x="0" y="68">@shipit-forge</text>
-    <text x="0" y="102">/fix  /review</text>
-    <text x="0" y="136">vision · tools</text>
+    <!-- capability chips -->
+    <g font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#c8ccd8">
+      <g transform="translate(250,238)"><rect width="150" height="36" rx="18" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.12"/><text x="75" y="24" text-anchor="middle">Vertex Gemini</text></g>
+      <g transform="translate(410,238)"><rect width="118" height="36" rx="18" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.12"/><text x="59" y="24" text-anchor="middle">Bedrock</text></g>
+      <g transform="translate(538,238)"><rect width="108" height="36" rx="18" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.12"/><text x="54" y="24" text-anchor="middle">OpenAI</text></g>
+      <g transform="translate(656,238)"><rect width="124" height="36" rx="18" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.12"/><text x="62" y="24" text-anchor="middle">Anthropic</text></g>
+    </g>
+
+    <!-- mini console card -->
+    <g transform="translate(872,70)">
+      <rect width="336" height="180" rx="16" fill="#0e0e12" stroke="#ffffff" stroke-opacity="0.1"/>
+      <circle cx="22" cy="24" r="5" fill="#ff5f56"/><circle cx="40" cy="24" r="5" fill="#ffbd2e"/><circle cx="58" cy="24" r="5" fill="#27c93f"/>
+      <text x="80" y="29" font-family="ui-monospace, Menlo, monospace" font-size="14" fill="#7e8294">shipit-forge</text>
+      <line x1="0" y1="48" x2="336" y2="48" stroke="#ffffff" stroke-opacity="0.08"/>
+      <g font-family="ui-monospace, Menlo, monospace" font-size="17" fill="#c8ccd8">
+        <circle cx="26" cy="80" r="4" fill="url(#accent)"/><text x="44" y="85">issue  -&gt;  fixed PR</text>
+        <circle cx="26" cy="116" r="4" fill="url(#accent)"/><text x="44" y="121">pull request  -&gt;  reviewed</text>
+        <circle cx="26" cy="152" r="4" fill="url(#accent)"/><text x="44" y="157">CI red  -&gt;  auto-fixed</text>
+      </g>
+    </g>
   </g>
 </svg>
