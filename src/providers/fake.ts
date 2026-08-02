@@ -10,15 +10,17 @@ import type { ChatRequest, ChatResult, LLMClient, ProviderId } from './types.js'
 export class FakeLLMClient implements LLMClient {
   readonly id: ProviderId = 'fake';
   readonly supportsVision: boolean;
+  readonly model: string;
 
   /** Requests received, in order — handy for test assertions. */
   readonly requests: ChatRequest[] = [];
 
   private queue: ChatResult[];
 
-  constructor(script: ChatResult[], opts: { supportsVision?: boolean } = {}) {
+  constructor(script: ChatResult[], opts: { supportsVision?: boolean; model?: string } = {}) {
     this.queue = [...script];
     this.supportsVision = opts.supportsVision ?? true;
+    this.model = opts.model ?? 'fake';
   }
 
   async chat(req: ChatRequest): Promise<ChatResult> {

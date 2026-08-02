@@ -72,9 +72,31 @@ describe('Anthropic adapter', () => {
       },
     });
     const res = await adapter.chat({ system: 'S', messages: convo, tools, maxTokens: 100 });
-    expect(captured.system).toBe('S');
+    // Prompt caching is on by default, so the system prompt is promoted to a
+    // cached text block. The tool schema itself is unchanged.
+    expect(captured.system).toEqual([
+      { type: 'text', text: 'S', cache_control: { type: 'ephemeral' } },
+    ]);
     expect(captured.tools[0]).toMatchObject({ name: 'read_file', input_schema: { type: 'object' } });
     expect(res.text).toBe('ok');
+  });
+
+  it('sends a plain system string when prompt caching is disabled', async () => {
+    let captured: any;
+    const adapter = new AnthropicAdapter({
+      promptCaching: false,
+      client: {
+        messages: {
+          async create(body) {
+            captured = body;
+            return { content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } };
+          },
+        },
+      },
+    });
+    await adapter.chat({ system: 'S', messages: convo, tools, maxTokens: 100 });
+    expect(captured.system).toBe('S');
+    expect(captured.tools[0].cache_control).toBeUndefined();
   });
 });
 

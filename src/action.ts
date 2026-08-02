@@ -8,6 +8,8 @@ import { createLLMClient } from './providers/index.js';
 import type { ProviderId } from './providers/types.js';
 import { defaultConfig } from './config.js';
 import { routeEvent, type RouteOpts } from './github/router.js';
+import { octokitOptions } from './github/host.js';
+import { readActionInputs } from './actionInputs.js';
 import { handleIssueFix, handlePrReview, handleMention, handlePrFollowup, type HandlerDeps } from './github/handlers.js';
 import type { OctokitLike } from './github/pr.js';
 import { redactSecrets } from './util/resilience.js';
@@ -52,8 +54,12 @@ async function main(): Promise<void> {
     process.env.GOOGLE_APPLICATION_CREDENTIALS = p;
   }
 
-  const provider = (process.env.LLM_PROVIDER || process.env.INPUT_PROVIDER || 'anthropic') as ProviderId;
+  // Workflow inputs decide what this run does: prompt, tools, turns, budgets.
+  const inputs = readActionInputs();
+  const provider = (process.env.LLM_PROVIDER || inputs.provider || 'anthropic') as ProviderId;
   const config = defaultConfig();
+  if (inputs.model) config.model = inputs.model;
+  if (inputs.maxNits !== undefined) config.maxNits = inputs.maxNits;
   const log = (msg: string) => console.log(redactSecrets(msg));
 
   const routeOpts: RouteOpts = {
@@ -69,7 +75,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  const octokit = new Octokit({ auth: effectiveToken }) as unknown as OctokitLike;
+  // baseUrl is set only on GitHub Enterprise Server; empty on github.com.
+  const octokit = new Octokit({ auth: effectiveToken, ...octokitOptions() }) as unknown as OctokitLike;
   const deps: HandlerDeps = {
     octokit,
     client: createLLMClient({ provider, model: config.model }),
@@ -77,6 +84,13 @@ async function main(): Promise<void> {
     log,
     testCommand: config.testCommand,
     sarifPath: config.sarifPath,
+    maxNits: config.maxNits,
+    extraPrompt: inputs.extraPrompt,
+    toolSelection: { allowed: inputs.allowedTools, disallowed: inputs.disallowedTools },
+    skillName: inputs.skillName,
+    inlineSkill: inputs.inlineSkill,
+    skillsPath: inputs.skillsPath,
+    historyPath: config.historyPath,
     selfReview: true,
   };
 

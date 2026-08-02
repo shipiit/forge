@@ -9,6 +9,12 @@ export interface ReviewFinding {
   title: string;
   body: string;
   suggestion?: string;
+  /**
+   * True when the issue already existed and was not introduced by this change.
+   * Pre-existing findings are reported for awareness but never block a PR — the
+   * author shouldn't be held up by a bug they didn't write.
+   */
+  preExisting?: boolean;
 }
 
 const SEVERITY_BADGE: Record<ReviewFinding['severity'], string> = {
@@ -84,10 +90,44 @@ export function renderSummary(findings: ReviewFinding[], displayName: string): s
 /**
  * Choose the review verdict. ShipIT Forge never approves — it requests changes when
  * there's a High/Critical finding, otherwise comments. Approval is always left to a human.
+ *
+ * Pre-existing findings never trigger REQUEST_CHANGES: they are surfaced for
+ * awareness, but blocking a PR on a bug it didn't introduce just punishes whoever
+ * happened to touch the file next.
  */
 export function chooseEvent(findings: ReviewFinding[]): ReviewPayload['event'] {
-  const hasBlocker = findings.some((f) => SEVERITY_RANK[f.severity] >= SEVERITY_RANK.high);
+  const hasBlocker = findings.some((f) => !f.preExisting && SEVERITY_RANK[f.severity] >= SEVERITY_RANK.high);
   return hasBlocker ? 'REQUEST_CHANGES' : 'COMMENT';
+}
+
+/**
+ * Cap how many low-severity findings a single review posts inline. Prose and
+ * config can be polished forever; an uncapped review buries the one finding that
+ * mattered under twenty that didn't. Returns the kept findings plus the number
+ * dropped, so the summary can say "plus N similar items".
+ */
+export function capNits(
+  findings: ReviewFinding[],
+  maxNits: number,
+): { kept: ReviewFinding[]; dropped: number } {
+  if (maxNits < 0) return { kept: findings, dropped: 0 };
+  const isNit = (f: ReviewFinding) => SEVERITY_RANK[f.severity] <= SEVERITY_RANK.low;
+  const kept: ReviewFinding[] = [];
+  let nits = 0;
+  let dropped = 0;
+  for (const f of findings) {
+    if (!isNit(f)) {
+      kept.push(f);
+      continue;
+    }
+    if (nits < maxNits) {
+      kept.push(f);
+      nits++;
+    } else {
+      dropped++;
+    }
+  }
+  return { kept, dropped };
 }
 
 /**
@@ -151,6 +191,35 @@ export function parseDiffValidLines(diff: string): Map<string, Set<number>> {
   return map;
 }
 
+/** The set of files touched by a unified diff (new-side paths). */
+export function changedFiles(diff: string): string[] {
+  const files = new Set<string>();
+  for (const m of diff.matchAll(/^\+\+\+ (?:b\/)?(.+)$/gm)) {
+    const p = m[1]!.trim();
+    if (p && p !== '/dev/null') files.add(p);
+  }
+  return [...files];
+}
+
+/**
+ * Keep only findings about code the change actually touched.
+ *
+ * A review is about *this* PR, not the repository. Without this, a reviewer
+ * given read access to the whole tree will wander off and report issues in files
+ * the author never opened — noise the author can't act on and didn't ask for.
+ *
+ * A finding explicitly marked `preExisting` is kept when it lands on a changed
+ * file: that is the "you touched this file, note that it already has a bug"
+ * case, which is useful. Findings on untouched files are dropped entirely.
+ */
+export function scopeFindingsToDiff(findings: ReviewFinding[], diff: string): ReviewFinding[] {
+  const touched = new Set(changedFiles(diff));
+  if (touched.size === 0) return findings;
+  const normalize = (p: string) => p.replace(/^\.?\//, '');
+  const touchedNorm = new Set([...touched].map(normalize));
+  return findings.filter((f) => touchedNorm.has(normalize(f.file)));
+}
+
 /**
  * Build the full GitHub review payload from findings. `securityOnly` keeps only
  * security-lens findings. When `validLines` is provided (parsed from the PR
@@ -159,7 +228,13 @@ export function parseDiffValidLines(diff: string): Map<string, Set<number>> {
  */
 export function buildReviewPayload(
   findings: ReviewFinding[],
-  opts: { displayName?: string; securityOnly?: boolean; validLines?: Map<string, Set<number>> } = {},
+  opts: {
+    displayName?: string;
+    securityOnly?: boolean;
+    validLines?: Map<string, Set<number>>;
+    /** Nits withheld by the cap, mentioned as a count instead of posted. */
+    droppedNits?: number;
+  } = {},
 ): ReviewPayload {
   const displayName = opts.displayName ?? 'ShipIT Forge';
   const filtered = opts.securityOnly ? findings.filter((f) => f.lens === 'security') : findings;
@@ -181,6 +256,9 @@ export function buildReviewPayload(
   }));
 
   let body = renderSummary(filtered, displayName);
+  if (opts.droppedNits && opts.droppedNits > 0) {
+    body += `\n\n_Plus ${opts.droppedNits} similar minor item(s), withheld to keep this review actionable._`;
+  }
   if (summaryOnly.length > 0) {
     body +=
       `\n\n#### Additional findings (outside the diff)\n` +
