@@ -330,7 +330,7 @@ describe('repo instruction files', () => {
     const prompt = composeReviewSystemPrompt('BASE', {
       projectContext: 'use tabs',
       reviewInstructions: 'only report security',
-      found: ['CLAUDE.md', 'REVIEW.md'],
+      found: ['FORGE.md', 'REVIEW.md'],
     });
     expect(prompt.indexOf('BASE')).toBeLessThan(prompt.indexOf('use tabs'));
     expect(prompt.indexOf('use tabs')).toBeLessThan(prompt.indexOf('only report security'));
@@ -341,7 +341,7 @@ describe('repo instruction files', () => {
     const prompt = composeReviewSystemPrompt('BASE', {
       projectContext: 'use tabs',
       reviewInstructions: '',
-      found: ['CLAUDE.md'],
+      found: ['FORGE.md'],
     });
     expect(prompt).toContain('nit');
   });

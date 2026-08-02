@@ -88,7 +88,7 @@ export function Examples() {
 
         <div className="mt-12 flex flex-wrap gap-4">
           <Link to="/flow/fix" className="btn btn-line !rounded-none !uppercase !tracking-[0.14em]">Watch the fix flow</Link>
-          <Link to="/docs" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Read the docs</Link>
+          <Link to="/github" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Read the docs</Link>
         </div>
       </section>
       <Footer />

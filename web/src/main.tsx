@@ -1,13 +1,13 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './index.css';
 import { Landing } from './pages/Landing';
-import { Docs } from './pages/Docs';
 import { Flow } from './pages/Flow';
 import { Examples } from './pages/Examples';
 import { GitHubGuide } from './pages/GitHubGuide';
 import { Schedules } from './pages/Schedules';
+import { Builder } from './pages/Builder';
 
 // BrowserRouter so in-page #anchors (Features/How/Examples) work natively.
 // basename handles GitHub Pages project hosting (/forge/).
@@ -25,11 +25,13 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter basename={base}>
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route path="/docs" element={<Docs />} />
-        <Route path="/flow/:slug" element={<Flow />} />
-        <Route path="/examples" element={<Examples />} />
         <Route path="/github" element={<GitHubGuide />} />
         <Route path="/schedules" element={<Schedules />} />
+        <Route path="/builder" element={<Builder />} />
+        <Route path="/flow/:slug" element={<Flow />} />
+        <Route path="/examples" element={<Examples />} />
+        {/* Docs merged into the GitHub guide — keep old links working. */}
+        <Route path="/docs" element={<Navigate to="/github" replace />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,

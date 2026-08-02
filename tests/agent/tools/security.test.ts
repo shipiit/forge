@@ -102,11 +102,11 @@ describe('ReDoS guard', () => {
 });
 
 describe('custom repo rules', () => {
-  it('loads rules from .claude/security-patterns.json', async () => {
+  it('loads rules from .forge/security-patterns.json', async () => {
     const dir = await tmpdir();
-    await fs.mkdir(path.join(dir, '.claude'), { recursive: true });
+    await fs.mkdir(path.join(dir, '.forge'), { recursive: true });
     await fs.writeFile(
-      path.join(dir, '.claude/security-patterns.json'),
+      path.join(dir, '.forge/security-patterns.json'),
       JSON.stringify({
         patterns: [
           { rule_name: 'internal_key', substrings: ['sk_live_'], reminder: 'Use the secret manager.' },
@@ -122,8 +122,8 @@ describe('custom repo rules', () => {
   it('returns [] when the file is absent or malformed', async () => {
     const dir = await tmpdir();
     expect(await loadCustomPatterns(dir)).toEqual([]);
-    await fs.mkdir(path.join(dir, '.claude'), { recursive: true });
-    await fs.writeFile(path.join(dir, '.claude/security-patterns.json'), 'not json');
+    await fs.mkdir(path.join(dir, '.forge'), { recursive: true });
+    await fs.writeFile(path.join(dir, '.forge/security-patterns.json'), 'not json');
     expect(await loadCustomPatterns(dir)).toEqual([]);
   });
 
@@ -150,9 +150,9 @@ describe('custom repo rules', () => {
 
   it('merges built-ins with repo rules', async () => {
     const dir = await tmpdir();
-    await fs.mkdir(path.join(dir, '.claude'), { recursive: true });
+    await fs.mkdir(path.join(dir, '.forge'), { recursive: true });
     await fs.writeFile(
-      path.join(dir, '.claude/security-patterns.json'),
+      path.join(dir, '.forge/security-patterns.json'),
       JSON.stringify({ patterns: [{ rule_name: 'custom', substrings: ['FORBIDDEN'], reminder: 'no' }] }),
     );
     const scanner = await createWorkspaceScanner(dir);

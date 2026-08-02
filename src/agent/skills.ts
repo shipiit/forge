@@ -133,7 +133,7 @@ export function parseSkillFile(name: string, text: string): Skill | null {
   };
 }
 
-export const SKILL_DIRS = ['.forge/skills', '.claude/skills'];
+export const SKILL_DIRS = ['.forge/skills', '.github/forge/skills'];
 
 /** Load repository-committed skills. Never throws; returns [] when none exist. */
 export async function loadRepoSkills(cwd: string, extraDir?: string): Promise<Skill[]> {

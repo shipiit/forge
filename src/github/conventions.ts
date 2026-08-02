@@ -6,7 +6,7 @@ import path from 'node:path';
  *
  * Two kinds, with deliberately different weight:
  *
- * - **Project context** (`CLAUDE.md`, `AGENTS.md`, `.github/FORGE.md`) — shared
+ * - **Project context** (`FORGE.md`, `.github/FORGE.md`, `AGENTS.md`) — shared
  *   conventions used by every flow. In review, a newly introduced violation is a
  *   *nit*, not a blocker.
  * - **Review instructions** (`REVIEW.md`) — review-only, injected as the highest
@@ -18,7 +18,7 @@ import path from 'node:path';
  */
 
 /** Files read as general project context, in priority order. */
-export const PROJECT_CONTEXT_FILES = ['CLAUDE.md', 'AGENTS.md', '.github/FORGE.md'];
+export const PROJECT_CONTEXT_FILES = ['FORGE.md', '.github/FORGE.md', 'AGENTS.md'];
 
 /** Review-only instruction file. */
 export const REVIEW_INSTRUCTIONS_FILE = 'REVIEW.md';

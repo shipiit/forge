@@ -457,7 +457,7 @@ async function doPrReview(
 
     const result = await runAgent({
       client,
-      // REVIEW.md overrides the default guidance; CLAUDE.md is context whose
+      // REVIEW.md overrides the default guidance; FORGE.md is context whose
       // newly-introduced violations are nits.
       system: prompt(deps, composeReviewSystemPrompt(reviewSystemPrompt({ securityOnly: args.securityOnly }), instructions)),
       initialContent,

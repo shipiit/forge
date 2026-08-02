@@ -146,12 +146,12 @@ export function scanContent(patterns: SecurityPattern[], filePath: string, conte
 }
 
 /**
- * Load repository-specific rules from `.claude/security-patterns.json`.
+ * Load repository-specific rules from `.forge/security-patterns.json`.
  * JSON only — deliberately no YAML dependency, so this never fails to load.
  * Returns [] when absent or malformed.
  */
 export async function loadCustomPatterns(cwd: string): Promise<SecurityPattern[]> {
-  for (const rel of ['.claude/security-patterns.json', '.forge/security-patterns.json']) {
+  for (const rel of ['.forge/security-patterns.json', '.github/forge/security-patterns.json']) {
     try {
       const raw = await fs.readFile(path.join(cwd, rel), 'utf8');
       const doc = JSON.parse(raw) as { patterns?: unknown };

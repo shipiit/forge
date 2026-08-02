@@ -15,13 +15,13 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 [![License: MIT](https://img.shields.io/badge/License-MIT-22D3EE.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-88%20passing-FF8A3D.svg)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-381%20passing-FF8A3D.svg)](#-testing)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-7C5CFF.svg)](#-contributing)
 
 <br/>
 
 **Providers:**
-&nbsp;`Vertex AI Gemini`&nbsp;·&nbsp;`AWS Bedrock`&nbsp;·&nbsp;`OpenAI`&nbsp;·&nbsp;`Anthropic`
+&nbsp;`Anthropic`&nbsp;·&nbsp;`OpenAI`&nbsp;·&nbsp;`Gemini`&nbsp;·&nbsp;`Vertex AI`&nbsp;·&nbsp;`AWS Bedrock`&nbsp;·&nbsp;`Groq`&nbsp;·&nbsp;`Together`&nbsp;·&nbsp;`Ollama`&nbsp;·&nbsp;`OpenAI-compatible`
 
 <br/>
 
@@ -72,7 +72,7 @@ always completes as `neutral` so it can't block a merge through branch protectio
 
 - **Deterministic per-edit checks** — every write is scanned for risky patterns (dynamic execution, unsafe
   deserialization, DOM injection, hardcoded credentials, weak crypto, workflow edits) with **no model call
-  and no token cost**. Add your own rules in `.claude/security-patterns.json`.
+  and no token cost**. Add your own rules in `.forge/security-patterns.json`.
 - **Sandboxed tools** — path-jailed file access, a command denylist, process-group timeouts, and output caps.
 - **Secret redaction** on every log path.
 - **Live Dependabot alerts** and **SARIF** (CodeQL, Semgrep) merged into the same triaged report.
@@ -81,7 +81,7 @@ always completes as `neutral` so it can't block a merge through branch protectio
 
 - **Whole-organization rollout** — the App installs once across every repo; the Action needs no server at all.
 - **GitHub Enterprise Server** — set `GHES_HOSTNAME` and everything else is identical.
-- **Repo instruction files** — `CLAUDE.md` / `AGENTS.md` as project context, `REVIEW.md` as highest-priority
+- **Repo instruction files** — `FORGE.md` / `AGENTS.md` as project context, `REVIEW.md` as highest-priority
   review instructions that override the defaults.
 - **Trigger filters** — author, title, body, base/head branch, labels, draft, merged, with
   `equals · contains · starts_with · is_one_of · is_not_one_of · matches_regex`.

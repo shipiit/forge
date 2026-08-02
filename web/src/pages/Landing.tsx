@@ -51,7 +51,7 @@ export function Landing() {
               Fix issues, review PRs, audit security, auto-fix CI — from first issue to merged PR, all in one place. Try it with your own repo, no account needed.
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-6">
-              <Link to="/docs" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Get started <ArrowRight size={15} /></Link>
+              <Link to="/github" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Get started <ArrowRight size={15} /></Link>
               <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="text-sm text-muted underline-offset-4 hover:text-text hover:underline">Working at a team? Star on GitHub</a>
             </div>
           </motion.div>
@@ -216,7 +216,7 @@ export function Landing() {
                 Runs on GitHub's own scheduler, inside your CI, on your credentials — no Forge-operated service
                 holds a token for your repo.
               </p>
-              <Link to="/docs#schedule" className="mt-5 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted hover:text-text">
+              <Link to="/schedules" className="mt-5 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted hover:text-text">
                 Set up a schedule <ArrowRight size={14} />
               </Link>
             </div>
@@ -345,7 +345,7 @@ export function Landing() {
         <motion.div {...rise} className="mx-auto max-w-3xl">
           <h2 className="display text-[clamp(36px,5.5vw,68px)]">Write the issue.<br /><span className="dim">Forge ships the fix.</span></h2>
           <div className="mt-9 flex flex-wrap justify-center gap-5">
-            <Link to="/docs" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Read the docs <ArrowRight size={15} /></Link>
+            <Link to="/github" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Read the docs <ArrowRight size={15} /></Link>
             <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="btn btn-line !rounded-none !uppercase !tracking-[0.14em]">Get it on GitHub</a>
           </div>
         </motion.div>

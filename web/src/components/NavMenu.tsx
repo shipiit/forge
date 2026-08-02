@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ChevronDown } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { ChevronDown } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 export interface NavItem {
   label: string;
@@ -22,7 +22,13 @@ export interface NavGroup {
  * on Escape, outside click, and blur — so it is usable without a mouse and never
  * gets stuck open on touch, where hover has no counterpart.
  */
-export function NavMenu({ label, groups }: { label: string; groups: NavGroup[] }) {
+export function NavMenu({
+  label,
+  groups,
+}: {
+  label: string;
+  groups: NavGroup[];
+}) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -33,17 +39,17 @@ export function NavMenu({ label, groups }: { label: string; groups: NavGroup[] }
       if (!wrap.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === "Escape") setOpen(false);
     };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
     };
   }, [open]);
 
-  const cols = groups.length > 1 ? 'sm:grid-cols-2' : '';
+  const cols = groups.length > 1 ? "sm:grid-cols-2" : "";
 
   return (
     <div
@@ -60,21 +66,28 @@ export function NavMenu({ label, groups }: { label: string; groups: NavGroup[] }
         className="inline-flex items-center gap-1.5 uppercase tracking-[0.12em] transition-colors hover:text-text"
       >
         {label}
-        <ChevronDown size={13} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          size={13}
+          className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
       </button>
 
       <div
         id={id}
         role="menu"
         className={`absolute left-1/2 top-full z-50 w-[min(90vw,640px)] -translate-x-1/2 pt-4 transition-all duration-200 ${
-          open ? 'visible translate-y-0 opacity-100' : 'invisible -translate-y-1 opacity-0'
+          open
+            ? "visible translate-y-0 opacity-100"
+            : "invisible -translate-y-1 opacity-0"
         }`}
       >
         <div className="panel overflow-hidden !rounded-xl shadow-glow">
           <div className={`grid gap-px bg-white/[0.06] ${cols}`}>
             {groups.map((g) => (
               <div key={g.heading} className="bg-[rgb(11_11_14)] p-5">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted">{g.heading}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted">
+                  {g.heading}
+                </div>
                 <ul className="mt-3 space-y-0.5">
                   {g.items.map((it) => (
                     <li key={it.label}>
