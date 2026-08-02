@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
 /**
  * Label + hint + required marker wrapper shared by every control.
@@ -21,17 +21,24 @@ export function Field({
 }) {
   return (
     <div>
-      <label htmlFor={htmlFor} className="flex items-baseline gap-2 text-[13px] font-semibold text-text">
+      <label
+        htmlFor={htmlFor}
+        className="flex items-baseline gap-2 text-[13px] font-semibold text-text"
+      >
         {label}
         {required ? (
           <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[rgb(var(--syn-prop))]">
             required
           </span>
         ) : (
-          <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">optional</span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">
+            optional
+          </span>
         )}
       </label>
-      {hint && <p className="mt-1 text-[12px] leading-relaxed text-muted">{hint}</p>}
+      {hint && (
+        <p className="mt-1 text-[12px] leading-relaxed text-muted">{hint}</p>
+      )}
       <div className="mt-2.5">{children}</div>
     </div>
   );

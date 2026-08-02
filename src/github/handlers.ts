@@ -30,6 +30,8 @@ import {
   insertHistoryEntry,
   parseHistoryPayload,
   renderHistoryEntry,
+  renderHistoryFile,
+  historyFilename,
   type HistoryEntry,
 } from './history.js';
 import { buildIssueContent, buildReviewContent, type CommentLike } from './context.js';
@@ -77,8 +79,10 @@ export interface HandlerDeps {
   extraPrompt?: string;
   /** Restrict which tools the agent is offered (fewer tools = fewer tokens). */
   toolSelection?: ToolSelection;
-  /** Path of the change-history document. */
+  /** Path of the change-history document, or its directory in per_commit mode. */
   historyPath?: string;
+  /** `single` appends to one document; `per_commit` writes a file per change. */
+  historyMode?: 'single' | 'per_commit';
   /** Skill to run for this invocation, when the workflow selected one. */
   skillName?: string;
   /** A skill defined in the workflow file rather than committed to the repo. */
@@ -799,6 +803,7 @@ async function doHistory(
   const { octokit, client, token, log } = deps;
   const wsOps = deps.workspace ?? realWorkspace;
   const historyPath = deps.historyPath ?? 'docs/CHANGE-HISTORY.md';
+  const perCommit = deps.historyMode === 'per_commit';
 
   // The diff of THIS change only — a PR's diff, or the pushed commit range.
   let diff = '';
@@ -827,7 +832,12 @@ async function doHistory(
 
   const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: args.defaultBranch }, token);
   try {
-    const existing = await fs.readFile(path.join(ws.dir, historyPath), 'utf8').catch(() => '');
+    // In single-document mode we read the running file to append to it and to
+    // detect a replay. Per-commit mode writes a new file, so there is nothing
+    // to read — the filename itself carries the identity.
+    const existing = perCommit
+      ? ''
+      : await fs.readFile(path.join(ws.dir, historyPath), 'utf8').catch(() => '');
     const stub: HistoryEntry = {
       date: args.date,
       title: args.title,
@@ -836,7 +846,19 @@ async function doHistory(
       ...(args.pullNumber ? { pullNumber: args.pullNumber } : {}),
       ...(sha ? { sha } : {}),
     };
-    if (alreadyRecorded(existing, stub)) {
+    const perCommitFile = perCommit ? path.join(historyPath, historyFilename(stub)) : '';
+    if (perCommit) {
+      // A file that already exists means this change was recorded on an earlier
+      // delivery of the same event.
+      const exists = await fs
+        .access(path.join(ws.dir, perCommitFile))
+        .then(() => true)
+        .catch(() => false);
+      if (exists) {
+        log(`history: ${perCommitFile} already exists; skipping.`);
+        return;
+      }
+    } else if (alreadyRecorded(existing, stub)) {
       log('history: this change is already recorded; skipping.');
       return;
     }
@@ -865,12 +887,15 @@ async function doHistory(
     }
 
     const entry: HistoryEntry = { ...stub, ...payload };
-    const updated = insertHistoryEntry(existing, renderHistoryEntry(entry));
+    const target = perCommit ? perCommitFile : historyPath;
+    const contents = perCommit
+      ? renderHistoryFile(entry)
+      : insertHistoryEntry(existing, renderHistoryEntry(entry));
 
     const branch = `forge/history-${args.pullNumber ?? (sha ?? 'update').slice(0, 7)}`;
     await wsOps.createBranch(ws, branch);
-    await fs.mkdir(path.dirname(path.join(ws.dir, historyPath)), { recursive: true });
-    await fs.writeFile(path.join(ws.dir, historyPath), updated, 'utf8');
+    await fs.mkdir(path.dirname(path.join(ws.dir, target)), { recursive: true });
+    await fs.writeFile(path.join(ws.dir, target), contents, 'utf8');
 
     const committed = await wsOps.commitAll(ws, `docs: record "${args.title}" in the change history`.slice(0, 200));
     if (!committed) {

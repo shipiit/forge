@@ -91,6 +91,7 @@ async function main(): Promise<void> {
     inlineSkill: inputs.inlineSkill,
     skillsPath: inputs.skillsPath,
     historyPath: config.historyPath,
+    historyMode: config.historyMode,
     selfReview: true,
   };
 

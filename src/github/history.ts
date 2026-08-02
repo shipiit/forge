@@ -80,6 +80,29 @@ export function insertHistoryEntry(existing: string, entryMarkdown: string): str
   return `${head}\n\n${entryMarkdown}\n\n${rest}\n`;
 }
 
+/**
+ * Filename for one-file-per-change mode.
+ *
+ * Date-prefixed so a directory listing is chronological, slugged from the title
+ * so it is readable, and suffixed with the PR number or short sha so two changes
+ * with the same title can never collide.
+ */
+export function historyFilename(entry: HistoryEntry): string {
+  const slug =
+    entry.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'change';
+  const ref = entry.pullNumber ? `pr-${entry.pullNumber}` : (entry.sha ?? '').slice(0, 7) || 'commit';
+  return `${entry.date}-${slug}-${ref}.md`;
+}
+
+/** The full document written in one-file-per-change mode. */
+export function renderHistoryFile(entry: HistoryEntry): string {
+  return `${renderHistoryEntry(entry)}\n`;
+}
+
 /** True when this change is already recorded, so a redelivered webhook is a no-op. */
 export function alreadyRecorded(existing: string, entry: HistoryEntry): boolean {
   if (entry.pullNumber && new RegExp(`\\(#${entry.pullNumber}\\)`).test(existing)) return true;

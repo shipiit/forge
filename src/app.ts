@@ -36,6 +36,7 @@ async function deps(context: Context, config: ForgeConfig): Promise<HandlerDeps>
     sarifPath: config.sarifPath,
     maxNits: config.maxNits,
     historyPath: config.historyPath,
+    historyMode: config.historyMode,
     selfReview: true,
   };
 }

@@ -5,6 +5,8 @@ import {
   insertHistoryEntry,
   parseHistoryPayload,
   renderHistoryEntry,
+  renderHistoryFile,
+  historyFilename,
   type HistoryEntry,
 } from '../../src/github/history.js';
 import { routeEvent, REVIEW_ALWAYS_LABEL } from '../../src/github/router.js';
@@ -140,5 +142,47 @@ describe('review subscription label', () => {
   it('does not re-review an unsubscribed PR when auto-review is off', () => {
     const payload = { ...repo, action: 'synchronize', pull_request: { number: 1, labels: [] } };
     expect(routeEvent('pull_request', payload, OPTS).kind).toBe('none');
+  });
+});
+
+describe('one file per change', () => {
+  it('names the file by date, slug, and reference', () => {
+    expect(historyFilename(entry())).toBe('2026-08-02-add-response-caching-pr-42.md');
+  });
+
+  it('uses the short sha when there is no PR', () => {
+    expect(historyFilename(entry({ pullNumber: undefined, sha: 'abcdef1234567' }))).toBe(
+      '2026-08-02-add-response-caching-abcdef1.md',
+    );
+  });
+
+  it('never collides for two changes with the same title', () => {
+    const a = historyFilename(entry({ pullNumber: 1 }));
+    const b = historyFilename(entry({ pullNumber: 2 }));
+    expect(a).not.toBe(b);
+  });
+
+  it('slugs a title with punctuation into a safe filename', () => {
+    const name = historyFilename(entry({ title: 'Fix: the API/handler (v2)!' }));
+    expect(name).toMatch(/^[a-z0-9.-]+\.md$/);
+    expect(name).not.toContain('/');
+  });
+
+  it('falls back when a title slugs to nothing', () => {
+    expect(historyFilename(entry({ title: '!!!' }))).toContain('change');
+  });
+
+  it('sorts chronologically in a directory listing', () => {
+    const names = [
+      historyFilename(entry({ date: '2026-08-02' })),
+      historyFilename(entry({ date: '2026-01-15' })),
+    ].sort();
+    expect(names[0]).toContain('2026-01-15');
+  });
+
+  it('renders the file as a standalone document', () => {
+    const file = renderHistoryFile(entry());
+    expect(file).toContain('## 2026-08-02 — Add response caching (#42)');
+    expect(file.endsWith('\n')).toBe(true);
   });
 });

@@ -309,9 +309,38 @@ export function WorkflowBuilder() {
               </Field>
 
               <Field
-                label="Document path"
+                label="How to store it"
                 required
-                hint="Where the running history lives. It is created on the first entry."
+                hint="One running document, or a new file per change named after it."
+                htmlFor="wb-hmode"
+              >
+                <Select
+                  id="wb-hmode"
+                  value={c.historyMode}
+                  options={[
+                    {
+                      value: "single",
+                      label: "One running document",
+                      hint: "Newest entry on top of a single file",
+                    },
+                    {
+                      value: "per_commit",
+                      label: "A file per change",
+                      hint: "2026-08-02-add-caching-pr-128.md in a directory",
+                    },
+                  ]}
+                  onChange={(v) => set("historyMode", v as "single" | "per_commit")}
+                />
+              </Field>
+
+              <Field
+                label={c.historyMode === "per_commit" ? "Directory" : "Document path"}
+                required
+                hint={
+                  c.historyMode === "per_commit"
+                    ? "The per-change files are written here, one per commit or merged PR."
+                    : "Where the running history lives. It is created on the first entry."
+                }
                 htmlFor="wb-hpath"
               >
                 <TextInput
@@ -319,7 +348,7 @@ export function WorkflowBuilder() {
                   mono
                   value={c.historyPath}
                   onChange={(v) => set("historyPath", v)}
-                  placeholder="docs/CHANGE-HISTORY.md"
+                  placeholder={c.historyMode === "per_commit" ? "docs/history" : "docs/CHANGE-HISTORY.md"}
                   invalid={Boolean(issueFor("historyPath"))}
                 />
               </Field>
@@ -342,11 +371,15 @@ export function WorkflowBuilder() {
           </Field>
 
           <p className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3.5 py-3 text-[12.5px] leading-relaxed text-muted">
-            <span className="text-text">Every skill stays available regardless.</span> Pinning one only changes what
-            this job does on its own triggers — anyone can still comment{' '}
-            <code className="text-[rgb(var(--syn-keyword))]">/code-review</code>,{' '}
-            <code className="text-[rgb(var(--syn-keyword))]">/triage</code>, or any other skill on an issue or PR.
-            To run two skills automatically, add a second job with its own triggers.
+            <span className="text-text">
+              Every skill stays available regardless.
+            </span>{" "}
+            Pinning one only changes what this job does on its own triggers —
+            anyone can still comment{" "}
+            <code className="text-[rgb(var(--syn-keyword))]">/code-review</code>
+            , <code className="text-[rgb(var(--syn-keyword))]">/triage</code>,
+            or any other skill on an issue or PR. To run two skills
+            automatically, add a second job with its own triggers.
           </p>
 
           <Field
@@ -526,84 +559,87 @@ export function WorkflowBuilder() {
           ]}
           guide={
             <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-5">
-          <h4 className="text-[13px] font-semibold text-text">
-            Where each file goes
-          </h4>
-          <ol className="mt-3 space-y-2.5 text-[12.5px] leading-relaxed text-muted">
-            <li className="flex gap-2.5">
-              <span className="text-white/40">1</span>
-              <span>
-                Commit the workflow as{" "}
-                <code className="text-[rgb(var(--syn-keyword))]">
-                  .github/workflows/forge.yml
-                </code>
-                .
-              </span>
-            </li>
-            {agentYml && (
-              <li className="flex gap-2.5">
-                <span className="text-white/40">2</span>
-                <span>
-                  Commit the routine as{" "}
-                  <code className="text-[rgb(var(--syn-keyword))]">
-                    .github/agent.yml
-                  </code>
-                  . The workflow says{" "}
-                  <em className="not-italic text-text">when</em>; the routine
-                  says <em className="not-italic text-text">what</em>.
-                </span>
-              </li>
-            )}
-            <li className="flex gap-2.5">
-              <span className="text-white/40">{agentYml ? 3 : 2}</span>
-              <span>
-                Add your key under{" "}
-                <span className="text-text">
-                  Settings → Secrets and variables → Actions
-                </span>{" "}
-                {meta.secretInput ? (
-                  <>
-                    as{" "}
+              <h4 className="text-[13px] font-semibold text-text">
+                Where each file goes
+              </h4>
+              <ol className="mt-3 space-y-2.5 text-[12.5px] leading-relaxed text-muted">
+                <li className="flex gap-2.5">
+                  <span className="text-white/40">1</span>
+                  <span>
+                    Commit the workflow as{" "}
                     <code className="text-[rgb(var(--syn-keyword))]">
-                      {c.secretName || "YOUR_SECRET"}
+                      .github/workflows/forge.yml
                     </code>
                     .
-                  </>
-                ) : (
-                  <>— see the note above for what this provider needs.</>
-                )}
-              </span>
-            </li>
-            <li className="flex gap-2.5">
-              <span className="text-white/40">{agentYml ? 4 : 3}</span>
-              <span>
-                {c.schedule.trim() ? (
-                  <>
-                    Run it on demand from{" "}
-                    <span className="text-text">
-                      Actions → {c.name || "ShipIT Forge"} → Run workflow
+                  </span>
+                </li>
+                {agentYml && (
+                  <li className="flex gap-2.5">
+                    <span className="text-white/40">2</span>
+                    <span>
+                      Commit the routine as{" "}
+                      <code className="text-[rgb(var(--syn-keyword))]">
+                        .github/agent.yml
+                      </code>
+                      . The workflow says{" "}
+                      <em className="not-italic text-text">when</em>; the
+                      routine says{" "}
+                      <em className="not-italic text-text">what</em>.
                     </span>
-                    , or comment{" "}
-                    <code className="text-[rgb(var(--syn-keyword))]">
-                      /run {c.routineName || "nightly-digest"}
-                    </code>{" "}
-                    in any issue or PR. It also fires on its schedule.
-                  </>
-                ) : (
-                  <>
-                    Open an issue or a pull request — Forge responds on the
-                    events you selected. Comment{" "}
-                    <code className="text-[rgb(var(--syn-keyword))]">/fix</code>{" "}
-                    or{" "}
-                    <code className="text-[rgb(var(--syn-keyword))]">
-                      /review
-                    </code>{" "}
-                    to ask for something directly.
-                  </>
+                  </li>
                 )}
-              </span>
-            </li>
-            </ol>
+                <li className="flex gap-2.5">
+                  <span className="text-white/40">{agentYml ? 3 : 2}</span>
+                  <span>
+                    Add your key under{" "}
+                    <span className="text-text">
+                      Settings → Secrets and variables → Actions
+                    </span>{" "}
+                    {meta.secretInput ? (
+                      <>
+                        as{" "}
+                        <code className="text-[rgb(var(--syn-keyword))]">
+                          {c.secretName || "YOUR_SECRET"}
+                        </code>
+                        .
+                      </>
+                    ) : (
+                      <>— see the note above for what this provider needs.</>
+                    )}
+                  </span>
+                </li>
+                <li className="flex gap-2.5">
+                  <span className="text-white/40">{agentYml ? 4 : 3}</span>
+                  <span>
+                    {c.schedule.trim() ? (
+                      <>
+                        Run it on demand from{" "}
+                        <span className="text-text">
+                          Actions → {c.name || "ShipIT Forge"} → Run workflow
+                        </span>
+                        , or comment{" "}
+                        <code className="text-[rgb(var(--syn-keyword))]">
+                          /run {c.routineName || "nightly-digest"}
+                        </code>{" "}
+                        in any issue or PR. It also fires on its schedule.
+                      </>
+                    ) : (
+                      <>
+                        Open an issue or a pull request — Forge responds on the
+                        events you selected. Comment{" "}
+                        <code className="text-[rgb(var(--syn-keyword))]">
+                          /fix
+                        </code>{" "}
+                        or{" "}
+                        <code className="text-[rgb(var(--syn-keyword))]">
+                          /review
+                        </code>{" "}
+                        to ask for something directly.
+                      </>
+                    )}
+                  </span>
+                </li>
+              </ol>
             </div>
           }
         />

@@ -50,7 +50,7 @@ export function Builder() {
           {...rise}
           className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] md:grid-cols-3"
         >
-          {NOTES.map(([t, d]) => (
+          {NOTES?.map(([t, d]) => (
             <div key={t} className="bg-[rgb(11_11_14)] p-6">
               <h3 className="text-[15px] font-semibold">{t}</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">{d}</p>

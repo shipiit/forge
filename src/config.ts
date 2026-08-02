@@ -31,8 +31,13 @@ export interface ForgeConfig {
   filters: TriggerFilter[];
   /** Maintain a change-history document from merged work. */
   historyEnabled: boolean;
-  /** Path of the change-history document. */
+  /** Path of the change-history document (single mode) or its directory (per_commit). */
   historyPath: string;
+  /**
+   * `single` keeps one running document; `per_commit` writes a new file per
+   * change, named after it, into `historyPath` treated as a directory.
+   */
+  historyMode: 'single' | 'per_commit';
   /** Saved agent configurations plus their triggers. */
   routines: Routine[];
 }
@@ -57,6 +62,7 @@ export function defaultConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig
     filters: [],
     historyEnabled: env.FORGE_HISTORY === '1',
     historyPath: env.FORGE_HISTORY_PATH || 'docs/CHANGE-HISTORY.md',
+    historyMode: (env.FORGE_HISTORY_MODE as ForgeConfig['historyMode']) || 'single',
     routines: [],
   };
 }
@@ -94,6 +100,7 @@ export function mergeConfig(raw: unknown, base: ForgeConfig = defaultConfig()): 
     filters: r.filters !== undefined ? parseFilters(r.filters) : base.filters,
     historyEnabled: typeof r.history === 'boolean' ? r.history : base.historyEnabled,
     historyPath: typeof r.history_path === 'string' ? r.history_path : base.historyPath,
+    historyMode: enumOr(r.history_mode, ['single', 'per_commit'] as const, base.historyMode),
     routines: r.routines !== undefined ? parseRoutines(r.routines) : base.routines,
   };
 }

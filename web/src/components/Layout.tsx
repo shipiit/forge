@@ -21,6 +21,7 @@ import {
 import { LogoMark } from "./Logo";
 import { NavMenu, type NavGroup } from "./NavMenu";
 import { DocSearch } from "./search/DocSearch";
+import { NavLink } from "react-router-dom";
 
 const GITHUB = "https://github.com/shipiit/forge";
 const ext = { target: "_blank", rel: "noopener noreferrer" } as const;
@@ -172,7 +173,7 @@ export function Header({ onLanding = false }: { onLanding?: boolean }) {
             SHIPIT&nbsp;<span className="dim font-medium">FORGE</span>
           </span>
         </Link>
-        <nav className="mx-auto hidden items-center gap-9 text-[13px] font-medium uppercase tracking-[0.12em] text-muted md:flex">
+        <nav className="mx-auto hidden items-center gap-5 text-[12px] font-medium uppercase tracking-[0.12em] text-muted md:flex">
           <NavMenu label="Capabilities" groups={CAPABILITIES} />
           <NavMenu label="Setup" groups={SETUP} />
           {onLanding && (
@@ -180,9 +181,23 @@ export function Header({ onLanding = false }: { onLanding?: boolean }) {
               How it works
             </a>
           )}
-          <Link to="/schedules" className="hover:text-text">
+
+          <NavLink
+            to="/builder"
+            className={({ isActive }) =>
+              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+            }
+          >
+            Get Github Code
+          </NavLink>
+          <NavLink
+            to="/schedules"
+            className={({ isActive }) =>
+              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+            }
+          >
             Schedules
-          </Link>
+          </NavLink>
           <DocSearch />
         </nav>
         <a
@@ -206,9 +221,47 @@ export function Footer() {
         </span>
         <span>Autonomous GitHub coding agent · MIT</span>
         <span className="ml-auto flex gap-6 uppercase tracking-[0.12em] text-xs">
-          <Link to="/github" className="hover:text-text">
+          <NavLink to="/github" className="hover:text-text">
             Docs
-          </Link>
+          </NavLink>
+          <NavLink
+            to="/builder"
+            className={({ isActive }) =>
+              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+            }
+          >
+            Get Github Code
+          </NavLink>
+          <NavLink
+            to="/schedules"
+            className={({ isActive }) =>
+              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+            }
+          >
+            Schedules
+          </NavLink>
+          <NavLink
+            to="/examples"
+            className={({ isActive }) =>
+              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+            }
+          >
+            Examples
+          </NavLink>
+          <NavLink
+            to="/github#install"
+            className={({ isActive }) =>
+              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+            }
+          >
+            Install
+          </NavLink>
+          <NavLink to="/github#skills" className="hover:text-text">
+            Skills
+          </NavLink>
+          <NavLink to="/github#config" className="hover:text-text">
+            Config
+          </NavLink>
           <a href={GITHUB} {...ext} className="hover:text-text">
             GitHub
           </a>

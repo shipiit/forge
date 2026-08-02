@@ -27,8 +27,10 @@ export interface WorkflowConfig {
   routineName: string;
   /** Maintain a change-history document from merged work. */
   history: boolean;
-  /** Where that document lives. */
+  /** Where that document lives — a file, or a directory in per_commit mode. */
   historyPath: string;
+  /** One running document, or a new file named after each change. */
+  historyMode: 'single' | 'per_commit';
   /** Branches whose commits are documented, e.g. "main, develop". */
   historyBranches: string;
   /** Only act on pull requests targeting these branches. Empty means all. */
@@ -57,6 +59,7 @@ export const DEFAULT_CONFIG: WorkflowConfig = {
   routineName: 'nightly-digest',
   history: false,
   historyPath: 'docs/CHANGE-HISTORY.md',
+  historyMode: 'single',
   historyBranches: 'main',
   baseBranches: '',
   promptCache: true,
@@ -157,6 +160,10 @@ export function generateAgentYml(c: WorkflowConfig): string {
       '# alone and opened as a pull request — never pushed directly.',
       'history: true',
       `history_path: ${c.historyPath.trim() || 'docs/CHANGE-HISTORY.md'}`,
+      `history_mode: ${c.historyMode}` +
+        (c.historyMode === 'per_commit'
+          ? '   # a new file per change, named after it'
+          : '        # one running document'),
       '',
     );
   }
