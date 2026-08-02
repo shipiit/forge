@@ -4,6 +4,7 @@ import { Field } from "../form/Field";
 import { TextInput, TextArea } from "../form/TextInput";
 import { Select } from "../form/Select";
 import { Toggle, ChipGroup } from "../form/Toggle";
+import { FormTabs } from "../form/FormTabs";
 import { WorkflowFiles } from "./WorkflowFiles";
 import {
   DEFAULT_CONFIG,
@@ -79,6 +80,34 @@ const TOOLS = [
   "run_bash",
 ].map((t) => ({ value: t, label: t }));
 
+const SECTION_LABELS = [
+  "Basics",
+  "When it runs",
+  "Branches & docs",
+  "What it does",
+  "Limits & identity",
+];
+
+/** Which section each validated field belongs to, so a tab can flag itself. */
+const FIELD_SECTION: Record<string, number> = {
+  name: 0,
+  provider: 0,
+  secretName: 0,
+  VERTEX_PROJECT: 0,
+  AWS_REGION: 0,
+  GROQ_API_KEY: 0,
+  TOGETHER_API_KEY: 0,
+  OPENAI_COMPATIBLE_BASE_URL: 0,
+  OPENAI_COMPATIBLE_MODEL: 0,
+  events: 1,
+  schedule: 1,
+  routineName: 1,
+  historyPath: 2,
+  historyBranches: 2,
+  maxTurns: 4,
+  maxOutputTokens: 4,
+};
+
 function Group({
   title,
   children,
@@ -122,6 +151,15 @@ export function WorkflowBuilder() {
       env: {},
     }));
 
+  const invalidSections = useMemo(
+    () => [...new Set(issues.map((i) => FIELD_SECTION[i.field] ?? 0))],
+    [issues],
+  );
+  const completeSections = useMemo(
+    () => SECTION_LABELS.map((_, i) => i).filter((i) => !invalidSections.includes(i)),
+    [invalidSections],
+  );
+
   const setEnv = (name: string, value: string) =>
     setC((prev) => ({ ...prev, env: { ...prev.env, [name]: value } }));
 
@@ -129,6 +167,11 @@ export function WorkflowBuilder() {
     <div className="grid gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,4fr)]">
       {/* ---------------------------------------------------------- form */}
       <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+        <FormTabs
+          labels={SECTION_LABELS}
+          invalid={invalidSections}
+          complete={completeSections}
+        >
         <Group title="Basics">
           <Field
             label="Workflow name"
@@ -496,6 +539,7 @@ export function WorkflowBuilder() {
             />
           </div>
         </Group>
+        </FormTabs>
 
         {issues.length > 0 && (
           <div
