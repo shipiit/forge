@@ -9,5 +9,6 @@ dist/
 .DS_Store
 coverage/
 
-# Internal planning doc — not published
+# Internal planning docs — not published
 docs/FEATURES.md
+docs/USAGE-DASHBOARD.md
