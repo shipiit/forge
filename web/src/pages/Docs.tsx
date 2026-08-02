@@ -1,6 +1,7 @@
+import { Link } from 'react-router-dom';
 import { Header, Footer } from '../components/Layout';
 import { ScrollProgress } from '../components/ScrollProgress';
-import { CodeBlock } from '../components/CodeBlock';
+import { Code } from '../components/Code';
 import { ProviderSetup } from '../components/ProviderSetup';
 
 const GH = 'https://github.com/shipiit/forge/blob/main';
@@ -15,7 +16,16 @@ const COMMANDS: [string, string][] = [
   ['@shipit-forge …', 'Answer, or push a follow-up commit on a PR'],
 ];
 
-const TOC = [['quickstart', 'Quick start'], ['provider', 'Configure a model'], ['deploy', 'Deploy 24/7'], ['commands', 'Commands'], ['install', 'Action vs App'], ['faq', 'FAQ']];
+const TOC = [
+  ['quickstart', 'Quick start'],
+  ['provider', 'Configure a model'],
+  ['schedule', 'Schedules & routines'],
+  ['skills', 'Skills'],
+  ['deploy', 'Deploy 24/7'],
+  ['commands', 'Commands'],
+  ['install', 'Action vs App'],
+  ['faq', 'FAQ'],
+];
 
 function H({ id, children }: { id: string; children: React.ReactNode }) {
   return <h2 id={id} className="display mt-14 scroll-mt-24 text-3xl first:mt-0">{children}</h2>;
@@ -39,18 +49,150 @@ export function Docs() {
 
           <H id="quickstart">Quick start</H>
           <p className="text-muted">The engine runs locally with a built-in fake provider — no API keys needed.</p>
-          <CodeBlock label="bash" code={`git clone https://github.com/shipiit/forge.git && cd forge
+          <Code label="bash" code={`git clone https://github.com/shipiit/forge.git && cd forge
 npm install && npm run build && npm test
 node dist/cli.js fix --repo /path/to/repo --task "fix the failing login test" --provider fake`} />
 
           <H id="provider">Configure a model</H>
           <p className="text-muted">Bring your own model — pick a provider, get its credentials, and the same env vars work everywhere (CLI, GitHub Action secrets, hosted App). The quickest path is the wizard:</p>
-          <CodeBlock label="forge setup" code={`node dist/cli.js setup   # choose a provider, paste your key — writes a gitignored .env (chmod 600)`} />
+          <Code label="forge setup" code={`node dist/cli.js setup   # choose a provider, paste your key — writes a gitignored .env (chmod 600)`} />
           <p className="mt-4 text-muted">Or follow the detailed steps for your provider below 👇</p>
           <ProviderSetup />
           <p className="mt-5 text-sm text-muted">
             Per-repo override (no secret change) via <a href={`${GH}/deploy/PROVIDERS.md`} {...ext}>PROVIDERS.md</a> and <code className="text-white/80">.github/agent.yml</code>:{' '}
             <code className="text-white/80">model: gemini-2.5-pro</code>. All four default models are vision-capable, so Forge reads screenshots in issues &amp; PRs automatically.
+          </p>
+
+          <H id="schedule">Schedules &amp; routines</H>
+          <p className="text-muted">
+            A <span className="text-text">routine</span> is a saved configuration — a skill, extra instructions, a
+            tool allowlist — plus the triggers that start it. One routine can carry all three trigger types at once:
+            a cron schedule, an on-demand <code className="text-white/80">/run</code>, and a reaction to repository
+            events.
+          </p>
+
+          <div className="mt-6 grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-3">
+            {[
+              ['⏰ Scheduled', 'A cron on your own workflow. Nightly digests, weekly docs sweeps.'],
+              ['⚡ On demand', 'Comment /run <name> in any thread, or hit "Run workflow".'],
+              ['🎯 Event-driven', 'On merge, on release, on a labelled PR — narrowed by filters.'],
+            ].map(([t, d]) => (
+              <div key={t} className="bg-[rgb(11_11_14)] p-6">
+                <h3 className="text-[15px] font-semibold">{t}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted">{d}</p>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="mt-9 text-lg font-semibold">Step 1 — define the routine</h3>
+          <p className="mt-1.5 text-sm text-muted">Routines live in your repository, so they are reviewed like any other change.</p>
+          <Code label=".github/agent.yml" lang="yaml" code={`routines:
+  - name: nightly-digest
+    skill: commit-summary
+    prompt: Summarize what merged yesterday and post it here.
+    schedule: "0 9 * * *"          # 09:00 daily
+    manual: true                   # also: /run nightly-digest
+    events: [pull_request.closed]  # and on every merge
+    filters:
+      - { field: base_branch, operator: equals, value: main }
+
+  - name: docs-drift
+    skill: document
+    prompt: Find docs that no longer match the code and update them.
+    schedule: "0 3 * * 1"          # 03:00 Mondays
+    write: true                    # may edit files — opens a PR`} />
+
+          <h3 className="mt-9 text-lg font-semibold">Step 2 — add the schedule workflow</h3>
+          <p className="mt-1.5 text-sm text-muted">
+            Forge has no scheduler of its own by design. GitHub already has one, and using it keeps every run inside
+            your CI, on your credentials — there is no Forge-operated service holding a token for your repository.
+          </p>
+          <Code label=".github/workflows/forge-routines.yml" lang="yaml" code={`name: Forge routines
+
+on:
+  schedule:
+    - cron: '0 9 * * *'      # nightly digest
+    - cron: '0 3 * * 1'      # Monday docs sweep
+  workflow_dispatch:          # adds a "Run workflow" button
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  routines:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: shipiit/forge@v1
+        with:
+          skill: commit-summary
+          allowed-tools: read_file search glob   # fewer tokens
+          max-turns: "10"
+          anthropic-api-key: \${{ secrets.ANTHROPIC_API_KEY }}`} />
+
+          <h3 className="mt-9 text-lg font-semibold">Step 3 — trigger it any way you like</h3>
+          <Code label="three ways to start the same routine" lang="bash" code={`# 1. On its schedule — nothing to do, the cron fires it.
+
+# 2. On demand, from any issue or PR comment:
+/run nightly-digest
+/run docs-drift only the API reference
+
+# 3. Locally, against a checkout:
+forge run --repo . --skill commit-summary --task "summarize this week"`} />
+
+          <p className="mt-5 text-sm text-muted">
+            A routine with <code className="text-white/80">write: true</code> always ships its work as a{' '}
+            <span className="text-text">pull request</span> on a <code className="text-white/80">forge/routine-*</code>{' '}
+            branch — never a direct push to your default branch.
+          </p>
+
+          <H id="skills">Skills</H>
+          <p className="text-muted">
+            A skill bundles instructions with a tool allowlist, so a request behaves the same way every time. Seven
+            ship built in. A read-only skill's allowlist is <span className="text-text">enforced</span> — the write
+            tools are never offered to the model, so it cannot change files even if asked.
+          </p>
+          <Code label="list what is available" lang="bash" code={`forge skills
+
+# 🧩 Skills available in .
+#
+# - /code-review     — Review a change for correctness bugs, regressions, and security issues.
+# - /commit-summary  — Summarize a single commit or push for a change-history document.
+# - /document        — Write or update documentation for code that changed.
+# - /fix-issue       — Investigate an issue, implement the fix, add tests, and verify.
+# - /pr-description  — Write a reviewer-focused pull request description from a diff.
+# - /security-audit  — Hunt for exploitable vulnerabilities and report them with CWE and severity.
+# - /triage          — Diagnose an issue without changing any code.`} />
+
+          <h3 className="mt-9 text-lg font-semibold">Add your own</h3>
+          <p className="mt-1.5 text-sm text-muted">
+            Most specific wins: a skill defined in the workflow beats a committed file, which beats the built-in. Give
+            a repo skill the same name as a built-in to replace it entirely.
+          </p>
+          <Code label=".forge/skills/house-review.md" lang="markdown" code={`---
+name: house-review
+description: Our review standards
+tools: read_file, search, glob
+---
+Reserve Important for anything that would break behaviour, leak data,
+or block a rollback. Style and naming are Nit at most.
+
+Always check that new API routes have an integration test.
+Never report anything CI already enforces (lint, formatting, types).`} />
+          <p className="mt-4 text-sm text-muted">Or define one straight in the workflow, with no committed file:</p>
+          <Code label=".github/workflows/forge.yml" lang="yaml" code={`- uses: shipiit/forge@v1
+  with:
+    anthropic-api-key: \${{ secrets.ANTHROPIC_API_KEY }}
+    skill-name: house-review
+    skill-tools: read_file search glob
+    skill-prompt: |
+      Reserve Important for anything that would break behaviour.
+      Always check that new API routes have an integration test.`} />
+          <p className="mt-4 text-sm text-muted">
+            Then invoke it anywhere: comment <code className="text-white/80">/house-review</code> on a PR, name it in
+            a routine, or run <code className="text-white/80">forge run --skill house-review</code>. Full reference on
+            the <Link to="/github#skills" className="text-white/80 underline-offset-4 hover:underline">GitHub guide</Link>.
           </p>
 
           <H id="deploy">Deploy 24/7</H>

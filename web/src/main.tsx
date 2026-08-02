@@ -6,6 +6,7 @@ import { Landing } from './pages/Landing';
 import { Docs } from './pages/Docs';
 import { Flow } from './pages/Flow';
 import { Examples } from './pages/Examples';
+import { GitHubGuide } from './pages/GitHubGuide';
 
 // BrowserRouter so in-page #anchors (Features/How/Examples) work natively.
 // basename handles GitHub Pages project hosting (/forge/).
@@ -26,6 +27,7 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/docs" element={<Docs />} />
         <Route path="/flow/:slug" element={<Flow />} />
         <Route path="/examples" element={<Examples />} />
+        <Route path="/github" element={<GitHubGuide />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,

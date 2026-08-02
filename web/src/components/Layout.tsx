@@ -1,8 +1,54 @@
 import { Link } from 'react-router-dom';
+import {
+  Wrench, Search, ShieldAlert, ScanSearch, RefreshCw, MessageSquare,
+  Blocks, CalendarClock, History, Github, Server, Gauge, BookOpen, Rocket, Building2,
+} from 'lucide-react';
 import { LogoMark } from './Logo';
+import { NavMenu, type NavGroup } from './NavMenu';
 
 const GITHUB = 'https://github.com/shipiit/forge';
 const ext = { target: '_blank', rel: 'noopener noreferrer' } as const;
+
+const CAPABILITIES: NavGroup[] = [
+  {
+    heading: 'On your issues & PRs',
+    items: [
+      { label: 'Fix an issue', to: '/github#fix', desc: 'Root cause, code change, tests, and a PR that closes it.', Icon: Wrench },
+      { label: 'Review a pull request', to: '/github#review', desc: 'Inline findings scoped strictly to the changed lines.', Icon: Search },
+      { label: 'Security review', to: '/github#security', desc: 'CWE-tagged findings with suggested fixes and live CVEs.', Icon: ShieldAlert },
+      { label: 'Whole-repo audit', to: '/github#audit', desc: 'Follow untrusted input to dangerous sinks, repo-wide.', Icon: ScanSearch },
+    ],
+  },
+  {
+    heading: 'Running continuously',
+    items: [
+      { label: 'Change history', to: '/github#history', desc: 'A documented entry per commit, opened as a PR.', Icon: History },
+      { label: 'Routines', to: '/github#routines', desc: 'Schedule, on-demand, or on any repository event.', Icon: CalendarClock },
+      { label: 'Auto-fix failing CI', to: '/github#ci', desc: 'Reads the logs, pushes a fix, bounded to 2 tries.', Icon: RefreshCw },
+      { label: 'Answer @mentions', to: '/github#mentions', desc: 'Explains code, or pushes a follow-up commit.', Icon: MessageSquare },
+    ],
+  },
+];
+
+const SETUP: NavGroup[] = [
+  {
+    heading: 'Get started',
+    items: [
+      { label: 'Quickstart', to: '/docs', desc: 'One workflow file and a key. Running in minutes.', Icon: Rocket },
+      { label: 'GitHub guide', to: '/github', desc: 'Every trigger, command, and setting explained.', Icon: Github },
+      { label: 'Skills', to: '/github#skills', desc: 'Built-in prompt packs, or define your own.', Icon: Blocks },
+    ],
+  },
+  {
+    heading: 'For teams',
+    items: [
+      { label: 'Whole-organization setup', to: '/github#org', desc: 'Roll out across every repo at once.', Icon: Building2 },
+      { label: 'Enterprise Server', to: '/github#ghes', desc: 'Self-hosted GitHub, same features.', Icon: Server },
+      { label: 'Cost control', to: '/github#cost', desc: 'Prompt caching, budgets, and what a run really costs.', Icon: Gauge },
+      { label: 'Examples', to: '/examples', desc: 'Real output from live repositories.', Icon: BookOpen },
+    ],
+  },
+];
 
 export function Header({ onLanding = false }: { onLanding?: boolean }) {
   return (
@@ -13,8 +59,9 @@ export function Header({ onLanding = false }: { onLanding?: boolean }) {
           <span>SHIPIT&nbsp;<span className="dim font-medium">FORGE</span></span>
         </Link>
         <nav className="mx-auto hidden items-center gap-9 text-[13px] font-medium uppercase tracking-[0.12em] text-muted md:flex">
+          <NavMenu label="Capabilities" groups={CAPABILITIES} />
+          <NavMenu label="Setup" groups={SETUP} />
           {onLanding && <a href="#how" className="hover:text-text">How it works</a>}
-          <Link to="/examples" className="hover:text-text">Examples</Link>
           <Link to="/docs" className="hover:text-text">Docs</Link>
         </nav>
         <a className="btn btn-white !rounded-none !uppercase !tracking-[0.12em]" href={GITHUB} {...ext}>

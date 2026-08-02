@@ -11,6 +11,17 @@
   --muted: 138 141 153;
   --accent: 167 139 250;      /* violet — used sparingly */
   --accent2: 236 72 153;      /* pink */
+
+  /* Syntax tokens — derived from the palette above so code blocks track the
+     brand instead of importing a stock highlighter theme. */
+  --syn-keyword: 196 181 253;  /* violet 300 — accent, tinted for contrast */
+  --syn-string: 134 239 172;   /* emerald 300 — matches the diff "after" tone */
+  --syn-number: 253 186 116;   /* orange 300 */
+  --syn-comment: 113 117 132;  /* just above --muted, deliberately recessive */
+  --syn-fn: 125 211 252;       /* sky 300 */
+  --syn-type: 244 194 161;     /* warm sand */
+  --syn-prop: 249 168 212;     /* pink 300 — accent2, tinted */
+  --syn-punct: 148 152 166;
   color-scheme: dark;
 }
 
@@ -64,4 +75,14 @@ body::before {
     background: rgba(14, 14, 18, 0.8);
   }
   .row-line { @apply border-t border-white/[0.08]; }
+
+  /* Syntax highlighting — one class per token type, all token-driven. */
+  .tok-keyword { color: rgb(var(--syn-keyword)); }
+  .tok-string  { color: rgb(var(--syn-string)); }
+  .tok-number  { color: rgb(var(--syn-number)); }
+  .tok-comment { color: rgb(var(--syn-comment)); font-style: italic; }
+  .tok-fn      { color: rgb(var(--syn-fn)); }
+  .tok-type    { color: rgb(var(--syn-type)); }
+  .tok-prop    { color: rgb(var(--syn-prop)); }
+  .tok-punct   { color: rgb(var(--syn-punct)); }
 }
