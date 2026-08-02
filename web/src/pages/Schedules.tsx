@@ -4,6 +4,7 @@ import { GuidePage, type Toc } from '../components/GuidePage';
 import { rise } from '../components/GuideBits';
 import { TriggersSection } from '../sections/schedules/TriggersSection';
 import { SetupSection } from '../sections/schedules/SetupSection';
+import { EventsSection } from '../sections/schedules/EventsSection';
 import { CronSection } from '../sections/schedules/CronSection';
 import { RecipesSection } from '../sections/schedules/RecipesSection';
 import { WriteSection } from '../sections/schedules/WriteSection';
@@ -12,6 +13,7 @@ import { OpsSection } from '../sections/schedules/OpsSection';
 const TOC: Toc = [
   ['triggers', 'Three trigger types'],
   ['setup', 'Set one up'],
+  ['events', 'Event triggers'],
   ['cron', 'Cron reference'],
   ['recipes', 'Recipes'],
   ['write', 'Routines that edit'],
@@ -29,6 +31,7 @@ export function Schedules() {
     >
       <TriggersSection />
       <SetupSection />
+      <EventsSection />
       <CronSection />
       <RecipesSection />
       <WriteSection />

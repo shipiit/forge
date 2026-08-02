@@ -927,7 +927,16 @@ async function doHistory(
  */
 export function handleRoutine(
   deps: HandlerDeps,
-  args: { owner: string; repo: string; defaultBranch: string; routine: Routine; extra?: string; issueNumber?: number },
+  args: {
+    owner: string;
+    repo: string;
+    defaultBranch: string;
+    routine: Routine;
+    extra?: string;
+    issueNumber?: number;
+    /** ISO date for the report title; passed in, never read from a clock here. */
+    date?: string;
+  },
 ): Promise<void> {
   return withLock(`routine:${args.owner}/${args.repo}:${args.routine.name}`, deps.log, () =>
     doRoutine(deps, args),
@@ -936,7 +945,16 @@ export function handleRoutine(
 
 async function doRoutine(
   deps: HandlerDeps,
-  args: { owner: string; repo: string; defaultBranch: string; routine: Routine; extra?: string; issueNumber?: number },
+  args: {
+    owner: string;
+    repo: string;
+    defaultBranch: string;
+    routine: Routine;
+    extra?: string;
+    issueNumber?: number;
+    /** ISO date for the report title; passed in, never read from a clock here. */
+    date?: string;
+  },
 ): Promise<void> {
   const { octokit, client, token, log } = deps;
   const r = args.routine;
@@ -995,15 +1013,33 @@ async function doRoutine(
       }
     }
 
+    const report =
+      `### 🤖 ${DISPLAY} — routine \`${r.name}\`\n\n${cleanSummary(result.finalText, 4000)}` +
+      costFooter(result.usage, client.model);
+
     if (args.issueNumber) {
+      // Started from a thread (`/run` or an event) — reply where it was asked.
       await octokit.rest.issues.createComment({
         owner: args.owner,
         repo: args.repo,
         issue_number: args.issueNumber,
-        body:
-          `### 🤖 ${DISPLAY} — routine \`${r.name}\`\n\n${cleanSummary(result.finalText, 4000)}` +
-          costFooter(result.usage, client.model),
+        body: report,
       });
+    } else if (r.report === 'issue') {
+      // A scheduled run has no thread. Without this its findings would only
+      // ever reach the Actions log, which nobody reads.
+      try {
+        const issue = await octokit.rest.issues.create?.({
+          owner: args.owner,
+          repo: args.repo,
+          title: `${r.description || r.name} — ${args.date ?? 'scheduled run'}`.slice(0, 250),
+          body: report,
+          labels: ['forge:routine'],
+        });
+        log(`routine ${r.name}: reported in ${issue?.data.html_url ?? 'a new issue'}`);
+      } catch (err) {
+        log(`routine ${r.name}: could not open a report issue: ${(err as Error).message}`);
+      }
     }
   } finally {
     await ws.cleanup();

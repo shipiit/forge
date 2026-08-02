@@ -15,6 +15,8 @@ export interface OctokitLike {
       listComments(params: Record<string, unknown>): Promise<{ data: Array<{ user: { login: string } | null; body?: string }> }>;
       /** Optional: persists a per-PR review subscription as a label. */
       addLabels?(params: Record<string, unknown>): Promise<unknown>;
+      /** Optional: how a scheduled routine reports when it has no thread. */
+      create?(params: Record<string, unknown>): Promise<{ data: { number: number; html_url: string } }>;
     };
     checks: {
       /** Optional: forge degrades to a plain review when the app lacks Checks:write. */

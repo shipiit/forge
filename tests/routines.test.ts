@@ -154,3 +154,17 @@ describe('generated schedule workflow', () => {
     expect(renderScheduleWorkflow(parseRoutines([{ name: 'manual-only', manual: true }]))).toBe('');
   });
 });
+
+describe('where a routine reports', () => {
+  it('defaults to opening an issue, so a scheduled run is never lost', () => {
+    expect(parseRoutines([{ name: 'digest', schedule: '@daily' }])[0]!.report).toBe('issue');
+  });
+
+  it('honours report: none', () => {
+    expect(parseRoutines([{ name: 'quiet', schedule: '@daily', report: 'none' }])[0]!.report).toBe('none');
+  });
+
+  it('ignores an unrecognized report value rather than trusting it', () => {
+    expect(parseRoutines([{ name: 'x', schedule: '@daily', report: 'slack' }])[0]!.report).toBe('issue');
+  });
+});

@@ -43,6 +43,12 @@ export interface Routine {
   tools: string[];
   /** Whether the routine may modify files. Read-only by default. */
   write: boolean;
+  /**
+   * Where a routine's findings go when there is no thread to reply in — which
+   * is every scheduled run. `issue` opens one (the default, so a nightly digest
+   * is never written into the void); `none` leaves it in the run log.
+   */
+  report: 'issue' | 'none';
 }
 
 const NAME_RE = /^[a-z0-9][a-z0-9_-]*$/i;
@@ -86,6 +92,7 @@ export function parseRoutines(raw: unknown): Routine[] {
       filters: parseFilters(r.filters),
       tools: strList(r.tools),
       write: r.write === true,
+      report: r.report === 'none' ? 'none' : 'issue',
     });
   }
   return out;
