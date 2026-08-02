@@ -50,6 +50,21 @@ export function TriggersSection() {
         workflow calling the Action — the same credentials, the same audit trail, the same permissions as
         everything else in your CI.
       </p>
+
+      <div className="mt-5 flex flex-wrap gap-3">
+        <a
+          href="#events"
+          className="inline-flex items-center gap-2 rounded-lg border border-white/[0.09] px-3.5 py-2 text-[12.5px] text-muted transition-colors hover:border-white/25 hover:text-text"
+        >
+          Run on pull requests, releases, and commits →
+        </a>
+        <a
+          href="#cron"
+          className="inline-flex items-center gap-2 rounded-lg border border-white/[0.09] px-3.5 py-2 text-[12.5px] text-muted transition-colors hover:border-white/25 hover:text-text"
+        >
+          Cron reference →
+        </a>
+      </div>
     </Section>
   );
 }

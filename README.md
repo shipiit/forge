@@ -15,7 +15,7 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 [![License: MIT](https://img.shields.io/badge/License-MIT-22D3EE.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-381%20passing-FF8A3D.svg)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-401%20passing-FF8A3D.svg)](#-testing)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-7C5CFF.svg)](#-contributing)
 
 <br/>
@@ -379,13 +379,18 @@ issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
 ## 🧪 Testing
 
 ```bash
-npm test         # vitest — 88 unit + integration tests
+npm test         # vitest — 401 unit + integration tests
 npm run typecheck
 ```
 
 Everything is testable **without credentials**: a scripted fake provider drives the agent loop, and
 each real adapter is verified via pure normalization functions + injected mock clients. CI runs
 typecheck + tests + build on every push.
+
+Coverage is weighted toward the logic that decides what the agent *does* — routing, filters, review
+scoping, config parsing, and the workflow generator — because those are the parts that fail quietly
+rather than loudly. A malformed `agent.yml`, an invalid regex in a filter, or a finding on a file the
+PR never touched all have a test pinning the behaviour.
 
 ---
 
