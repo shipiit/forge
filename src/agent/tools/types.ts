@@ -1,12 +1,30 @@
 import path from 'node:path';
 import type { ContentPart, ToolSpec } from '../../providers/types.js';
 
+/** Scans written content for risky patterns; see agent/tools/security.ts. */
+export interface SecurityScannerLike {
+  scan(filePath: string, content: string): Array<{ rule: string; reminder: string }>;
+  format(hits: Array<{ rule: string; reminder: string }>): string;
+}
+
 /** Runtime context handed to every tool invocation. */
 export interface ToolContext {
   /** Absolute path to the workspace root. All tool file access is confined here. */
   cwd: string;
   /** Whether the active model accepts images (gates `read_image`). */
   supportsVision: boolean;
+  /**
+   * Optional per-run security scanner. When present, every write is checked and
+   * any hit is appended to the tool result so the agent self-corrects.
+   */
+  security?: SecurityScannerLike;
+}
+
+/** Append security warnings to a write tool's result message. */
+export function withSecurityNotes(ctx: ToolContext, relPath: string, content: string, message: string): string {
+  if (!ctx.security) return message;
+  const hits = ctx.security.scan(relPath, content);
+  return message + ctx.security.format(hits);
 }
 
 /** A tool the agent can call. `run` returns content parts appended as a tool_result. */

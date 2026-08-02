@@ -13,14 +13,22 @@ export interface OctokitLike {
       createComment(params: Record<string, unknown>): Promise<{ data: { id: number } }>;
       updateComment(params: Record<string, unknown>): Promise<unknown>;
       listComments(params: Record<string, unknown>): Promise<{ data: Array<{ user: { login: string } | null; body?: string }> }>;
+      /** Optional: persists a per-PR review subscription as a label. */
+      addLabels?(params: Record<string, unknown>): Promise<unknown>;
+      /** Optional: how a scheduled routine reports when it has no thread. */
+      create?(params: Record<string, unknown>): Promise<{ data: { number: number; html_url: string } }>;
     };
     checks: {
+      /** Optional: forge degrades to a plain review when the app lacks Checks:write. */
+      create?(params: Record<string, unknown>): Promise<unknown>;
       listForRef(params: Record<string, unknown>): Promise<{
         data: { check_runs: Array<{ name: string; conclusion: string | null; details_url?: string; output?: { title?: string | null; summary?: string | null; text?: string | null } }> };
       }>;
     };
     repos: {
       listCommits(params: Record<string, unknown>): Promise<{ data: Array<{ commit: { message: string } }> }>;
+      /** Optional: release-notes generation is skipped when unavailable. */
+      updateRelease?(params: Record<string, unknown>): Promise<unknown>;
     };
     dependabot?: {
       listAlertsForRepo(params: Record<string, unknown>): Promise<{ data: unknown[] }>;

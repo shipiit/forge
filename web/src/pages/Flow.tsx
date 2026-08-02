@@ -78,7 +78,7 @@ export function Flow() {
           <StepPlayer steps={flow.steps} />
         </motion.div>
         <div className="mt-10 flex flex-wrap items-center gap-6">
-          <Link to="/docs" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Read the docs <ArrowRight size={15} /></Link>
+          <Link to="/github" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Read the docs <ArrowRight size={15} /></Link>
           <Link to={flow.next.to} className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted hover:text-text">
             {flow.next.label} <ArrowRight size={14} />
           </Link>

@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import type { ContentPart } from '../../providers/types.js';
-import { type Tool, type ToolContext, safeResolve, textPart } from './types.js';
+import { type Tool, type ToolContext, safeResolve, textPart, withSecurityNotes } from './types.js';
 
 const MIME_BY_EXT: Record<string, string> = {
   '.png': 'image/png',
@@ -20,21 +20,59 @@ function parse<T>(schema: z.ZodType<T>, args: unknown): T {
   return result.data;
 }
 
+/**
+ * Cap on a single file read. An unbounded read of a generated bundle or lockfile
+ * can be hundreds of thousands of tokens — and it is resent on every subsequent
+ * turn. Reading a window keeps the agent effective without that tail risk.
+ */
+export const MAX_READ_CHARS = 60_000;
+
 export const readFile: Tool = {
   spec: {
     name: 'read_file',
-    description: 'Read a UTF-8 text file from the workspace. Returns its full contents.',
+    description:
+      'Read a UTF-8 text file from the workspace. Large files are returned in a window — ' +
+      'pass offset/limit (1-based line numbers) to page through the rest.',
     parameters: {
       type: 'object',
-      properties: { path: { type: 'string', description: 'Path relative to the workspace root.' } },
+      properties: {
+        path: { type: 'string', description: 'Path relative to the workspace root.' },
+        offset: { type: 'number', description: 'First line to return (1-based). Optional.' },
+        limit: { type: 'number', description: 'Number of lines to return. Optional.' },
+      },
       required: ['path'],
     },
   },
   async run(args, ctx): Promise<ContentPart[]> {
-    const { path: rel } = parse(z.object({ path: z.string() }), args);
+    const { path: rel, offset, limit } = parse(
+      z.object({
+        path: z.string(),
+        offset: z.number().int().positive().optional(),
+        limit: z.number().int().positive().optional(),
+      }),
+      args,
+    );
     const abs = safeResolve(ctx.cwd, rel);
     const body = await fs.readFile(abs, 'utf8');
-    return textPart(body);
+
+    if (offset === undefined && limit === undefined && body.length <= MAX_READ_CHARS) {
+      return textPart(body);
+    }
+
+    const lines = body.split('\n');
+    const start = (offset ?? 1) - 1;
+    const end = limit === undefined ? lines.length : start + limit;
+    let slice = lines.slice(Math.max(0, start), end).join('\n');
+
+    let note = '';
+    if (slice.length > MAX_READ_CHARS) {
+      slice = slice.slice(0, MAX_READ_CHARS);
+      note = `\n… [truncated at ${MAX_READ_CHARS} characters]`;
+    }
+    if (end < lines.length || start > 0) {
+      note += `\n… [showing lines ${Math.max(1, start + 1)}-${Math.min(end, lines.length)} of ${lines.length}; pass offset/limit for more]`;
+    }
+    return textPart(slice + note);
   },
 };
 
@@ -56,7 +94,7 @@ export const writeFile: Tool = {
     const abs = safeResolve(ctx.cwd, rel);
     await fs.mkdir(path.dirname(abs), { recursive: true });
     await fs.writeFile(abs, content, 'utf8');
-    return textPart(`Wrote ${content.length} bytes to ${rel}.`);
+    return textPart(withSecurityNotes(ctx, rel, content, `Wrote ${content.length} bytes to ${rel}.`));
   },
 };
 
@@ -88,8 +126,11 @@ export const editFile: Tool = {
     if (body.indexOf(old_string, first + 1) !== -1) {
       throw new Error(`old_string is not unique in ${rel}; include more surrounding context.`);
     }
-    await fs.writeFile(abs, body.replace(old_string, new_string), 'utf8');
-    return textPart(`Edited ${rel}.`);
+    const updated = body.replace(old_string, new_string);
+    await fs.writeFile(abs, updated, 'utf8');
+    // Scan only the inserted text: warning about pre-existing patterns elsewhere
+    // in a large file would be noise the agent can't act on.
+    return textPart(withSecurityNotes(ctx, rel, new_string, `Edited ${rel}.`));
   },
 };
 

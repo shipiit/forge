@@ -1,5 +1,6 @@
 import type { ContentPart } from '../providers/types.js';
 import { downloadImages, extractImageUrls, makeFetcher } from './images.js';
+import { changedFiles } from './review.js';
 
 export interface IssueLike {
   number: number;
@@ -54,9 +55,18 @@ export async function buildReviewContent(
   log: (msg: string) => void = () => {},
 ): Promise<ContentPart[]> {
   const focus = opts.securityOnly ? 'Focus only on security vulnerabilities.' : '';
+  const touched = changedFiles(diff);
+  const scope =
+    touched.length > 0
+      ? `\nSCOPE — this review covers ONLY the change below. These are the only files you may ` +
+        `report findings on:\n${touched.map((f) => `- ${f}`).join('\n')}\n\n` +
+        `You may READ any other file to understand context, callers, and whether an issue is ` +
+        `really exploitable — but do NOT report findings about code this change did not touch. ` +
+        `A finding on any other file will be discarded.\n`
+      : '';
   const text =
     `Review pull request #${pull.number}: ${pull.title}\n\n` +
-    `Description:\n${pull.body ?? '(none)'}\n\n${focus}\n\n` +
+    `Description:\n${pull.body ?? '(none)'}\n\n${focus}\n${scope}\n` +
     `Unified diff under review:\n\n\`\`\`diff\n${diff}\n\`\`\`\n\n` +
     `Use the read-only tools to inspect surrounding code as needed, then output the findings JSON.`;
 

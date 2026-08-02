@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { simpleGit, type SimpleGit } from 'simple-git';
+import { cloneUrl } from './host.js';
 
 export interface RepoRef {
   owner: string;
@@ -16,9 +17,13 @@ export interface Workspace {
   cleanup(): Promise<void>;
 }
 
-/** Build an authenticated clone URL using a GitHub App installation token. */
+/**
+ * Build an authenticated clone URL using a GitHub App installation token.
+ * The host comes from the resolved GitHub host, so this works unchanged against
+ * a self-hosted GitHub Enterprise Server instance.
+ */
 export function authCloneUrl(owner: string, repo: string, token: string): string {
-  return `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
+  return cloneUrl(owner, repo, token);
 }
 
 /**

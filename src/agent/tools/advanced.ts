@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import { execa } from 'execa';
 import { z } from 'zod';
 import type { ContentPart } from '../../providers/types.js';
-import { type Tool, safeResolve, textPart } from './types.js';
+import { type Tool, safeResolve, textPart, withSecurityNotes } from './types.js';
 
 /**
  * Apply several exact-string edits to one file in a single call. Each edit must
@@ -50,7 +50,8 @@ export const multiEdit: Tool = {
       body = body.replace(e.old_string, e.new_string);
     });
     await fs.writeFile(abs, body, 'utf8');
-    return textPart(`Applied ${edits.length} edits to ${rel}.`);
+    const inserted = edits.map((e) => e.new_string).join('\n');
+    return textPart(withSecurityNotes(ctx, rel, inserted, `Applied ${edits.length} edits to ${rel}.`));
   },
 };
 

@@ -1,9 +1,13 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowRight, ShieldAlert, Check, GitPullRequest, Wrench, Search, ScanSearch, RefreshCw, MessageSquare } from 'lucide-react';
+import {
+  ArrowRight, ShieldAlert, Check, GitPullRequest, Wrench, Search, ScanSearch, RefreshCw,
+  MessageSquare, History, CalendarClock, Blocks, Gauge, Server,
+} from 'lucide-react';
 import { Header, Footer } from '../components/Layout';
 import { ScrollProgress, RingDot } from '../components/ScrollProgress';
 import { HeroDemo } from '../components/HeroDemo';
+import { Code } from '../components/Code';
 
 const GITHUB = 'https://github.com/shipiit/forge';
 const rise = { initial: { opacity: 0, y: 26 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: '-80px' }, transition: { duration: 0.7, ease: [0.22, 1, 0.36, 1] as const } };
@@ -47,7 +51,7 @@ export function Landing() {
               Fix issues, review PRs, audit security, auto-fix CI — from first issue to merged PR, all in one place. Try it with your own repo, no account needed.
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-6">
-              <Link to="/docs" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Get started <ArrowRight size={15} /></Link>
+              <Link to="/github" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Get started <ArrowRight size={15} /></Link>
               <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="text-sm text-muted underline-offset-4 hover:text-text hover:underline">Working at a team? Star on GitHub</a>
             </div>
           </motion.div>
@@ -81,6 +85,9 @@ export function Landing() {
               { I: ScanSearch, t: 'Whole-repository audit', trig: '/audit', d: 'Scans the entire repo (not just a diff), follows untrusted input to dangerous sinks, and posts one grouped, severity-sorted report.' },
               { I: RefreshCw, t: 'Auto-fix failing CI', trig: 'On red checks', d: 'Reads the failing logs, corrects the code, re-runs the tests, and pushes a ci-fix commit — bounded to 2 attempts so it never loops.' },
               { I: MessageSquare, t: 'Answer @mentions', trig: '@shipit-forge …', d: 'Explains code on issues, and on a PR can push a follow-up commit to the branch. Reads screenshots embedded in issues and PRs via vision.' },
+              { I: History, t: 'Document every change', trig: 'On merge · on push', d: 'Writes one history entry per merged change — from that diff alone — recording what changed, why, the areas touched, and the risk. Arrives as a PR.' },
+              { I: CalendarClock, t: 'Run saved routines', trig: 'Cron · /run · events', d: 'A saved skill plus its triggers. Nightly digests, weekly docs-drift sweeps, or anything fired on a repository event — with filters.' },
+              { I: Blocks, t: 'Skills you control', trig: '/code-review · 7 built-in', d: 'Named prompt packs with enforced tool allowlists. Override any built-in from your repo, or define one inline in the workflow.' },
             ].map((e, i) => (
               <motion.div key={e.t} {...rise} transition={{ ...rise.transition, delay: (i % 3) * 0.07 }} className="bg-[rgb(11_11_14)] p-7">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5"><e.I size={18} /></span>
@@ -96,11 +103,11 @@ export function Landing() {
             <div className="bg-[rgb(11_11_14)] p-7">
               <div className="text-xs uppercase tracking-[0.18em] text-muted">Bring your own model</div>
               <div className="mt-3 flex flex-wrap gap-2">
-                {['Vertex AI Gemini', 'AWS Bedrock', 'OpenAI', 'Anthropic'].map((p) => (
+                {['Anthropic', 'OpenAI', 'Gemini', 'Vertex AI', 'AWS Bedrock', 'Groq', 'Together', 'Ollama', 'OpenAI-compatible'].map((p) => (
                   <span key={p} className="rounded-full border border-white/12 px-3 py-1 text-sm text-white/80">{p}</span>
                 ))}
               </div>
-              <p className="mt-3 text-sm text-muted">One key, saved to a gitignored <code className="text-white/70">.env</code>. Swap providers with a single env var; all default models read images.</p>
+              <p className="mt-3 text-sm text-muted">One key, saved to a gitignored <code className="text-white/70">.env</code>. Swap providers with a single env var, set a fallback chain for outages, and run <code className="text-white/70">forge doctor</code> to check what's configured.</p>
             </div>
             <div className="bg-[rgb(11_11_14)] p-7">
               <div className="text-xs uppercase tracking-[0.18em] text-muted">Run it three ways</div>
@@ -109,9 +116,142 @@ export function Landing() {
                 <div className="flex gap-3"><span className="text-white/50">②</span><span><span className="font-medium text-text">GitHub Action</span> — one workflow file, your own key, runs in your CI. No server.</span></div>
                 <div className="flex gap-3"><span className="text-white/50">③</span><span><span className="font-medium text-text">Hosted App</span> — install org-wide with one click; you host the webhook server.</span></div>
               </div>
-              <Link to="/docs" className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted hover:text-text">Setup guide <ArrowRight size={14} /></Link>
+              <p className="mt-3 text-sm text-muted">Self-hosted GitHub Enterprise Server works the same way — only the API base URL differs.</p>
+              <Link to="/github#org" className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted hover:text-text">Whole-org setup <ArrowRight size={14} /></Link>
             </div>
           </motion.div>
+        </div>
+      </section>
+
+      {/* SKILLS */}
+      <section id="skills" className="border-t border-white/[0.07] px-7 py-24">
+        <div className="mx-auto max-w-7xl">
+          <motion.div {...rise} className="flex flex-wrap items-end justify-between gap-6">
+            <div>
+              <span className="eyebrow">Skills</span>
+              <h2 className="display mt-6 text-[clamp(34px,5vw,60px)]">Prompt packs<br /><span className="dim">your team controls.</span></h2>
+              <p className="mt-5 max-w-xl text-muted">
+                A skill bundles instructions with an <span className="text-text">enforced tool allowlist</span> — a
+                read-only skill is never handed a write tool. Seven ship built in; your repo overrides any of them.
+              </p>
+            </div>
+            <Link to="/github#skills" className="btn btn-line !rounded-none !uppercase !tracking-[0.14em]">All skills <ArrowRight size={15} /></Link>
+          </motion.div>
+
+          <motion.div {...rise} className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ['/code-review', 'Correctness and security, scoped to the change.'],
+              ['/fix-issue', 'Investigate, fix, test, verify.'],
+              ['/security-audit', 'Source-to-sink hunt with CWEs.'],
+              ['/commit-summary', 'Summarize one commit for the history.'],
+              ['/pr-description', 'A reviewer-focused PR body.'],
+              ['/document', 'Write or update the docs.'],
+              ['/triage', 'Diagnose, change nothing.'],
+              ['+ your own', 'Commit .forge/skills/*.md, or define one inline in the workflow.'],
+            ].map(([name, d]) => (
+              <div key={name} className="bg-[rgb(11_11_14)] p-6">
+                <code className="text-[13px] font-semibold text-white/90">{name}</code>
+                <p className="mt-2 text-sm leading-relaxed text-muted">{d}</p>
+              </div>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
+      {/* CHANGE HISTORY + ROUTINES */}
+      <section id="automation" className="border-t border-white/[0.07] px-7 py-24">
+        <div className="mx-auto max-w-7xl">
+          <motion.div {...rise}>
+            <span className="eyebrow">Always on</span>
+            <h2 className="display mt-6 text-[clamp(34px,5vw,60px)]">It keeps working<br /><span className="dim">between your commits.</span></h2>
+          </motion.div>
+
+          <motion.div {...rise} className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] md:grid-cols-2">
+            <div className="bg-[rgb(11_11_14)] p-8">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5"><History size={18} /></span>
+              <h3 className="mt-5 text-xl font-semibold">A documented history of every change</h3>
+              <p className="mt-3 text-sm leading-relaxed text-muted">
+                On every merge, Forge writes one entry from <span className="text-text">that change's diff alone</span> —
+                what changed, why, the areas touched, the risk, and anything a consumer would notice. It opens as a
+                PR, never a push to your default branch.
+              </p>
+              <div className="mt-5 overflow-hidden rounded-lg border border-white/10 p-4 font-mono text-[12.5px] leading-6 text-white/70">
+                <div className="text-white/90">## 2026-08-02 — Add response caching (#128)</div>
+                <div className="mt-1">**Risk:** 🟡 medium · **Areas:** <span className="text-white/85">`src/cache`</span></div>
+                <div className="mt-2 text-muted">Responses are now cached for 60s…</div>
+              </div>
+              <Link to="/github#history" className="mt-6 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted hover:text-text">
+                How it works <ArrowRight size={14} />
+              </Link>
+            </div>
+
+            <div className="bg-[rgb(11_11_14)] p-8">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5"><CalendarClock size={18} /></span>
+              <h3 className="mt-5 text-xl font-semibold">Routines, on your schedule</h3>
+              <p className="mt-3 text-sm leading-relaxed text-muted">
+                A saved skill plus its triggers — and one routine can carry all three at once: a nightly cron, an
+                on-demand <code className="text-white/70">/run</code>, and a reaction to any repository event, each
+                narrowed by filters.
+              </p>
+              <div className="mt-5 space-y-2.5 text-sm">
+                {[
+                  ['Scheduled', 'Nightly digests, weekly docs-drift sweeps.'],
+                  ['On demand', '/run nightly-digest, from any thread.'],
+                  ['Event-driven', 'On merge, on release, on a labelled PR.'],
+                ].map(([t, d]) => (
+                  <div key={t} className="flex gap-3">
+                    <span className="text-white/40">→</span>
+                    <span><span className="font-medium text-text">{t}</span> — {d}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4">
+                <Code label=".github/agent.yml" lang="yaml" code={`routines:
+  - name: nightly-digest
+    skill: commit-summary
+    schedule: "0 9 * * *"
+    manual: true`} />
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-muted">
+                Runs on GitHub's own scheduler, inside your CI, on your credentials — no Forge-operated service
+                holds a token for your repo.
+              </p>
+              <Link to="/schedules" className="mt-5 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted hover:text-text">
+                Set up a schedule <ArrowRight size={14} />
+              </Link>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* COST */}
+      <section id="cost" className="border-t border-white/[0.07] px-7 py-24">
+        <div className="mx-auto max-w-7xl">
+          <motion.div {...rise}>
+            <span className="eyebrow">Economics</span>
+            <h2 className="display mt-6 text-[clamp(34px,5vw,60px)]">Your key.<br /><span className="dim">No markup.</span></h2>
+            <p className="mt-5 max-w-2xl text-muted">
+              Forge reports its own spend on every comment it writes — tokens used, how many came from cache, and
+              the estimated cost. And it works hard to keep that number small.
+            </p>
+          </motion.div>
+
+          <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { I: Gauge, t: 'Prompt caching', d: 'System prompt, tool schemas, and the growing transcript are all cached — repeated context bills at roughly a tenth of the input rate.' },
+              { I: Blocks, t: 'Only the tools it needs', d: 'Unused tool schemas are resent every single turn. An allowlist removes them from the bill entirely.' },
+              { I: Search, t: 'Scoped to the change', d: 'Reviewing only the files a PR touched costs a fraction of reading a whole repository.' },
+              { I: RefreshCw, t: 'Bounded loops', d: 'Iterations are capped and CI auto-fix stops after two attempts. Nothing runs away overnight.' },
+              { I: Server, t: 'Nine providers', d: 'Anthropic, OpenAI, Gemini, Vertex, Bedrock, Groq, Together, Ollama, or any OpenAI-compatible endpoint — with a fallback chain.' },
+              { I: Check, t: 'Reported, every time', d: 'A cost footer on every PR and comment. The month-end bill is never a surprise.' },
+            ].map((e, i) => (
+              <motion.div key={e.t} {...rise} transition={{ ...rise.transition, delay: (i % 3) * 0.07 }} className="bg-[rgb(11_11_14)] p-7">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5"><e.I size={18} /></span>
+                <h3 className="mt-5 text-lg font-semibold">{e.t}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted">{e.d}</p>
+              </motion.div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -205,7 +345,7 @@ export function Landing() {
         <motion.div {...rise} className="mx-auto max-w-3xl">
           <h2 className="display text-[clamp(36px,5.5vw,68px)]">Write the issue.<br /><span className="dim">Forge ships the fix.</span></h2>
           <div className="mt-9 flex flex-wrap justify-center gap-5">
-            <Link to="/docs" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Read the docs <ArrowRight size={15} /></Link>
+            <Link to="/github" className="btn btn-white !rounded-none !uppercase !tracking-[0.14em]">Read the docs <ArrowRight size={15} /></Link>
             <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="btn btn-line !rounded-none !uppercase !tracking-[0.14em]">Get it on GitHub</a>
           </div>
         </motion.div>

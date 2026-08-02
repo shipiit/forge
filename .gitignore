@@ -3,7 +3,11 @@ dist/
 *.log
 .env
 .env.*
+!.env.example
 *.pem
 .forge/
 .DS_Store
 coverage/
+
+# Internal planning doc — not published
+docs/FEATURES.md

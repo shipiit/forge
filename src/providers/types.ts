@@ -1,8 +1,9 @@
 /**
- * Provider-agnostic LLM types. Every provider adapter (Anthropic, OpenAI, Vertex
- * Gemini, Bedrock) normalizes to/from these shapes so the agent loop never knows
- * which provider is behind it. This file is the single source of truth for the
- * message/tool contract used across the whole project.
+ * Provider-agnostic LLM types. Every provider adapter (Anthropic, OpenAI, Gemini,
+ * Vertex, Bedrock, and the OpenAI-compatible family) normalizes to/from these
+ * shapes so the agent loop never knows which provider is behind it. This file is
+ * the single source of truth for the message/tool contract used across the whole
+ * project.
  */
 
 /** A piece of message content. Multimodal: text, image, a tool call, or a tool result. */
@@ -33,11 +34,27 @@ export interface ToolCall {
 
 export type StopReason = 'end' | 'tool_use' | 'max_tokens';
 
+/**
+ * Token accounting for one call. Cache fields are only present on providers that
+ * report them (Anthropic-family prompt caching, OpenAI automatic caching); they
+ * are billed at different rates than fresh input tokens — see util/cost.ts.
+ */
+export interface Usage {
+  inputTokens: number;
+  outputTokens: number;
+  /** Input tokens served from a warm cache (billed at a large discount). */
+  cacheReadTokens?: number;
+  /** Input tokens written into the cache (billed at a premium, once). */
+  cacheWriteTokens?: number;
+}
+
 export interface ChatResult {
   text: string;
   toolCalls: ToolCall[];
-  usage: { inputTokens: number; outputTokens: number };
+  usage: Usage;
   stopReason: StopReason;
+  /** Extended-thinking / reasoning text, when the model emits it. */
+  reasoning?: string;
 }
 
 export interface ChatRequest {
@@ -47,11 +64,23 @@ export interface ChatRequest {
   maxTokens: number;
 }
 
-export type ProviderId = 'anthropic' | 'openai' | 'vertex' | 'bedrock' | 'fake';
+export type ProviderId =
+  | 'anthropic'
+  | 'openai'
+  | 'vertex'
+  | 'bedrock'
+  | 'gemini'
+  | 'groq'
+  | 'together'
+  | 'ollama'
+  | 'openai-compatible'
+  | 'fake';
 
 export interface LLMClient {
   readonly id: ProviderId;
   /** Whether the configured model can accept image content parts. */
   readonly supportsVision: boolean;
+  /** The resolved model id, for cost attribution and logging. */
+  readonly model: string;
   chat(req: ChatRequest): Promise<ChatResult>;
 }

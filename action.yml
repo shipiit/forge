@@ -7,13 +7,89 @@ branding:
 
 inputs:
   provider:
-    description: 'LLM provider: vertex | bedrock | openai | anthropic'
+    description: 'LLM provider: anthropic | openai | gemini | vertex | bedrock | groq | together | ollama | openai-compatible'
     required: false
     default: 'anthropic'
+  model:
+    description: 'Model id for the chosen provider. Falls back to that provider default.'
+    required: false
   github-token:
     description: 'Token used to read the event, clone, and open PRs/reviews. Needs contents+PR+issues write.'
     required: false
     default: ${{ github.token }}
+
+  # --- Dynamic behaviour: decide what this run does, per workflow -------------
+  prompt:
+    description: >-
+      Extra instructions appended to the system prompt for this run. Encode your
+      team standards here, or give a scheduled run its whole task.
+    required: false
+  allowed-tools:
+    description: >-
+      Comma/space separated tool allowlist, e.g. "read_file search glob". Only
+      these are offered — a smaller toolset costs fewer tokens and improves tool
+      choice. Empty means all tools for the flow.
+    required: false
+  disallowed-tools:
+    description: 'Comma/space separated tools to remove, e.g. "run_bash".'
+    required: false
+  # --- Skills: named prompt packs, selectable or defined right here ----------
+  skill:
+    description: >-
+      Run this skill for the workflow. Built-ins: code-review, fix-issue,
+      pr-description, commit-summary, document, security-audit, triage. A skill
+      committed under .forge/skills/<name>.md with the same name overrides it.
+    required: false
+  skill-name:
+    description: 'Name for a skill defined inline below (default "workflow-skill").'
+    required: false
+  skill-description:
+    description: 'One-line description for the inline skill.'
+    required: false
+  skill-prompt:
+    description: >-
+      Define a skill directly in this workflow — no committed file needed. The
+      instructions here become the skill and take precedence over built-ins.
+    required: false
+  skill-tools:
+    description: 'Tool allowlist for the inline skill, e.g. "read_file search glob".'
+    required: false
+  skills-path:
+    description: 'Extra directory to load committed skills from (default .forge/skills).'
+    required: false
+
+  max-turns:
+    description: 'Maximum agent iterations for this run (default 25).'
+    required: false
+  max-output-tokens:
+    description: 'Output token budget per model turn (default 16384).'
+    required: false
+  trigger-phrase:
+    description: 'Mention handle that addresses the agent (default "@shipit-forge").'
+    required: false
+  max-nits:
+    description: 'Cap on low-severity inline review comments; -1 disables (default 5).'
+    required: false
+  prompt-cache:
+    description: 'Set to "0" to disable prompt caching. On by default — caching cuts input cost substantially.'
+    required: false
+  thinking-budget:
+    description: 'Extended-thinking token budget. 0 (default) disables it.'
+    required: false
+  fallback-providers:
+    description: 'Comma-separated providers to fall back to if the primary fails hard, e.g. "bedrock,openai".'
+    required: false
+
+  # --- Credentials -----------------------------------------------------------
+  anthropic-api-key:
+    description: 'Anthropic API key.'
+    required: false
+  openai-api-key:
+    description: 'OpenAI API key.'
+    required: false
+  gemini-api-key:
+    description: 'Gemini API key.'
+    required: false
   vertex-credentials-json:
     description: 'Vertex AI service-account JSON (paste from a secret). Optional.'
     required: false

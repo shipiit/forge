@@ -1,7 +1,16 @@
-import type { ContentPart, LLMClient, Msg } from '../providers/types.js';
-import { type Tool, type ToolContext } from './tools/types.js';
+import type { ContentPart, LLMClient, Msg, Usage } from '../providers/types.js';
+import { type Tool, type ToolContext, type SecurityScannerLike } from './tools/types.js';
 import { indexTools } from './tools/registry.js';
 import { withRetry } from '../util/resilience.js';
+import { addUsage } from '../util/cost.js';
+import { compactMessages } from './compaction.js';
+
+/**
+ * Default output-token budget for a single model turn, shared by every flow.
+ * Override per-deployment with FORGE_MAX_OUTPUT_TOKENS (e.g. lower it for models
+ * whose hard cap is smaller, like Claude 3.5 Sonnet on Bedrock at 8192).
+ */
+export const DEFAULT_MAX_OUTPUT_TOKENS = Number(process.env.FORGE_MAX_OUTPUT_TOKENS || 16384);
 
 export interface AgentLimits {
   maxIterations: number;
@@ -13,7 +22,7 @@ export interface AgentResult {
   iterations: number;
   stoppedBy: 'end' | 'limit';
   messages: Msg[];
-  usage: { inputTokens: number; outputTokens: number };
+  usage: Usage;
 }
 
 export interface RunAgentOptions {
@@ -24,6 +33,8 @@ export interface RunAgentOptions {
   tools: Tool[];
   limits: AgentLimits;
   cwd: string;
+  /** Optional per-run security scanner; every write is checked against it. */
+  security?: SecurityScannerLike;
   /** Optional callback for progress logging (tool calls, iterations). */
   onEvent?: (event: AgentEvent) => void;
 }
@@ -32,7 +43,8 @@ export type AgentEvent =
   | { type: 'iteration'; n: number }
   | { type: 'tool'; name: string; args: Record<string, unknown> }
   | { type: 'tool_error'; name: string; message: string }
-  | { type: 'assistant_text'; text: string };
+  | { type: 'assistant_text'; text: string }
+  | { type: 'compacted'; savedChars: number };
 
 /**
  * Drive the model/tool loop until the model finishes or limits are hit.
@@ -42,21 +54,30 @@ export type AgentEvent =
  * tool_result turn are both recorded so providers can round-trip correctly.
  */
 export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
-  const { client, system, initialContent, tools, limits, cwd, onEvent } = opts;
+  const { client, system, initialContent, tools, limits, cwd, security, onEvent } = opts;
   const byName = indexTools(tools);
   const toolSpecs = tools.map((t) => t.spec);
-  const ctx: ToolContext = { cwd, supportsVision: client.supportsVision };
+  const ctx: ToolContext = { cwd, supportsVision: client.supportsVision, ...(security ? { security } : {}) };
 
-  const messages: Msg[] = [{ role: 'user', content: initialContent }];
-  const usage = { inputTokens: 0, outputTokens: 0 };
+  let messages: Msg[] = [{ role: 'user', content: initialContent }];
+  let usage: Usage = { inputTokens: 0, outputTokens: 0 };
   let finalText = '';
   let nudged = false; // ensure the model actually writes a final answer if it ends empty
 
   for (let n = 1; n <= limits.maxIterations; n++) {
     onEvent?.({ type: 'iteration', n });
+
+    // Elide stale tool output once the transcript is genuinely large. Rewriting
+    // history costs the cached prefix, so this only fires when resending the
+    // full transcript would cost more than rebuilding the cache.
+    const compaction = compactMessages(messages);
+    if (compaction.compacted) {
+      messages = compaction.messages;
+      onEvent?.({ type: 'compacted', savedChars: compaction.savedChars });
+    }
+
     const res = await withRetry(() => client.chat({ system, messages, tools: toolSpecs, maxTokens: limits.maxOutputTokens }));
-    usage.inputTokens += res.usage.inputTokens;
-    usage.outputTokens += res.usage.outputTokens;
+    usage = addUsage(usage, res.usage);
 
     // Record the assistant turn (text + any tool_use calls).
     const assistantParts: ContentPart[] = [];

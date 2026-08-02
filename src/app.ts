@@ -1,15 +1,18 @@
 import type { Probot, Context } from 'probot';
 import { createLLMClient } from './providers/index.js';
 import type { ProviderId } from './providers/types.js';
-import { handleIssueFix, handleIssueAnalyze, handlePrReview, handleMention, handlePrFollowup, handleAudit, handleCiFailure, type HandlerDeps } from './github/handlers.js';
+import { handleIssueFix, handleIssueAnalyze, handlePrReview, handleMention, handlePrFollowup, handleAudit, handleCiFailure, handleHistory, handleRelease, handleRoutine, type HandlerDeps } from './github/handlers.js';
 import type { OctokitLike } from './github/pr.js';
 import { redactSecrets } from './util/resilience.js';
 import { mergeConfig, defaultConfig, type ForgeConfig } from './config.js';
+import { findRoutine, parseRunCommand, routinesForEvent } from './routines.js';
+import { prSubject } from './github/router.js';
 
 // Read env lazily (inside functions): .env is loaded by Probot AFTER this module
 // is imported, so module-level reads would miss it.
 const provider = (): ProviderId => (process.env.LLM_PROVIDER || 'anthropic') as ProviderId;
-const mentionHandle = (): string => (process.env.FORGE_DISPLAY_HANDLE || '@shipit-forge').toLowerCase();
+/** Per-repo `trigger_phrase` wins; the env var is only the org-wide default. */
+const mentionHandle = (config: ForgeConfig): string => config.triggerPhrase;
 
 /** Load per-repo config from .github/agent.yml, merged over env-seeded defaults. */
 async function loadConfig(context: Context): Promise<ForgeConfig> {
@@ -31,6 +34,9 @@ async function deps(context: Context, config: ForgeConfig): Promise<HandlerDeps>
     log: (msg: string) => context.log.info(redactSecrets(msg)),
     testCommand: config.testCommand,
     sarifPath: config.sarifPath,
+    maxNits: config.maxNits,
+    historyPath: config.historyPath,
+    historyMode: config.historyMode,
     selfReview: true,
   };
 }
@@ -111,6 +117,19 @@ export default function app(probot: Probot): void {
       });
       return;
     }
+    // `/run <routine>` — start a saved routine on demand from any thread.
+    const run = parseRunCommand(body);
+    if (run) {
+      const routine = findRoutine(config.routines, run.name);
+      if (!routine || !routine.manual) return;
+      await handleRoutine(await deps(context, config), {
+        ...base,
+        routine,
+        extra: run.args,
+        issueNumber: issue.number,
+      });
+      return;
+    }
     if (/^\/audit\b/i.test(body)) {
       // Full-repository security audit (works on an issue or a PR thread).
       await handleAudit(await deps(context, config), {
@@ -130,8 +149,8 @@ export default function app(probot: Probot): void {
       });
       return;
     }
-    if (body.toLowerCase().includes(mentionHandle())) {
-      const question = body.replace(new RegExp(mentionHandle(), 'ig'), '').trim() || 'Please help with this thread.';
+    if (body.toLowerCase().includes(mentionHandle(config))) {
+      const question = body.replace(new RegExp(mentionHandle(config), 'ig'), '').trim() || 'Please help with this thread.';
       const d = await deps(context, config);
       const wantsFix = /\b(fix|implement|patch|create (a )?pr|open (a )?pr|resolve)\b/i.test(question);
       if (isPr) {
@@ -169,13 +188,66 @@ export default function app(probot: Probot): void {
   probot.on('check_suite.completed', onCiCompleted);
   probot.on('workflow_run.completed', onCiCompleted);
 
+  // --- Merged PR / push to default branch → change-history entry (opt-in) ---
+  probot.on('pull_request.closed', async (context) => {
+    const config = await loadConfig(context);
+    const { repository, pull_request } = context.payload;
+    if (!config.historyEnabled || !pull_request.merged) return;
+    await handleHistory(await deps(context, config), {
+      owner: repository.owner.login,
+      repo: repository.name,
+      defaultBranch: repository.default_branch,
+      pullNumber: pull_request.number,
+      ref: repository.default_branch,
+      title: pull_request.title,
+      // Take the date from the event, never a clock read at handling time.
+      date: (pull_request.merged_at ?? new Date().toISOString()).slice(0, 10),
+    });
+  });
+
+  // --- Event-triggered routines: any routine that lists this event runs ---
+  const onRoutineEvent = async (context: Context) => {
+    const config = await loadConfig(context);
+    if (config.routines.length === 0) return;
+    const p = context.payload as any;
+    const subject = p.pull_request ? prSubject(p.pull_request) : {};
+    const matches = routinesForEvent(config.routines, context.name, p.action, subject);
+    if (matches.length === 0) return;
+    const d = await deps(context, config);
+    for (const routine of matches) {
+      await handleRoutine(d, {
+        owner: p.repository.owner.login,
+        repo: p.repository.name,
+        defaultBranch: p.repository.default_branch,
+        routine,
+        ...(p.issue?.number || p.pull_request?.number
+          ? { issueNumber: p.issue?.number ?? p.pull_request?.number }
+          : {}),
+      });
+    }
+  };
+  probot.on(['push', 'pull_request', 'issues', 'release'], onRoutineEvent);
+
+  // --- Release published → generate notes from that release's commits ---
+  probot.on(['release.published', 'release.created'], async (context) => {
+    const config = await loadConfig(context);
+    const { repository, release } = context.payload as any;
+    await handleRelease(await deps(context, config), {
+      owner: repository.owner.login,
+      repo: repository.name,
+      defaultBranch: repository.default_branch,
+      tag: release.tag_name,
+      releaseId: release.id,
+    });
+  });
+
   // --- @mention inside a PR review-comment thread → follow-up commit ---
   probot.on('pull_request_review_comment.created', async (context) => {
     const config = await loadConfig(context);
     const body = (context.payload.comment.body || '').trim();
-    if (!body.toLowerCase().includes(mentionHandle())) return;
+    if (!body.toLowerCase().includes(mentionHandle(config))) return;
     const { repository, pull_request } = context.payload;
-    const question = body.replace(new RegExp(mentionHandle(), 'ig'), '').trim() || 'Please address this comment.';
+    const question = body.replace(new RegExp(mentionHandle(config), 'ig'), '').trim() || 'Please address this comment.';
     await handlePrFollowup(await deps(context, config), {
       owner: repository.owner.login,
       repo: repository.name,

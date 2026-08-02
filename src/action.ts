@@ -8,7 +8,21 @@ import { createLLMClient } from './providers/index.js';
 import type { ProviderId } from './providers/types.js';
 import { defaultConfig } from './config.js';
 import { routeEvent, type RouteOpts } from './github/router.js';
-import { handleIssueFix, handlePrReview, handleMention, handlePrFollowup, type HandlerDeps } from './github/handlers.js';
+import { octokitOptions } from './github/host.js';
+import { readActionInputs } from './actionInputs.js';
+import {
+  handleIssueFix,
+  handlePrReview,
+  handleMention,
+  handlePrFollowup,
+  handleAudit,
+  handleHistory,
+  handleRelease,
+  handleRoutine,
+  type HandlerDeps,
+} from './github/handlers.js';
+import { loadRepoConfig } from './github/repoConfig.js';
+import { findRoutine } from './routines.js';
 import type { OctokitLike } from './github/pr.js';
 import { redactSecrets } from './util/resilience.js';
 
@@ -52,15 +66,28 @@ async function main(): Promise<void> {
     process.env.GOOGLE_APPLICATION_CREDENTIALS = p;
   }
 
-  const provider = (process.env.LLM_PROVIDER || process.env.INPUT_PROVIDER || 'anthropic') as ProviderId;
-  const config = defaultConfig();
+  // Workflow inputs decide what this run does: prompt, tools, turns, budgets.
+  const inputs = readActionInputs();
+  const provider = (process.env.LLM_PROVIDER || inputs.provider || 'anthropic') as ProviderId;
   const log = (msg: string) => console.log(redactSecrets(msg));
+
+  // baseUrl is set only on GitHub Enterprise Server; empty on github.com.
+  const octokit = new Octokit({ auth: effectiveToken, ...octokitOptions() }) as unknown as OctokitLike;
+
+  // Per-repository config. The App gets this from Probot; the Action has to
+  // fetch it, or every setting in agent.yml would be silently ignored here.
+  const config = repoOwner && repoName ? await loadRepoConfig(octokit, repoOwner, repoName, log) : defaultConfig();
+  if (inputs.model) config.model = inputs.model;
+  if (inputs.maxNits !== undefined) config.maxNits = inputs.maxNits;
 
   const routeOpts: RouteOpts = {
     triggerLabel: config.triggerLabel,
-    mentionHandle: (process.env.FORGE_DISPLAY_HANDLE || '@shipit-forge').toLowerCase(),
+    mentionHandle: inputs.triggerPhrase ?? config.triggerPhrase,
     autoFix: config.autoFix,
     autoReview: config.autoReview,
+    reviewBehavior: config.reviewBehavior,
+    filters: config.filters,
+    historyEnabled: config.historyEnabled,
   };
 
   const route = routeEvent(eventName, payload, routeOpts);
@@ -69,7 +96,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  const octokit = new Octokit({ auth: effectiveToken }) as unknown as OctokitLike;
   const deps: HandlerDeps = {
     octokit,
     client: createLLMClient({ provider, model: config.model }),
@@ -77,6 +103,14 @@ async function main(): Promise<void> {
     log,
     testCommand: config.testCommand,
     sarifPath: config.sarifPath,
+    maxNits: config.maxNits,
+    extraPrompt: inputs.extraPrompt,
+    toolSelection: { allowed: inputs.allowedTools, disallowed: inputs.disallowedTools },
+    skillName: inputs.skillName,
+    inlineSkill: inputs.inlineSkill,
+    skillsPath: inputs.skillsPath,
+    historyPath: config.historyPath,
+    historyMode: config.historyMode,
     selfReview: true,
   };
 
@@ -94,6 +128,33 @@ async function main(): Promise<void> {
     case 'mention':
       await handleMention(deps, route);
       break;
+    case 'audit':
+      await handleAudit(deps, route);
+      break;
+    case 'history':
+      await handleHistory(deps, {
+        ...route,
+        // The event carries the date; never read a clock mid-run.
+        date: (payload?.pull_request?.merged_at ?? payload?.head_commit?.timestamp ?? '').slice(0, 10) ||
+          new Date().toISOString().slice(0, 10),
+      });
+      break;
+    case 'release':
+      await handleRelease(deps, route);
+      break;
+    case 'routine': {
+      const routine = findRoutine(config.routines, route.routine);
+      if (!routine) {
+        log(`No routine named "${route.routine}" in .github/agent.yml.`);
+        break;
+      }
+      if (!routine.manual) {
+        log(`Routine "${routine.name}" is not manually runnable.`);
+        break;
+      }
+      await handleRoutine(deps, { ...route, routine, extra: route.args });
+      break;
+    }
   }
   log('ShipIT Forge: done.');
 }

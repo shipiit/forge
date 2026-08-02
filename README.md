@@ -15,13 +15,13 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 [![License: MIT](https://img.shields.io/badge/License-MIT-22D3EE.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-88%20passing-FF8A3D.svg)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-401%20passing-FF8A3D.svg)](#-testing)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-7C5CFF.svg)](#-contributing)
 
 <br/>
 
 **Providers:**
-&nbsp;`Vertex AI Gemini`&nbsp;·&nbsp;`AWS Bedrock`&nbsp;·&nbsp;`OpenAI`&nbsp;·&nbsp;`Anthropic`
+&nbsp;`Anthropic`&nbsp;·&nbsp;`OpenAI`&nbsp;·&nbsp;`Gemini`&nbsp;·&nbsp;`Vertex AI`&nbsp;·&nbsp;`AWS Bedrock`&nbsp;·&nbsp;`Groq`&nbsp;·&nbsp;`Together`&nbsp;·&nbsp;`Ollama`&nbsp;·&nbsp;`OpenAI-compatible`
 
 <br/>
 
@@ -38,11 +38,53 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 | | Capability | How you trigger it |
 |---|---|---|
 | 🛠️ | **Fix an issue → open a PR** — investigates the repo, writes the fix on a branch, runs the tests, opens a PR that closes the issue | Label `agent-fix`, or comment `/fix` |
-| 🔍 | **Review a PR** — inline comments + summary verdict, quality **and** security lenses | Open a PR, or comment `/review` |
-| 🛡️ | **Security review** — flags SSRF, injection, secrets, authz… with **severity** + a **suggested-fix** block | Auto on PRs, or comment `/security` |
+| 🔍 | **Review a PR** — inline comments + summary verdict, quality **and** security lenses, **scoped strictly to the changed files** | Open a PR, or comment `/review` / `/review always` |
+| 🛡️ | **Security review** — flags SSRF, injection, secrets, authz… with **severity**, a **CWE**, and a **suggested-fix** block | Auto on PRs, or comment `/security` |
+| 🔬 | **Whole-repo audit** — maps entry points, follows untrusted input to dangerous sinks, one grouped report | Comment `/audit` |
+| 📜 | **Change-history document** — one entry per merged change, written **from that diff alone**; arrives as a PR | `history: true` in `agent.yml` |
+| ⏰ | **Routines** — a saved skill plus its triggers: cron, on-demand, or any repository event, each with filters | `routines:` in `agent.yml`, `/run <name>` |
+| 🧩 | **Skills** — 7 built-in prompt packs with enforced tool allowlists; override from your repo or the workflow | `/code-review`, `/triage`, … |
+| 🔁 | **Auto-fix failing CI** — reads the logs, corrects the code, re-runs the suite, pushes a `ci-fix` commit | Automatic on `forge/*` branches |
+| 📝 | **Release notes** — generated from the commits in the release | On `release.published` |
 | 👋 | **Invite as a reviewer** — request `@shipit-forge` on any PR and it reviews on demand | Add it as a PR reviewer |
 | 💬 | **Answer @mentions** — explains code on issues; on a PR it can **push a follow-up commit** to the branch | Comment `@shipit-forge <ask>` |
 | 🖼️ | **Reads screenshots** — pulls images out of issue/PR bodies and feeds them to vision models | Automatic |
+
+**It never merges and never approves.** Every change is a pull request you control, and the review check run
+always completes as `neutral` so it can't block a merge through branch protection.
+
+### 🧠 The agent
+
+- **9 providers** — Anthropic, OpenAI, Gemini, Vertex AI, AWS Bedrock, Groq, Together, Ollama, or any
+  OpenAI-compatible endpoint. Set `FORGE_FALLBACK_PROVIDERS` for a fallback chain when one has an outage.
+- **Prompt caching** — the system prompt, every tool schema, and the growing transcript are cached
+  (Anthropic `cache_control`, Bedrock `cachePoint`), so repeated context bills at roughly a tenth of the
+  input rate. OpenAI and Gemini automatic caching is reported too.
+- **Extended thinking** — `FORGE_THINKING_BUDGET` on Anthropic and Gemini; `reasoning_effort` is set
+  automatically for OpenAI's o-series and gpt-5 (including `max_completion_tokens`).
+- **Token discipline** — a tool allowlist strips unused schemas from every turn, context compaction elides
+  stale tool output once a transcript grows large, and `read_file` windows big files instead of dumping them.
+- **Cost reporting** — every comment and PR carries a footer with tokens used, how many were served from
+  cache, and the estimated spend.
+- **Per-model output caps** — a shared 16k budget is clamped to what each model actually accepts.
+
+### 🔒 Security
+
+- **Deterministic per-edit checks** — every write is scanned for risky patterns (dynamic execution, unsafe
+  deserialization, DOM injection, hardcoded credentials, weak crypto, workflow edits) with **no model call
+  and no token cost**. Add your own rules in `.forge/security-patterns.json`.
+- **Sandboxed tools** — path-jailed file access, a command denylist, process-group timeouts, and output caps.
+- **Secret redaction** on every log path.
+- **Live Dependabot alerts** and **SARIF** (CodeQL, Semgrep) merged into the same triaged report.
+
+### 🏢 For teams
+
+- **Whole-organization rollout** — the App installs once across every repo; the Action needs no server at all.
+- **GitHub Enterprise Server** — set `GHES_HOSTNAME` and everything else is identical.
+- **Repo instruction files** — `FORGE.md` / `AGENTS.md` as project context, `REVIEW.md` as highest-priority
+  review instructions that override the defaults.
+- **Trigger filters** — author, title, body, base/head branch, labels, draft, merged, with
+  `equals · contains · starts_with · is_one_of · is_not_one_of · matches_regex`.
 
 ---
 
@@ -337,13 +379,18 @@ issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
 ## 🧪 Testing
 
 ```bash
-npm test         # vitest — 88 unit + integration tests
+npm test         # vitest — 401 unit + integration tests
 npm run typecheck
 ```
 
 Everything is testable **without credentials**: a scripted fake provider drives the agent loop, and
 each real adapter is verified via pure normalization functions + injected mock clients. CI runs
 typecheck + tests + build on every push.
+
+Coverage is weighted toward the logic that decides what the agent *does* — routing, filters, review
+scoping, config parsing, and the workflow generator — because those are the parts that fail quietly
+rather than loudly. A malformed `agent.yml`, an invalid regex in a filter, or a finding on a file the
+PR never touched all have a test pinning the behaviour.
 
 ---
 
