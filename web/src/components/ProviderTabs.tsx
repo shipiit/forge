@@ -8,7 +8,7 @@ import { Tabs, type Tab } from './Tabs';
  */
 
 const workflow = (name: string, body: string) => `# .github/workflows/forge.yml
-- uses: shipiit/forge@v1
+- uses: shipiit/forge@v2
   with:
     provider: ${name}
 ${body}`;
@@ -70,7 +70,7 @@ VERTEX_MODEL=gemini-2.5-pro`,
     role-to-assume: \${{ secrets.AWS_ROLE_TO_ASSUME }}
     aws-region: us-east-1
 
-- uses: shipiit/forge@v1
+- uses: shipiit/forge@v2
   with:
     provider: bedrock`,
     env: `LLM_PROVIDER=bedrock
@@ -104,7 +104,7 @@ TOGETHER_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo`,
     label: 'Ollama',
     hint: 'Fully local — no key, no data leaving the machine. Best for the CLI and self-hosted runners.',
     action: `# Point at a runner that has Ollama running
-- uses: shipiit/forge@v1
+- uses: shipiit/forge@v2
   with:
     provider: ollama
   env:

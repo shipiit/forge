@@ -507,15 +507,16 @@ export function WorkflowBuilder() {
           <Field
             label="Action version"
             required
-            hint="v1 is the last stable release. Skills, tool allowlists, per-run limits and change history landed after it — pick main to use those."
+            hint="v2 is current and moves forward with each 2.x release. v1 predates skills, tool allowlists, per-run limits and change history."
             htmlFor="wb-ref"
           >
             <Select
               id="wb-ref"
               value={c.actionRef}
               options={[
-                { value: "v1", label: "@v1", hint: "Last stable release — ignores the newer inputs" },
-                { value: "main", label: "@main", hint: "Every feature, moves with the branch" },
+                { value: "v2", label: "@v2", hint: "Current release — every input on this page" },
+                { value: "v1", label: "@v1", hint: "Previous major — ignores the newer inputs" },
+                { value: "main", label: "@main", hint: "Unreleased, moves with the branch" },
               ]}
               onChange={(v) => set("actionRef", v)}
             />

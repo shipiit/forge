@@ -70,7 +70,7 @@ Never report anything CI already enforces (lint, formatting, types).`}
               <Code
                 label=".github/workflows/forge.yml"
                 lang="yaml"
-                code={`- uses: shipiit/forge@v1
+                code={`- uses: shipiit/forge@v2
   with:
     anthropic-api-key: \${{ secrets.ANTHROPIC_API_KEY }}
     skill-name: house-review
@@ -89,7 +89,7 @@ Never report anything CI already enforces (lint, formatting, types).`}
               <Code
                 label=".github/workflows/forge.yml"
                 lang="yaml"
-                code={`- uses: shipiit/forge@v1
+                code={`- uses: shipiit/forge@v2
   with:
     skill: code-review
     allowed-tools: read_file search glob   # fewer tools, fewer tokens

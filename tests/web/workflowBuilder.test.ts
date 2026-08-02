@@ -110,7 +110,7 @@ describe('generated workflow', () => {
     expect(yaml).toContain('on:');
     expect(yaml).toContain('permissions:');
     expect(yaml).toContain('jobs:');
-    expect(yaml).toContain('- uses: shipiit/forge@v1');
+    expect(yaml).toContain('- uses: shipiit/forge@v2');
     expect(yaml.endsWith('\n')).toBe(true);
   });
 
@@ -303,16 +303,16 @@ describe('change history and branch options', () => {
 });
 
 describe('action version', () => {
-  it('defaults to the stable tag', () => {
-    expect(DEFAULT_CONFIG.actionRef).toBe('v1');
-    expect(generateWorkflow(DEFAULT_CONFIG)).toContain('uses: shipiit/forge@v1');
+  it('defaults to the current major', () => {
+    expect(DEFAULT_CONFIG.actionRef).toBe('v2');
+    expect(generateWorkflow(DEFAULT_CONFIG)).toContain('uses: shipiit/forge@v2');
   });
 
   it('emits whichever ref was chosen', () => {
     expect(generateWorkflow(cfg({ actionRef: 'main' }))).toContain('uses: shipiit/forge@main');
   });
 
-  it('falls back to v1 rather than emitting a bare @', () => {
-    expect(generateWorkflow(cfg({ actionRef: '  ' }))).toContain('uses: shipiit/forge@v1');
+  it('falls back to the default rather than emitting a bare @', () => {
+    expect(generateWorkflow(cfg({ actionRef: '  ' }))).toContain('uses: shipiit/forge@v2');
   });
 });

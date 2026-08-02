@@ -28,7 +28,7 @@ jobs:
   forge:
     runs-on: ubuntu-latest
     steps:
-      - uses: shipiit/forge@v1
+      - uses: shipiit/forge@v2
         with:
           provider: anthropic
         env:

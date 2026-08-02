@@ -96,7 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: shipiit/forge@v1
+      - uses: shipiit/forge@v2
         with:
           skill: commit-summary
           allowed-tools: read_file search glob   # fewer tokens

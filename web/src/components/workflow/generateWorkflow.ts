@@ -68,7 +68,7 @@ export const DEFAULT_CONFIG: WorkflowConfig = {
   useApp: false,
   timeout: '30',
   concurrency: true,
-  actionRef: 'v1',
+  actionRef: 'v2',
 };
 
 const EVENT_TYPES: Record<string, string> = {
@@ -265,7 +265,7 @@ export function generateWorkflow(c: WorkflowConfig): string {
     );
   }
 
-  lines.push(`      - uses: shipiit/forge@${c.actionRef.trim() || 'v1'}`, '        with:');
+  lines.push(`      - uses: shipiit/forge@${c.actionRef.trim() || 'v2'}`, '        with:');
   lines.push(`          provider: ${c.provider}`);
   if (c.model.trim()) lines.push(`          model: ${c.model.trim()}`);
   if (meta.secretInput) lines.push(`          ${meta.secretInput}: \${{ secrets.${c.secretName.trim()} }}`);

@@ -31,7 +31,7 @@ export function CostSection() {
       <Code
         label="tune it per workflow"
         lang="yaml"
-        code={`- uses: shipiit/forge@v1
+        code={`- uses: shipiit/forge@v2
   with:
     allowed-tools: read_file search glob   # smallest useful toolset
     max-turns: "10"                        # bound the loop

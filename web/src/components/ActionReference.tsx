@@ -129,7 +129,7 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: shipiit/forge@v1
+      - uses: shipiit/forge@v2
         with:
           skill: code-review
           allowed-tools: read_file search glob
@@ -144,7 +144,7 @@ jobs:
   security:
     runs-on: ubuntu-latest
     steps:
-      - uses: shipiit/forge@v1
+      - uses: shipiit/forge@v2
         with:
           skill: security-audit
           prompt: |
@@ -153,7 +153,7 @@ jobs:
             Anything you cannot demonstrate is not a finding.
           anthropic-api-key: \${{ secrets.ANTHROPIC_API_KEY }}`} />
 
-              <Code label="Team standards, no committed file" lang="yaml" code={`- uses: shipiit/forge@v1
+              <Code label="Team standards, no committed file" lang="yaml" code={`- uses: shipiit/forge@v2
   with:
     skill-name: house-review
     skill-description: Our review standards
@@ -165,7 +165,7 @@ jobs:
       Always check new API routes have an integration test.
     anthropic-api-key: \${{ secrets.ANTHROPIC_API_KEY }}`} />
 
-              <Code label="Branded bot, so its commits retrigger CI" lang="yaml" code={`- uses: shipiit/forge@v1
+              <Code label="Branded bot, so its commits retrigger CI" lang="yaml" code={`- uses: shipiit/forge@v2
   with:
     app-id: \${{ secrets.APP_ID }}
     private-key: \${{ secrets.APP_PRIVATE_KEY }}
@@ -184,7 +184,7 @@ jobs:
   digest:
     runs-on: ubuntu-latest
     steps:
-      - uses: shipiit/forge@v1
+      - uses: shipiit/forge@v2
         with:
           skill: commit-summary
           prompt: Summarize every PR merged in the last 24 hours.
@@ -202,7 +202,7 @@ steps:
       role-to-assume: \${{ secrets.AWS_ROLE_TO_ASSUME }}
       aws-region: us-east-1
 
-  - uses: shipiit/forge@v1
+  - uses: shipiit/forge@v2
     with:
       provider: bedrock
       fallback-providers: anthropic`} />

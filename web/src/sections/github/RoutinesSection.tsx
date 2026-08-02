@@ -55,7 +55,7 @@ jobs:
   routines:
     runs-on: ubuntu-latest
     steps:
-      - uses: shipiit/forge@v1
+      - uses: shipiit/forge@v2
         with:
           skill: commit-summary
           anthropic-api-key: \${{ secrets.ANTHROPIC_API_KEY }}`}

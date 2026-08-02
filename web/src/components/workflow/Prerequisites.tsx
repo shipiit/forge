@@ -50,12 +50,11 @@ export function Prerequisites() {
       <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.04] p-5">
         <h4 className="text-[13px] font-semibold text-amber-100/90">Pick the right Action version</h4>
         <p className="mt-2 max-w-3xl text-[12.5px] leading-relaxed text-muted">
-          The <code className="text-white/80">v1</code> tag is the last stable release. Newer inputs — skills,
-          tool allowlists, per-run limits, change history — landed after it, so a workflow pinned to{' '}
-          <code className="text-white/80">@v1</code> will parse those inputs but ignore them. Until a release
-          including them is tagged, point at <code className="text-white/80">@main</code> to use them, or pin{' '}
-          <code className="text-white/80">@v1</code> and stick to the inputs it knows. The field is in the{' '}
-          <span className="text-text">Limits &amp; identity</span> step.
+          <code className="text-white/80">@v2</code> is the current release and the default here — it has every
+          input this form can generate, and the <code className="text-white/80">v2</code> tag moves forward with
+          each 2.x release. <code className="text-white/80">@v1</code> is the previous major: it predates skills,
+          tool allowlists, per-run limits, and change history, so a workflow pinned to it will parse those inputs
+          and ignore them. The field is in the <span className="text-text">Limits &amp; identity</span> step.
         </p>
       </div>
 
