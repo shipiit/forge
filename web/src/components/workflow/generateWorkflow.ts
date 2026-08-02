@@ -39,6 +39,8 @@ export interface WorkflowConfig {
   useApp: boolean;
   timeout: string;
   concurrency: boolean;
+  /** Which published ref of the Action to call, e.g. v1 or main. */
+  actionRef: string;
 }
 
 export const DEFAULT_CONFIG: WorkflowConfig = {
@@ -66,6 +68,7 @@ export const DEFAULT_CONFIG: WorkflowConfig = {
   useApp: false,
   timeout: '30',
   concurrency: true,
+  actionRef: 'v1',
 };
 
 const EVENT_TYPES: Record<string, string> = {
@@ -262,7 +265,7 @@ export function generateWorkflow(c: WorkflowConfig): string {
     );
   }
 
-  lines.push('      - uses: shipiit/forge@v1', '        with:');
+  lines.push(`      - uses: shipiit/forge@${c.actionRef.trim() || 'v1'}`, '        with:');
   lines.push(`          provider: ${c.provider}`);
   if (c.model.trim()) lines.push(`          model: ${c.model.trim()}`);
   if (meta.secretInput) lines.push(`          ${meta.secretInput}: \${{ secrets.${c.secretName.trim()} }}`);

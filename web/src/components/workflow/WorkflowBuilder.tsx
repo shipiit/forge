@@ -505,6 +505,23 @@ export function WorkflowBuilder() {
           </Field>
 
           <Field
+            label="Action version"
+            required
+            hint="v1 is the last stable release. Skills, tool allowlists, per-run limits and change history landed after it — pick main to use those."
+            htmlFor="wb-ref"
+          >
+            <Select
+              id="wb-ref"
+              value={c.actionRef}
+              options={[
+                { value: "v1", label: "@v1", hint: "Last stable release — ignores the newer inputs" },
+                { value: "main", label: "@main", hint: "Every feature, moves with the branch" },
+              ]}
+              onChange={(v) => set("actionRef", v)}
+            />
+          </Field>
+
+          <Field
             label="Job timeout"
             hint="Minutes before the job is cancelled."
             htmlFor="wb-timeout"

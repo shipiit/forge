@@ -301,3 +301,18 @@ describe('change history and branch options', () => {
     expect(yml).toContain('- name: digest');
   });
 });
+
+describe('action version', () => {
+  it('defaults to the stable tag', () => {
+    expect(DEFAULT_CONFIG.actionRef).toBe('v1');
+    expect(generateWorkflow(DEFAULT_CONFIG)).toContain('uses: shipiit/forge@v1');
+  });
+
+  it('emits whichever ref was chosen', () => {
+    expect(generateWorkflow(cfg({ actionRef: 'main' }))).toContain('uses: shipiit/forge@main');
+  });
+
+  it('falls back to v1 rather than emitting a bare @', () => {
+    expect(generateWorkflow(cfg({ actionRef: '  ' }))).toContain('uses: shipiit/forge@v1');
+  });
+});

@@ -4,6 +4,7 @@ import { Header, Footer } from "../components/Layout";
 import { ScrollProgress } from "../components/ScrollProgress";
 import { rise } from "../components/GuideBits";
 import { WorkflowBuilder } from "../components/workflow/WorkflowBuilder";
+import { Prerequisites } from "../components/workflow/Prerequisites";
 
 const NOTES: [string, string][] = [
   [
@@ -42,7 +43,26 @@ export function Builder() {
           </p>
         </motion.div>
 
-        <motion.div {...rise} className="mt-10">
+        <motion.div {...rise} className="mt-12">
+          <span className="eyebrow">Before you start</span>
+          <h2 className="display mt-5 text-[clamp(24px,3vw,34px)]">
+            What you need in place
+          </h2>
+          <p className="mt-3 max-w-3xl text-[14px] leading-relaxed text-muted">
+            Four things, and the first one is “nothing”. Get these right and the file below works the moment you
+            commit it.
+          </p>
+          <div className="mt-6">
+            <Prerequisites />
+          </div>
+        </motion.div>
+
+        <motion.div {...rise} className="mt-14 border-t border-white/[0.07] pt-12">
+          <span className="eyebrow">Build it</span>
+          <h2 className="display mt-5 text-[clamp(24px,3vw,34px)]">Answer the questions</h2>
+        </motion.div>
+
+        <motion.div {...rise} className="mt-8">
           <WorkflowBuilder />
         </motion.div>
 
