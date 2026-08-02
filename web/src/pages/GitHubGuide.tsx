@@ -2,16 +2,19 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Wrench, Search, ShieldAlert, ScanSearch, RefreshCw, MessageSquare,
-  History, CalendarClock, Blocks, Building2, Server, Gauge, Cpu,
+  History, CalendarClock, Blocks, Building2, Server, Gauge, Cpu, Github,
 } from 'lucide-react';
 import { Header, Footer } from '../components/Layout';
 import { ScrollProgress } from '../components/ScrollProgress';
 import { Code } from '../components/Code';
 import { Tabs } from '../components/Tabs';
 import { ProviderTabs } from '../components/ProviderTabs';
+import { AppInstall } from '../components/AppInstall';
+import { useActiveSection } from '../components/useActiveSection';
 import { Section, Triggers, Cards, Walkthrough, CommentPreview, DiffPair, rise } from '../components/GuideBits';
 
 const TOC: [string, string][] = [
+  ['install', 'Install as an App'],
   ['providers', 'Providers'],
   ['fix', 'Fix an issue'],
   ['review', 'Review a PR'],
@@ -49,19 +52,41 @@ jobs:
           provider: anthropic
           anthropic-api-key: \${{ secrets.ANTHROPIC_API_KEY }}`;
 
+const TOC_IDS = TOC.map(([id]) => id);
+
 export function GitHubGuide() {
+  const active = useActiveSection(TOC_IDS);
+
   return (
     <>
       <ScrollProgress />
       <Header />
 
       <div className="mx-auto grid max-w-[1500px] grid-cols-1 gap-14 px-7 pt-14 lg:grid-cols-[200px_minmax(0,1fr)]">
-        <aside className="sticky top-24 hidden self-start border-l border-white/[0.08] pl-4 lg:block">
-          {TOC.map(([id, label]) => (
-            <a key={id} href={`#${id}`} className="block py-1.5 text-sm text-muted transition-colors hover:text-text">
-              {label}
-            </a>
-          ))}
+        <aside className="sticky top-24 hidden self-start lg:block">
+          <nav aria-label="On this page" className="relative border-l border-white/[0.08]">
+            {TOC.map(([id, label]) => {
+              const isActive = id === active;
+              return (
+                <a
+                  key={id}
+                  href={`#${id}`}
+                  aria-current={isActive ? 'true' : undefined}
+                  className={`relative block py-1.5 pl-4 text-sm transition-colors duration-200 motion-reduce:transition-none ${
+                    isActive ? 'font-medium text-text' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  <span
+                    aria-hidden
+                    className={`absolute -left-px top-0 h-full w-px transition-colors duration-200 ${
+                      isActive ? 'bg-[rgb(var(--syn-keyword))]' : 'bg-transparent'
+                    }`}
+                  />
+                  {label}
+                </a>
+              );
+            })}
+          </nav>
         </aside>
 
         <main className="min-w-0 space-y-16 pb-20">
@@ -77,6 +102,14 @@ export function GitHubGuide() {
             </p>
             <Code label=".github/workflows/forge.yml" code={BASE_WORKFLOW} lang="yaml" />
           </motion.div>
+
+          <Section
+            id="install" Icon={Github} eyebrow="Install"
+            title="Set it up as a GitHub App"
+            lead="Install once on your organization and every selected repository is covered — no per-repo file to commit. The moment you approve the permissions, every capability on this page starts running automatically on its matching event. There is nothing else to switch on."
+          >
+            <AppInstall />
+          </Section>
 
           <Section
             id="providers" Icon={Cpu} eyebrow="Bring your own model"

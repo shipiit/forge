@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import {
   Wrench, Search, ShieldAlert, ScanSearch, RefreshCw, MessageSquare,
-  Blocks, CalendarClock, History, Github, Server, Gauge, BookOpen, Rocket, Building2,
+  Blocks, CalendarClock, History, Github, Server, Gauge, BookOpen, Rocket, Building2, SlidersHorizontal,
 } from 'lucide-react';
 import { LogoMark } from './Logo';
 import { NavMenu, type NavGroup } from './NavMenu';
@@ -23,7 +23,7 @@ const CAPABILITIES: NavGroup[] = [
     heading: 'Running continuously',
     items: [
       { label: 'Change history', to: '/github#history', desc: 'A documented entry per commit, opened as a PR.', Icon: History },
-      { label: 'Routines', to: '/github#routines', desc: 'Schedule, on-demand, or on any repository event.', Icon: CalendarClock },
+      { label: 'Schedules & routines', to: '/schedules', desc: 'Cron, on-demand, or on any repository event.', Icon: CalendarClock },
       { label: 'Auto-fix failing CI', to: '/github#ci', desc: 'Reads the logs, pushes a fix, bounded to 2 tries.', Icon: RefreshCw },
       { label: 'Answer @mentions', to: '/github#mentions', desc: 'Explains code, or pushes a follow-up commit.', Icon: MessageSquare },
     ],
@@ -35,8 +35,10 @@ const SETUP: NavGroup[] = [
     heading: 'Get started',
     items: [
       { label: 'Quickstart', to: '/docs', desc: 'One workflow file and a key. Running in minutes.', Icon: Rocket },
-      { label: 'GitHub guide', to: '/github', desc: 'Every trigger, command, and setting explained.', Icon: Github },
-      { label: 'Skills', to: '/github#skills', desc: 'Built-in prompt packs, or define your own.', Icon: Blocks },
+      { label: 'Install as a GitHub App', to: '/github#install', desc: 'Permissions, webhook, deploy — every step.', Icon: Github },
+      { label: 'GitHub Action', to: '/docs#action', desc: 'No server. Every input, with copyable recipes.', Icon: Rocket },
+      { label: 'Configuration', to: '/docs#config', desc: 'agent.yml, env vars, filters, instruction files.', Icon: SlidersHorizontal },
+      { label: 'Skills', to: '/docs#skills', desc: 'Built-in prompt packs, or define your own.', Icon: Blocks },
     ],
   },
   {
