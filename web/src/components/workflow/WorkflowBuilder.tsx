@@ -329,8 +329,8 @@ export function WorkflowBuilder() {
 
         <Group title="What it does">
           <Field
-            label="Skill"
-            hint="Run one focused skill, or leave it open to every trigger."
+            label="Pin this workflow to one skill"
+            hint="One per workflow — it decides what this job does every time it runs. Leave it on “All capabilities” for the normal setup."
             htmlFor="wb-skill"
           >
             <Select
@@ -340,6 +340,14 @@ export function WorkflowBuilder() {
               onChange={(v) => set("skill", v)}
             />
           </Field>
+
+          <p className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3.5 py-3 text-[12.5px] leading-relaxed text-muted">
+            <span className="text-text">Every skill stays available regardless.</span> Pinning one only changes what
+            this job does on its own triggers — anyone can still comment{' '}
+            <code className="text-[rgb(var(--syn-keyword))]">/code-review</code>,{' '}
+            <code className="text-[rgb(var(--syn-keyword))]">/triage</code>, or any other skill on an issue or PR.
+            To run two skills automatically, add a second job with its own triggers.
+          </p>
 
           <Field
             label="Extra instructions"
@@ -516,9 +524,8 @@ export function WorkflowBuilder() {
                 ]
               : []),
           ]}
-        />
-
-        <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-5">
+          guide={
+            <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-5">
           <h4 className="text-[13px] font-semibold text-text">
             Where each file goes
           </h4>
@@ -596,8 +603,10 @@ export function WorkflowBuilder() {
                 )}
               </span>
             </li>
-          </ol>
-        </div>
+            </ol>
+            </div>
+          }
+        />
       </div>
     </div>
   );
