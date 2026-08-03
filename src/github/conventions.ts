@@ -23,6 +23,24 @@ export const PROJECT_CONTEXT_FILES = ['FORGE.md', '.github/FORGE.md', 'AGENTS.md
 /** Review-only instruction file. */
 export const REVIEW_INSTRUCTIONS_FILE = 'REVIEW.md';
 
+/**
+ * Security-only guidance, in priority order.
+ *
+ * The companion to `.forge/security-patterns.json`: those are deterministic
+ * string and regex rules, this is the threat model in prose. A regex cannot
+ * express "every route under /admin must check the role first", and a paragraph
+ * cannot be matched cheaply on every edit — so both exist, and they do
+ * different jobs.
+ *
+ * Additive only. A rule here saying to ignore a vulnerability class does not
+ * suppress those findings; guidance widens what gets checked, it never narrows
+ * the built-in floor.
+ */
+export const SECURITY_GUIDANCE_FILES = [
+  '.forge/security-guidance.md',
+  '.github/forge/security-guidance.md',
+];
+
 /** Combined cap for project context, matching Claude Code's 8 KB guidance budget. */
 export const MAX_CONTEXT_BYTES = 8 * 1024;
 
@@ -34,6 +52,8 @@ export interface RepoInstructions {
   projectContext: string;
   /** Review-only instructions, empty when REVIEW.md is absent. */
   reviewInstructions: string;
+  /** Security-only guidance, empty when no guidance file is present. */
+  securityGuidance: string;
   /** Which files were actually found (repo-relative), for logging. */
   found: string[];
 }
@@ -67,9 +87,19 @@ export async function loadRepoInstructions(cwd: string): Promise<RepoInstruction
   const review = await readCapped(cwd, REVIEW_INSTRUCTIONS_FILE, MAX_REVIEW_BYTES);
   if (review !== null) found.push(REVIEW_INSTRUCTIONS_FILE);
 
+  let securityGuidance = '';
+  for (const rel of SECURITY_GUIDANCE_FILES) {
+    const body = await readCapped(cwd, rel, MAX_REVIEW_BYTES);
+    if (body === null) continue;
+    found.push(rel);
+    securityGuidance = body;
+    break;
+  }
+
   return {
     projectContext: parts.join('\n\n'),
     reviewInstructions: review ?? '',
+    securityGuidance,
     found,
   };
 }
@@ -102,6 +132,14 @@ export function composeReviewSystemPrompt(base: string, instructions: RepoInstru
       `"nit" severity finding — report it, but do not treat it as blocking. If a change makes one of ` +
       `these statements out of date, say the documentation needs updating.\n\n` +
       instructions.projectContext;
+  }
+  if (instructions.securityGuidance) {
+    out +=
+      `\n\n# Security guidance from this repository\n\n` +
+      `The maintainers wrote the threat model below. Check for these on top of your standard ` +
+      `vulnerability classes — it ADDS to what you look for and never removes anything, so a ` +
+      `built-in class stays in scope even if this text does not mention it.\n\n` +
+      instructions.securityGuidance;
   }
   if (instructions.reviewInstructions) {
     out +=

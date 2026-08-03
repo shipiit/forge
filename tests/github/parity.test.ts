@@ -323,13 +323,14 @@ describe('router: new triggers', () => {
 
 describe('repo instruction files', () => {
   it('renders nothing when the repo has no conventions', () => {
-    expect(renderProjectContextBlock({ projectContext: '', reviewInstructions: '', found: [] })).toBe('');
+    expect(renderProjectContextBlock({ projectContext: '', reviewInstructions: '', securityGuidance: '', found: [] })).toBe('');
   });
 
   it('puts REVIEW.md last and labels it highest priority', () => {
     const prompt = composeReviewSystemPrompt('BASE', {
       projectContext: 'use tabs',
       reviewInstructions: 'only report security',
+      securityGuidance: '',
       found: ['FORGE.md', 'REVIEW.md'],
     });
     expect(prompt.indexOf('BASE')).toBeLessThan(prompt.indexOf('use tabs'));
@@ -341,8 +342,42 @@ describe('repo instruction files', () => {
     const prompt = composeReviewSystemPrompt('BASE', {
       projectContext: 'use tabs',
       reviewInstructions: '',
+      securityGuidance: '',
       found: ['FORGE.md'],
     });
     expect(prompt).toContain('nit');
+  });
+});
+
+describe('security guidance file', () => {
+  const base = { projectContext: '', reviewInstructions: '', securityGuidance: '', found: [] };
+
+  it('is absent by default', () => {
+    expect(composeReviewSystemPrompt('BASE', base)).toBe('BASE');
+  });
+
+  it('is added to the review prompt when present', () => {
+    const prompt = composeReviewSystemPrompt('BASE', {
+      ...base,
+      securityGuidance: 'Every /admin route must call require_role("admin").',
+    });
+    expect(prompt).toContain('require_role');
+    expect(prompt).toContain('Security guidance');
+  });
+
+  it('is stated as additive, so it cannot narrow the built-in floor', () => {
+    // A guidance file saying "ignore SQL injection" must not suppress it.
+    const prompt = composeReviewSystemPrompt('BASE', { ...base, securityGuidance: 'x' });
+    expect(prompt).toMatch(/ADDS to what you look for/);
+    expect(prompt).toMatch(/never removes/);
+  });
+
+  it('sits above REVIEW.md, which stays the highest priority block', () => {
+    const prompt = composeReviewSystemPrompt('BASE', {
+      ...base,
+      securityGuidance: 'SECGUIDE',
+      reviewInstructions: 'REVIEWRULES',
+    });
+    expect(prompt.indexOf('SECGUIDE')).toBeLessThan(prompt.indexOf('REVIEWRULES'));
   });
 });
