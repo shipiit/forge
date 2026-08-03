@@ -1,3 +1,5 @@
+import { commentMarker } from './threads.js';
+
 /** A single review finding, produced by the agent in review mode. */
 export interface ReviewFinding {
   file: string;
@@ -54,6 +56,9 @@ export function renderFindingBody(f: ReviewFinding): string {
   if (f.suggestion !== undefined) {
     out += `\n\n\`\`\`suggestion\n${f.suggestion}\n\`\`\``;
   }
+  // Identity for re-review: lets a later run skip this finding instead of
+  // posting it again, and resolve the thread once it is fixed.
+  out += `\n\n${commentMarker(f)}`;
   return out;
 }
 

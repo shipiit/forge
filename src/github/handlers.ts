@@ -26,6 +26,14 @@ import type { Routine } from '../routines.js';
 import { loadRepoInstructions, renderProjectContextBlock, composeReviewSystemPrompt } from './conventions.js';
 import { buildCheckRunRequest } from './checkrun.js';
 import {
+  REVIEW_THREADS_QUERY,
+  RESOLVE_THREAD_MUTATION,
+  parseThreads,
+  planThreads,
+  renderSkipped,
+  type ThreadPlan,
+} from './threads.js';
+import {
   FINDING_LABEL,
   issueBody,
   issueTitle,
@@ -304,6 +312,48 @@ async function fileFindingIssues(
   } catch (err) {
     deps.log(`could not file finding issues: ${(err as Error).message}`);
     return '';
+  }
+}
+
+/**
+ * Reconcile this review against what is already on the pull request.
+ *
+ * Skips findings already commented, and resolves threads whose finding is gone.
+ * Needs GraphQL — `resolveReviewThread` has no REST equivalent — so it degrades
+ * to "post everything" wherever GraphQL is unavailable rather than failing the
+ * review outright.
+ */
+async function reconcileThreads(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; pullNumber: number },
+  findings: ReviewFinding[],
+): Promise<ThreadPlan> {
+  const fallback: ThreadPlan = { toPost: findings, alreadyPosted: [], toResolve: [] };
+  const graphql = deps.octokit.graphql;
+  if (!graphql) return fallback;
+
+  try {
+    const res = await graphql(REVIEW_THREADS_QUERY, {
+      owner: args.owner,
+      repo: args.repo,
+      number: args.pullNumber,
+    });
+    const existing = parseThreads(res as never, (login) => isFromForge(login));
+    const plan = planThreads(findings, existing);
+
+    for (const threadId of plan.toResolve) {
+      try {
+        await graphql(RESOLVE_THREAD_MUTATION, { threadId });
+      } catch (err) {
+        deps.log(`could not resolve a thread: ${(err as Error).message}`);
+      }
+    }
+    if (plan.toResolve.length) deps.log(`resolved ${plan.toResolve.length} thread(s) whose finding is fixed`);
+    if (plan.alreadyPosted.length) deps.log(`skipped ${plan.alreadyPosted.length} finding(s) already commented`);
+    return plan;
+  } catch (err) {
+    deps.log(`thread reconciliation unavailable: ${(err as Error).message}`);
+    return fallback;
   }
 }
 
@@ -678,7 +728,10 @@ async function doPrReview(
       log(`check run not posted: ${(err as Error).message}`);
     }
 
-    const { kept, dropped } = capNits(findings, deps.maxNits ?? 5);
+    // Do not repeat what is already on the PR, and resolve what is now fixed.
+    const plan = await reconcileThreads(deps, args, findings);
+
+    const { kept, dropped } = capNits(plan.toPost, deps.maxNits ?? 5);
     const validLines = parseDiffValidLines(diff);
     const payload = buildReviewPayload(kept, {
       displayName: DISPLAY,
@@ -706,7 +759,8 @@ async function doPrReview(
         withBudgetNotice(
           result,
           client.model,
-          `### 🔍 ${DISPLAY} reviewed this PR — ${verdict}\n\n${findings.length} finding(s) (${sec} security). See the review above for inline details and suggested fixes.`,
+          `### 🔍 ${DISPLAY} reviewed this PR — ${verdict}\n\n${findings.length} finding(s) (${sec} security). See the review above for inline details and suggested fixes.` +
+            renderSkipped(plan),
         ) + costFooter(result.usage, client.model),
     });
   } finally {

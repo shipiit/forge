@@ -37,6 +37,8 @@ export interface OctokitLike {
     };
   };
   request(route: string, params: Record<string, unknown>): Promise<{ data: unknown }>;
+  /** Optional: thread resolution has no REST equivalent, so it needs GraphQL. */
+  graphql?(query: string, variables?: Record<string, unknown>): Promise<unknown>;
 }
 
 export interface OpenPrParams {
