@@ -12,7 +12,13 @@
 # .env is for running the agent on your own machine.
 #
 #   Secret  VERTEX_SA_JSON   the full service-account JSON, pasted whole
-#   Secret  VERTEX_PROJECT   your GCP project id  (a Variable works too)
+#   Secret  VERTEX_PROJECT   your GCP project id
+#
+# Optional, as either a Secret or a Variable — neither is sensitive, so a
+# Variable is easier to read back later:
+#
+#   VERTEX_MODEL     default gemini-2.5-pro; gemini-2.5-flash is cheaper/faster
+#   VERTEX_LOCATION  default us-central1
 #
 # WHY THE `if:` BELOW MATTERS — this repository is public
 #
@@ -81,8 +87,8 @@ jobs:
         env:
           LLM_PROVIDER: vertex
           VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT || secrets.VERTEX_PROJECT }}
-          VERTEX_LOCATION: ${{ vars.VERTEX_LOCATION || 'us-central1' }}
-          VERTEX_MODEL: ${{ vars.VERTEX_MODEL || 'gemini-2.5-pro' }}
+          VERTEX_LOCATION: ${{ vars.VERTEX_LOCATION || secrets.VERTEX_LOCATION || 'us-central1' }}
+          VERTEX_MODEL: ${{ vars.VERTEX_MODEL || secrets.VERTEX_MODEL || 'gemini-2.5-pro' }}
           # Analyse and explain. Opening a PR unasked on every issue is noise;
           # `/fix` in a comment is the deliberate act that writes code.
           FORGE_AUTO_FIX: 'off'

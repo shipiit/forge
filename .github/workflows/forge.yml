@@ -14,7 +14,13 @@
 # Add these two (Vertex, which is what this repo uses):
 #
 #   Secret  VERTEX_SA_JSON   the full service-account JSON, pasted whole
-#   Secret  VERTEX_PROJECT   your GCP project id  (a Variable works too)
+#   Secret  VERTEX_PROJECT   your GCP project id
+#
+# Optional, as either a Secret or a Variable — neither is sensitive, so a
+# Variable is easier to read back later:
+#
+#   VERTEX_MODEL     default gemini-2.5-pro; gemini-2.5-flash is cheaper/faster
+#   VERTEX_LOCATION  default us-central1
 #
 # Using a different provider? Add its key as a secret and swap the two marked
 # lines below:
@@ -116,7 +122,7 @@ jobs:
         env:
           LLM_PROVIDER: vertex
           VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT || secrets.VERTEX_PROJECT }}
-          VERTEX_LOCATION: ${{ vars.VERTEX_LOCATION || 'us-central1' }}
-          VERTEX_MODEL: ${{ vars.VERTEX_MODEL || 'gemini-2.5-pro' }}
+          VERTEX_LOCATION: ${{ vars.VERTEX_LOCATION || secrets.VERTEX_LOCATION || 'us-central1' }}
+          VERTEX_MODEL: ${{ vars.VERTEX_MODEL || secrets.VERTEX_MODEL || 'gemini-2.5-pro' }}
           FORGE_AUTO_REVIEW: always
           GITHUB_TOKEN: ${{ github.token }}
