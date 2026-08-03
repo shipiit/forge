@@ -1,12 +1,62 @@
-# ShipIT Forge — auto-review every pull request on this repo (using Vertex Gemini).
-# Scoped to PRs only: it reviews new PRs / new commits, and responds to /review,
-# /security, and @shipit-forge comments on a PR. It never auto-approves or merges.
+# ShipIT Forge — auto-review every pull request on this repo.
 #
-# Required repo configuration (Settings → Secrets and variables → Actions):
-#   • Secret   VERTEX_SA_JSON  = the full Vertex service-account JSON
-#   • Variable VERTEX_PROJECT  = your GCP project id
-# Note: secrets are NOT exposed to PRs opened from forks, so Forge runs on
-# same-repo (branch) PRs. That is the safe default.
+# Scoped to PRs: it reviews new PRs and new commits, and answers /review,
+# /security and @shipit-forge comments on a PR. It never approves or merges.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIGURATION — Settings → Secrets and variables → Actions
+#
+# A .env file does NOT work here. Actions never reads a file from the repository
+# for credentials, and .env is gitignored precisely so it cannot be committed.
+# .env is for running the agent on your own machine (`forge run`, `forge fix`);
+# CI reads repository secrets instead.
+#
+# Add these two (Vertex, which is what this repo uses):
+#
+# All four are required Secrets. Nothing is defaulted in this file: a model or
+# a region hardcoded here is one somebody changes in the settings page and then
+# wonders why the run ignored them.
+#
+#   VERTEX_SA_JSON   the full service-account JSON, pasted whole
+#   VERTEX_PROJECT   your GCP project id
+#   VERTEX_LOCATION  region, e.g. us-central1
+#   VERTEX_MODEL     e.g. gemini-2.5-pro, or gemini-2.5-flash for cheaper runs
+#
+# Optional, and worth adding — without them every review is posted by
+# "github-actions[bot]" rather than by your app:
+#
+#   FORGE_APP_ID       the GitHub App's numeric id (Settings → Developer settings)
+#   FORGE_PRIVATE_KEY  that app's private key, the whole PEM including headers
+#
+# Using a different provider? Add its key as a secret and swap the two marked
+# lines below:
+#
+#   anthropic  ANTHROPIC_API_KEY  provider: anthropic
+#                                 anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+#   openai     OPENAI_API_KEY     provider: openai
+#                                 openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+#   gemini     GEMINI_API_KEY     provider: gemini
+#                                 gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHY THE `if:` BELOW IS NOT OPTIONAL — this repository is public
+#
+# GitHub protects secrets from `pull_request` events on forks: a fork PR gets
+# no secrets, so a stranger's PR cannot read them. That protection does NOT
+# extend to `issue_comment`. Comment events run the workflow from the default
+# branch WITH secrets, whoever wrote the comment.
+#
+# On a public repository that means any person on the internet could comment
+# "/review" and start a run that spends your model credits — and, on a fix or
+# mention, clones a branch and runs its tests with GITHUB_TOKEN (contents:
+# write) in the environment. That is the "pwn request" pattern, and it ends in
+# a push to your repository.
+#
+# So every job below is gated on author_association: only the owner, an
+# organization member, or a collaborator can set the agent off, and only
+# same-repository pull requests are reviewed. Removing that gate on a public
+# repository hands your token and your credits to anyone with a keyboard.
+# ─────────────────────────────────────────────────────────────────────────────
 
 name: ShipIT Forge (PR review)
 
@@ -18,7 +68,6 @@ on:
   issue_comment:
     types: [created]
 
-# Only run comment events when they're on a pull request (not plain issues).
 permissions:
   contents: write
   pull-requests: write
@@ -33,18 +82,80 @@ concurrency:
 
 jobs:
   review:
-    # PR events always run; comment events only when on a PR.
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || (github.event_name == 'issue_comment' && github.event.issue.pull_request) }}
+    # Two gates, both required on a public repository (see the note above):
+    #   1. same-repository PRs only — a fork PR gets no secrets anyway, and
+    #      failing loudly on every drive-by PR is just noise.
+    #   2. trusted authors only — OWNER, MEMBER or COLLABORATOR. Anyone else
+    #      commenting "/review" is a stranger spending your credits.
+    if: >-
+      ${{ (github.event_name == 'pull_request'
+            && github.event.pull_request.head.repo.full_name == github.repository)
+       || ((github.event_name == 'pull_request_review_comment'
+            || (github.event_name == 'issue_comment' && github.event.issue.pull_request))
+           && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) }}
     runs-on: ubuntu-latest
+
     steps:
-      - uses: shipiit/forge@v1
+      # Say what is missing, in one line, before spending three minutes getting
+      # an authentication error from inside the container.
+      - name: Check credentials are configured
+        env:
+          SA_JSON: ${{ secrets.VERTEX_SA_JSON }}
+          PROJECT: ${{ secrets.VERTEX_PROJECT }}
+          LOCATION: ${{ secrets.VERTEX_LOCATION }}
+          MODEL: ${{ secrets.VERTEX_MODEL }}
+        run: |
+          missing=""
+          [ -z "$SA_JSON" ]  && missing="$missing VERTEX_SA_JSON"
+          [ -z "$PROJECT" ]  && missing="$missing VERTEX_PROJECT"
+          [ -z "$LOCATION" ] && missing="$missing VERTEX_LOCATION"
+          [ -z "$MODEL" ]    && missing="$missing VERTEX_MODEL"
+          if [ -n "$missing" ]; then
+            echo "::error::ShipIT Forge is not configured. Missing:$missing"
+            echo "::error::Add them under Settings → Secrets and variables → Actions. Actions does not read a .env file."
+            exit 1
+          fi
+
+      # This repository IS the action, so it runs the action from this commit,
+      # not from a tag. A tag lags: the input-name bug that made every
+      # credential input silently empty sat inside @v2 while CI here passed,
+      # because CI was testing the tag rather than the code in the PR.
+      #
+      # Consumers use `shipiit/forge@v2` — see the README. Only this repository
+      # uses `./`.
+      - uses: actions/checkout@v4
+
+      - uses: ./
         with:
-          provider: vertex
-          vertex-credentials-json: ${{ secrets.VERTEX_SA_JSON }}
+          provider: vertex # ← swap for another provider
+          vertex-credentials-json: ${{ secrets.VERTEX_SA_JSON }} # ← swap for that provider's key
+          github-token: ${{ github.token }}
+          # Optional. With these, comments and reviews come from your GitHub
+          # App — "ShipIT Forge" — instead of github-actions[bot], which is
+          # what the identity on a review should say. Without them it still
+          # works, just under the runner's own bot.
+          app-id: ${{ secrets.FORGE_APP_ID }}
+          private-key: ${{ secrets.FORGE_PRIVATE_KEY }}
+          # The committed skill in .forge/skills/deep-review.md — how deep to
+          # look and what a finding must contain lives there, in review, rather
+          # than in this file.
+          skill: deep-review
+          max-turns: '30'
+          max-nits: '5'
         env:
           LLM_PROVIDER: vertex
-          VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT }}
-          VERTEX_LOCATION: us-central1
-          VERTEX_MODEL: gemini-2.5-pro
+          VERTEX_PROJECT: ${{ secrets.VERTEX_PROJECT }}
+          VERTEX_LOCATION: ${{ secrets.VERTEX_LOCATION }}
+          VERTEX_MODEL: ${{ secrets.VERTEX_MODEL }}
+          # Cost controls. The cap is enforced inside the loop — it stops
+          # before the turn that would cross it, rather than reporting an
+          # overspend afterwards — and caching is what makes a long review
+          # affordable, so it stays on.
+          FORGE_SPEND_CAP_RUN: '0.50'
+          FORGE_MAX_RUNS_PER_HOUR: '10'
+          FORGE_PROMPT_CACHE: '1'
+          # Do not print what a run cost under every comment on a public repo.
+          # The run is still recorded; the number is unpublished, not lost.
+          FORGE_SHOW_COST: '0'
           FORGE_AUTO_REVIEW: always
           GITHUB_TOKEN: ${{ github.token }}

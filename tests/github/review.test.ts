@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { costFooter } from '../../src/github/handlers.js';
 import {
   buildReviewPayload,
   chooseEvent,
@@ -141,5 +142,15 @@ describe('parseFindings', () => {
   it('drops entries missing required fields', () => {
     const text = '[{"file":"a","severity":"nope"},{"file":"b","startLine":1,"endLine":1,"lens":"security","severity":"medium","category":"c","title":"t","body":"x"}]';
     expect(parseFindings(text)).toHaveLength(1);
+  });
+});
+
+describe('the cost footer', () => {
+  it('is omitted when the run says not to show it', () => {
+    expect(costFooter({ inputTokens: 100, outputTokens: 20 }, 'gemini-2.5-flash', false)).toBe('');
+  });
+
+  it('still prints when nothing says otherwise', () => {
+    expect(costFooter({ inputTokens: 100, outputTokens: 20 }, 'gemini-2.5-flash')).toContain('🧮');
   });
 });

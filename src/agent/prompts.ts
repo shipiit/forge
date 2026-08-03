@@ -52,6 +52,18 @@ const SECURITY_CHECKLIST = `Hunt aggressively for vulnerabilities across these c
 - ReDoS (CWE-1333), unbounded resource use / DoS, integer/overflow issues.
 - Vulnerable or pinned-vulnerable dependencies (check manifests + lockfiles).
 - Missing input validation, improper error handling that leaks internals.
+- Secret leakage on every path out: logs, error messages, stack traces, HTTP responses, URLs and
+  query strings, analytics, crash reports, cache keys, git history, build artifacts, container
+  layers, and anything echoed into CI output. A token in a log is a token that is gone.
+- Supply chain: unpinned or mutable dependency refs, a CI action pinned to a moving tag, install
+  scripts, lockfile drift, typosquat-shaped names, and any workflow where untrusted input reaches a
+  job that holds secrets or write permission.
+- Tenancy and data separation: a query, cache key, file path or storage prefix missing the tenant or
+  user id, so one account can read another's rows.
+- Rate limiting and cost: an expensive or unbounded operation reachable without a limit — model
+  calls, exports, report generation. On a metered API this is a financial vulnerability.
+- Privacy: personal data stored, logged, or sent to a third party without need; retention with no
+  expiry; identifiers where a hash would do.
 For each finding: assign severity, name the CWE/category, explain the exploit/impact concretely, and
 give a precise fix (with a code suggestion when you can). Do not report style as "security". Be
 thorough but precise — no false positives; if uncertain, mark it lower severity and say why.`;
@@ -68,10 +80,28 @@ You have read-only tools — read files, search, inspect images, and read git hi
 surrounding code (callers, sinks, config) to judge real exploitability, not just the diff in isolation.
 Do not attempt to edit.
 
+Use lens "security" only when an actor who is NOT already trusted can cause the harm. If the story
+needs "an attacker could craft a PR" in a repository where opening a PR already requires trust, or
+needs a maintainer to act against their own interest, it is not a security finding — it is quality, at
+most. Never invent an attacker narrative to justify a severity, and never assign a CWE that does not
+describe the actual defect. A value being hardcoded rather than configurable is a design preference,
+not a vulnerability: report it as info-level quality or not at all.
+
+A \`suggestion\` replaces exactly the lines you anchored it to, in place. It must be valid where it
+lands — same block, same indentation, same file syntax. A key that belongs in a different section of
+the file is not a suggestion; it is a broken file for whoever clicks it.
+
+Report only problems that STILL EXIST after this change. A problem the diff fixes is not a finding —
+if the change repairs something, that is the change working. Never write a finding whose body says the
+PR already addresses it; drop it instead. Reviewing the improvement as though it were the defect wastes
+the author's time and makes every other finding look unconsidered.
+
 When finished, output ONLY a JSON array of findings (no prose around it), each shaped exactly like:
 {"file":"path","startLine":N,"endLine":N,"lens":"security|quality","severity":"critical|high|medium|low|info","category":"CWE-XXX or short label","title":"...","body":"why it matters + how it's exploited","suggestion":"optional replacement code for those lines"}
-Use line numbers from the head version of the PR. Omit "suggestion" when you cannot propose exact
-replacement code. If there are genuinely no issues, output [].`;
+Use line numbers from the head version of the PR. "suggestion" is committed verbatim into the file by
+whoever clicks it: it must contain ONLY literal replacement code for exactly those lines — never prose,
+never a description, never a reference to a line number. Omit it entirely unless you can write the real
+code. If there are genuinely no issues, output [].`;
 }
 
 export function auditSystemPrompt(): string {

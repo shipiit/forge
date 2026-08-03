@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { reviewSystemPrompt } from '../../src/agent/prompts.js';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -134,5 +135,79 @@ describe('skill invocation', () => {
     const listing = renderSkillList(await resolveSkills(dir));
     expect(listing).toContain('`/code-review`');
     expect(listing).toContain('_(from this repo)_');
+  });
+});
+
+describe('committed skills that report findings', () => {
+  it('reads the reports field, so a repo skill can answer like the built-ins', () => {
+    const skill = parseSkillFile(
+      'deep-review',
+      ['---', 'description: Deep review', 'reports: findings', 'tools: read_file search', '---', 'Body.'].join('\n'),
+    );
+    expect(skill?.reports).toBe('findings');
+    expect(skill?.tools).toEqual(['read_file', 'search']);
+  });
+
+  it('leaves it unset for an ordinary skill, which answers in prose', () => {
+    const skill = parseSkillFile('notes', ['---', 'description: Notes', '---', 'Body.'].join('\n'));
+    expect(skill?.reports).toBeUndefined();
+  });
+});
+
+describe('the skills a repository commits', () => {
+  it('ships deep-review and issue-analysis, and both parse', async () => {
+    // These are committed configuration, not local state — the Action loads
+    // them from the checkout, so a broken front matter block means the
+    // workflow silently reviews with the default prompt instead.
+    for (const name of ['deep-review', 'issue-analysis']) {
+      const text = await fs.readFile(`.forge/skills/${name}.md`, 'utf8');
+      const skill = parseSkillFile(name, text);
+      expect(skill, name).not.toBeNull();
+      expect(skill!.name).toBe(name);
+      expect(skill!.description.length).toBeGreaterThan(20);
+      expect(skill!.tools).toContain('read_file');
+      // Read-only: a review or a diagnosis must not be able to edit the repo.
+      expect(skill!.tools).not.toContain('write_file');
+      expect(skill!.tools).not.toContain('run_bash');
+    }
+  });
+
+  it('marks deep-review as reporting findings, so they are counted and filed', async () => {
+    const text = await fs.readFile('.forge/skills/deep-review.md', 'utf8');
+    expect(parseSkillFile('deep-review', text)?.reports).toBe('findings');
+  });
+});
+
+describe('the review prompt guards against reviewing its own fixes', () => {
+  it('tells the reviewer that a problem the diff repairs is not a finding', () => {
+    // A real run reported five "findings" that were each the PR's own fix,
+    // and requested changes on an improvement.
+    const p = reviewSystemPrompt();
+    expect(p).toMatch(/still exist/i);
+    expect(p).toMatch(/not a finding/i);
+  });
+
+  it('says a suggestion is committed verbatim, so it must be code', () => {
+    // The same run emitted suggestion blocks containing prose — one click
+    // would have replaced working code with an English sentence.
+    const p = reviewSystemPrompt();
+    expect(p).toMatch(/verbatim/i);
+    expect(p).toMatch(/never prose/i);
+  });
+})
+
+describe('the review prompt keeps severity and lens honest', () => {
+  it('reserves the security lens for untrusted actors', () => {
+    // A run labelled hardcoded max-turns as security/CWE-939 with an invented
+    // "attacker crafts a PR" story, in a repo where opening a PR is trusted.
+    const p = reviewSystemPrompt();
+    expect(p).toMatch(/not already trusted/i);
+    expect(p).toMatch(/never invent an attacker narrative/i);
+  });
+
+  it('requires a suggestion to be valid where it lands', () => {
+    // The same run suggested a `with:` key anchored inside the `env:` block —
+    // applying it would have produced invalid YAML.
+    expect(reviewSystemPrompt()).toMatch(/same block, same indentation/i);
   });
 });
