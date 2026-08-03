@@ -25,6 +25,17 @@ import { applySkill, parseSkillInvocation, renderSkillList, resolveSkills, type 
 import type { Routine } from '../routines.js';
 import { loadRepoInstructions, renderProjectContextBlock, composeReviewSystemPrompt } from './conventions.js';
 import { buildCheckRunRequest } from './checkrun.js';
+import {
+  FINDING_LABEL,
+  issueBody,
+  issueTitle,
+  labelsFor,
+  rollupBody,
+  rollupTitle,
+  selectForIssues,
+  trackedFingerprints,
+  type FindingIssueMode,
+} from './findingIssues.js';
 import { NO_CAP, renderBudgetStop } from '../util/budget.js';
 import {
   MemoryRateLimitStore,
@@ -50,6 +61,7 @@ import {
   renderAuditReport,
   capNits,
   scopeFindingsToDiff,
+  type ReviewFinding,
 } from './review.js';
 import { parseSarif } from './sarif.js';
 import { fetchDependabotFindings } from './dependabot.js';
@@ -103,6 +115,12 @@ export interface HandlerDeps {
   maxRunsPerHour?: number;
   /** Where the rate-limit window lives. Defaults to a process-local store. */
   rateLimitStore?: RateLimitStore;
+  /** Turn findings into issues: off, one rollup issue, or one issue each. */
+  findingsToIssues?: FindingIssueMode;
+  /** Findings below this severity never become issues. */
+  findingsMinSeverity?: ReviewFinding['severity'];
+  /** Ceiling on issues opened by a single run. */
+  findingsMaxIssues?: number;
   /** Injectable clock, so tests never depend on wall time. */
   now?: () => number;
 }
@@ -210,6 +228,83 @@ export function costFooter(usage: Usage, model: string): string {
 export function withBudgetNotice(result: AgentResult, model: string, body: string): string {
   if (result.stoppedBy !== 'budget' || !result.budget) return body;
   return `${renderBudgetStop(result.budget, model)}\n\n---\n\n${body}`;
+}
+
+/**
+ * File issues for findings worth tracking.
+ *
+ * Skips anything an open issue already carries, so running an audit weekly does
+ * not refile the same problems every week — the fastest way to make the feature
+ * hated and switched off. Never throws: failing to open an issue must not lose
+ * the report that was already posted.
+ */
+async function fileFindingIssues(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; date: string; sourceUrl?: string },
+  findings: ReviewFinding[],
+): Promise<string> {
+  const mode = deps.findingsToIssues ?? 'off';
+  if (mode === 'off' || findings.length === 0) return '';
+  if (!deps.octokit.rest.issues.create) return '';
+
+  try {
+    // What is already tracked? Best effort — if we cannot tell, we would rather
+    // file nothing than file duplicates.
+    let tracked = new Set<string>();
+    try {
+      const open = await deps.octokit.rest.issues.listForRepo?.({
+        owner: args.owner,
+        repo: args.repo,
+        state: 'open',
+        labels: FINDING_LABEL,
+        per_page: 100,
+      });
+      tracked = trackedFingerprints((open?.data ?? []).map((i) => i.body ?? ''));
+    } catch (err) {
+      deps.log(`could not read existing finding issues, skipping issue creation: ${(err as Error).message}`);
+      return '';
+    }
+
+    const selection = selectForIssues(findings, {
+      minSeverity: deps.findingsMinSeverity ?? 'high',
+      tracked,
+      maxIssues: deps.findingsMaxIssues ?? 10,
+    });
+    if (selection.selected.length === 0) {
+      deps.log(`no new findings to file (${selection.duplicates} already tracked)`);
+      return selection.duplicates ? `\n\n<sub>All findings above the severity floor are already tracked.</sub>` : '';
+    }
+
+    const opened: string[] = [];
+    if (mode === 'rollup') {
+      const res = await deps.octokit.rest.issues.create({
+        owner: args.owner,
+        repo: args.repo,
+        title: rollupTitle(DISPLAY, args.date, selection.selected.length),
+        body: rollupBody(selection.selected, { displayName: DISPLAY, sourceUrl: args.sourceUrl, selection }),
+        labels: [FINDING_LABEL],
+      });
+      opened.push(res.data.html_url);
+    } else {
+      for (const f of selection.selected) {
+        const res = await deps.octokit.rest.issues.create({
+          owner: args.owner,
+          repo: args.repo,
+          title: issueTitle(f, DISPLAY),
+          body: issueBody(f, { displayName: DISPLAY, sourceUrl: args.sourceUrl }),
+          labels: labelsFor(f),
+        });
+        opened.push(res.data.html_url);
+      }
+    }
+
+    deps.log(`filed ${opened.length} issue(s) for findings`);
+    const list = opened.map((u) => `- ${u}`).join('\n');
+    return `\n\n**Tracked as ${opened.length === 1 ? 'an issue' : 'issues'}**\n${list}`;
+  } catch (err) {
+    deps.log(`could not file finding issues: ${(err as Error).message}`);
+    return '';
+  }
 }
 
 /** Collapse repeated lines and cap length so a rambling model summary stays readable. */
@@ -608,8 +703,11 @@ async function doPrReview(
       repo: args.repo,
       comment_id: ack.data.id,
       body:
-        `### 🔍 ${DISPLAY} reviewed this PR — ${verdict}\n\n${findings.length} finding(s) (${sec} security). See the review above for inline details and suggested fixes.` +
-        costFooter(result.usage, client.model),
+        withBudgetNotice(
+          result,
+          client.model,
+          `### 🔍 ${DISPLAY} reviewed this PR — ${verdict}\n\n${findings.length} finding(s) (${sec} security). See the review above for inline details and suggested fixes.`,
+        ) + costFooter(result.usage, client.model),
     });
   } finally {
     await ws.cleanup();
@@ -735,14 +833,14 @@ async function doMention(
 /** Full-repository security audit (read-only) → one grouped report comment. */
 export function handleAudit(
   deps: HandlerDeps,
-  args: { owner: string; repo: string; issueNumber: number; ref: string },
+  args: { owner: string; repo: string; issueNumber: number; ref: string; date?: string },
 ): Promise<void> {
   return withLock(`audit:${args.owner}/${args.repo}#${args.issueNumber}`, deps.log, () => doAudit(deps, args));
 }
 
 async function doAudit(
   deps: HandlerDeps,
-  args: { owner: string; repo: string; issueNumber: number; ref: string },
+  args: { owner: string; repo: string; issueNumber: number; ref: string; date?: string },
 ): Promise<void> {
   const { octokit, client, token, log } = deps;
   if (!(await allowRun(deps, args.owner, args.repo, args.issueNumber))) return;
@@ -767,11 +865,20 @@ async function doAudit(
     const findings = parseFindings(result.finalText);
     // Merge live Dependabot alerts (current CVEs from GitHub's Advisory Database).
     findings.push(...(await fetchDependabotFindings(octokit, args.owner, args.repo, log)));
+    const issueNote = await fileFindingIssues(
+      deps,
+      { owner: args.owner, repo: args.repo, date: args.date ?? 'audit', ...(ack.data.html_url ? { sourceUrl: ack.data.html_url } : {}) },
+      findings,
+    );
+
     await octokit.rest.issues.updateComment({
       owner: args.owner,
       repo: args.repo,
       comment_id: ack.data.id,
-      body: renderAuditReport(findings, DISPLAY) + costFooter(result.usage, client.model),
+      body:
+        withBudgetNotice(result, client.model, renderAuditReport(findings, DISPLAY)) +
+        issueNote +
+        costFooter(result.usage, client.model),
     });
   } finally {
     await ws.cleanup();

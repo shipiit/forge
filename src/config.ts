@@ -1,6 +1,8 @@
 import { parseFilters, type TriggerFilter } from './github/filters.js';
 import { parseRoutines, type Routine } from './routines.js';
 import { parseCap } from './util/budget.js';
+import type { FindingIssueMode } from './github/findingIssues.js';
+import type { ReviewFinding } from './github/review.js';
 
 /** Per-repository configuration, read from `.github/agent.yml` (all optional). */
 export interface ForgeConfig {
@@ -45,6 +47,12 @@ export interface ForgeConfig {
   spendCapPerRunUsd: number;
   /** Runs allowed per repository per hour. 0 or less means no limit. */
   maxRunsPerHour: number;
+  /** Turn findings into issues: off, one rollup issue, or one issue each. */
+  findingsToIssues: FindingIssueMode;
+  /** Findings below this severity never become issues. */
+  findingsMinSeverity: ReviewFinding['severity'];
+  /** Ceiling on issues opened by a single run. */
+  findingsMaxIssues: number;
 }
 
 const REVIEW_BEHAVIORS = ['opened', 'every_push', 'manual'] as const;
@@ -71,6 +79,9 @@ export function defaultConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig
     routines: [],
     spendCapPerRunUsd: parseCap(env.FORGE_SPEND_CAP_RUN),
     maxRunsPerHour: Number(env.FORGE_MAX_RUNS_PER_HOUR ?? 0),
+    findingsToIssues: (env.FORGE_FINDINGS_TO_ISSUES as FindingIssueMode) || 'off',
+    findingsMinSeverity: (env.FORGE_FINDINGS_MIN_SEVERITY as ReviewFinding['severity']) || 'high',
+    findingsMaxIssues: Number(env.FORGE_FINDINGS_MAX_ISSUES ?? 10),
   };
 }
 
@@ -114,5 +125,12 @@ export function mergeConfig(raw: unknown, base: ForgeConfig = defaultConfig()): 
         ? r.spend_cap_per_run_usd
         : base.spendCapPerRunUsd,
     maxRunsPerHour: intOr(r.max_runs_per_hour, base.maxRunsPerHour),
+    findingsToIssues: enumOr(r.findings_to_issues, ['off', 'rollup', 'per_finding'] as const, base.findingsToIssues),
+    findingsMinSeverity: enumOr(
+      r.findings_min_severity,
+      ['critical', 'high', 'medium', 'low', 'info'] as const,
+      base.findingsMinSeverity,
+    ),
+    findingsMaxIssues: Math.max(1, intOr(r.findings_max_issues, base.findingsMaxIssues)),
   };
 }

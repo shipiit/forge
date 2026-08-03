@@ -113,6 +113,9 @@ async function main(): Promise<void> {
     historyMode: config.historyMode,
     spendCapPerRunUsd: config.spendCapPerRunUsd,
     maxRunsPerHour: config.maxRunsPerHour,
+    findingsToIssues: config.findingsToIssues,
+    findingsMinSeverity: config.findingsMinSeverity,
+    findingsMaxIssues: config.findingsMaxIssues,
     selfReview: true,
   };
 

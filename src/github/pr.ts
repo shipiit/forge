@@ -10,13 +10,15 @@ export interface OctokitLike {
       listReviewComments?(params: Record<string, unknown>): Promise<unknown>;
     };
     issues: {
-      createComment(params: Record<string, unknown>): Promise<{ data: { id: number } }>;
+      createComment(params: Record<string, unknown>): Promise<{ data: { id: number; html_url?: string } }>;
       updateComment(params: Record<string, unknown>): Promise<unknown>;
       listComments(params: Record<string, unknown>): Promise<{ data: Array<{ user: { login: string } | null; body?: string }> }>;
       /** Optional: persists a per-PR review subscription as a label. */
       addLabels?(params: Record<string, unknown>): Promise<unknown>;
       /** Optional: how a scheduled routine reports when it has no thread. */
       create?(params: Record<string, unknown>): Promise<{ data: { number: number; html_url: string } }>;
+      /** Optional: used to avoid filing an issue for a finding already tracked. */
+      listForRepo?(params: Record<string, unknown>): Promise<{ data: Array<{ body?: string | null }> }>;
     };
     checks: {
       /** Optional: forge degrades to a plain review when the app lacks Checks:write. */
