@@ -195,3 +195,19 @@ describe('the review prompt guards against reviewing its own fixes', () => {
     expect(p).toMatch(/never prose/i);
   });
 })
+
+describe('the review prompt keeps severity and lens honest', () => {
+  it('reserves the security lens for untrusted actors', () => {
+    // A run labelled hardcoded max-turns as security/CWE-939 with an invented
+    // "attacker crafts a PR" story, in a repo where opening a PR is trusted.
+    const p = reviewSystemPrompt();
+    expect(p).toMatch(/not already trusted/i);
+    expect(p).toMatch(/never invent an attacker narrative/i);
+  });
+
+  it('requires a suggestion to be valid where it lands', () => {
+    // The same run suggested a `with:` key anchored inside the `env:` block —
+    // applying it would have produced invalid YAML.
+    expect(reviewSystemPrompt()).toMatch(/same block, same indentation/i);
+  });
+});
