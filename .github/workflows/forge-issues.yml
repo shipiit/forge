@@ -59,28 +59,45 @@ jobs:
   # and there was nothing anywhere saying which clause was false.
   gate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       allowed: ${{ steps.check.outputs.allowed }}
     steps:
       - id: check
         env:
+          GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
-          ASSOC: ${{ github.event.issue.author_association }}
-          COMMENT_ASSOC: ${{ github.event.comment.author_association }}
+          ACTOR: ${{ github.event.sender.login }}
+          ASSOC_ISSUE: ${{ github.event.issue.author_association }}
+          ASSOC_COMMENT: ${{ github.event.comment.author_association }}
           IS_PR: ${{ github.event.issue.pull_request != null }}
+          REPO: ${{ github.repository }}
         run: |
-          assoc="$ASSOC"
-          [ "$EVENT" = "issue_comment" ] && assoc="$COMMENT_ASSOC"
+          assoc="$ASSOC_ISSUE"
+          [ "$EVENT" = "issue_comment" ] && assoc="$ASSOC_COMMENT"
+
+          # Ask what this account may actually do, rather than trusting
+          # author_association. That field reports MEMBER only when somebody's
+          # organization membership is PUBLIC — with private membership an
+          # owner comes through as CONTRIBUTOR, and CONTRIBUTOR is not a
+          # permission: anyone with one merged pull request keeps it forever.
+          perm=$(gh api "repos/$REPO/collaborators/$ACTOR/permission" --jq .permission 2>/dev/null || echo "unknown")
 
           allowed=false
-          case "$assoc" in OWNER|MEMBER|COLLABORATOR) allowed=true ;; esac
+          case "$perm" in admin|maintain|write) allowed=true ;; esac
+          # Fall back to the association only when the API could not answer, so
+          # a token without the scope fails closed rather than open.
+          if [ "$perm" = "unknown" ]; then
+            case "$assoc" in OWNER|MEMBER|COLLABORATOR) allowed=true ;; esac
+          fi
           # Comments on pull requests belong to the PR workflow.
           [ "$IS_PR" = "true" ] && allowed=false
 
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
-          echo "::notice::event=$EVENT author_association=$assoc on_pull_request=$IS_PR → allowed=$allowed"
+          echo "::notice::event=$EVENT actor=$ACTOR permission=$perm association=$assoc on_pull_request=$IS_PR -> allowed=$allowed"
           if [ "$allowed" != "true" ]; then
-            echo "::notice::Declined. Only OWNER, MEMBER or COLLABORATOR can start a run on a public repository."
+            echo "::notice::Declined. Needs write access to this repository."
           fi
 
   analyze:

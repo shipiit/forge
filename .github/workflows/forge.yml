@@ -86,42 +86,46 @@ jobs:
   # expression, and there is nothing in the log to tell them apart.
   gate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       allowed: ${{ steps.check.outputs.allowed }}
     steps:
       - id: check
         env:
+          GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.event.sender.login }}
           ASSOC: ${{ github.event.comment.author_association }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           THIS_REPO: ${{ github.repository }}
           IS_PR_COMMENT: ${{ github.event.issue.pull_request != null }}
         run: |
           allowed=false
-          case "$EVENT" in
-            pull_request)
-              # A fork PR gets no secrets anyway; failing on every drive-by PR
-              # is noise, so decline it quietly here instead.
-              [ "$HEAD_REPO" = "$THIS_REPO" ] && allowed=true
-              reason="head=$HEAD_REPO this=$THIS_REPO"
-              ;;
-            pull_request_review_comment)
+          if [ "$EVENT" = "pull_request" ]; then
+            # A fork PR gets no secrets anyway; declining quietly here keeps
+            # every drive-by pull request from failing loudly.
+            [ "$HEAD_REPO" = "$THIS_REPO" ] && allowed=true
+            detail="head=$HEAD_REPO"
+          else
+            # Ask what this account may actually do. author_association reports
+            # MEMBER only when organization membership is PUBLIC — with private
+            # membership an owner arrives as CONTRIBUTOR, which is not a
+            # permission at all: one merged pull request earns it forever.
+            perm=$(gh api "repos/$THIS_REPO/collaborators/$ACTOR/permission" --jq .permission 2>/dev/null || echo "unknown")
+            case "$perm" in admin|maintain|write) allowed=true ;; esac
+            if [ "$perm" = "unknown" ]; then
               case "$ASSOC" in OWNER|MEMBER|COLLABORATOR) allowed=true ;; esac
-              reason="association=$ASSOC"
-              ;;
-            issue_comment)
-              # Only comments on pull requests; plain issues are the other workflow.
-              if [ "$IS_PR_COMMENT" = "true" ]; then
-                case "$ASSOC" in OWNER|MEMBER|COLLABORATOR) allowed=true ;; esac
-              fi
-              reason="association=$ASSOC on_pull_request=$IS_PR_COMMENT"
-              ;;
-          esac
+            fi
+            # issue_comment fires for plain issues too; those are the other workflow.
+            [ "$EVENT" = "issue_comment" ] && [ "$IS_PR_COMMENT" != "true" ] && allowed=false
+            detail="permission=$perm association=$ASSOC on_pull_request=$IS_PR_COMMENT"
+          fi
 
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
-          echo "::notice::event=$EVENT $reason → allowed=$allowed"
+          echo "::notice::event=$EVENT actor=$ACTOR $detail -> allowed=$allowed"
           if [ "$allowed" != "true" ]; then
-            echo "::notice::Declined. Same-repository pull requests, and comments from OWNER, MEMBER or COLLABORATOR only."
+            echo "::notice::Declined. Same-repository pull requests, or a comment from someone with write access."
           fi
 
   review:
