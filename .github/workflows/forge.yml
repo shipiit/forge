@@ -128,5 +128,12 @@ jobs:
           VERTEX_PROJECT: ${{ secrets.VERTEX_PROJECT }}
           VERTEX_LOCATION: ${{ secrets.VERTEX_LOCATION }}
           VERTEX_MODEL: ${{ secrets.VERTEX_MODEL }}
+          # Cost controls. The cap is enforced inside the loop — it stops
+          # before the turn that would cross it, rather than reporting an
+          # overspend afterwards — and caching is what makes a long review
+          # affordable, so it stays on.
+          FORGE_SPEND_CAP_RUN: '0.50'
+          FORGE_MAX_RUNS_PER_HOUR: '10'
+          FORGE_PROMPT_CACHE: '1'
           FORGE_AUTO_REVIEW: always
           GITHUB_TOKEN: ${{ github.token }}

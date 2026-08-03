@@ -9,7 +9,7 @@ import type { ProviderId } from './providers/types.js';
 import { defaultConfig } from './config.js';
 import { routeEvent, type RouteOpts } from './github/router.js';
 import { octokitOptions } from './github/host.js';
-import { readActionInputs } from './actionInputs.js';
+import { actionInput, readActionInputs } from './actionInputs.js';
 import {
   handleIssueFix,
   handlePrReview,
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
   }
 
   // If a Vertex service-account JSON is provided inline (secret), materialize it.
-  const saJson = process.env.VERTEX_CREDENTIALS_JSON || process.env.INPUT_VERTEX_CREDENTIALS_JSON;
+  const saJson = process.env.VERTEX_CREDENTIALS_JSON || actionInput('vertex-credentials-json');
   if (saJson && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     const p = path.join(os.tmpdir(), 'forge-vertex-sa.json');
     await fs.writeFile(p, saJson, { mode: 0o600 });

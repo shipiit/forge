@@ -95,5 +95,8 @@ jobs:
           VERTEX_MODEL: ${{ secrets.VERTEX_MODEL }}
           # Analyse and explain. Opening a PR unasked on every issue is noise;
           # `/fix` in a comment is the deliberate act that writes code.
+          FORGE_SPEND_CAP_RUN: '0.75'
+          FORGE_MAX_RUNS_PER_HOUR: '10'
+          FORGE_PROMPT_CACHE: '1'
           FORGE_AUTO_FIX: 'off'
           GITHUB_TOKEN: ${{ github.token }}
