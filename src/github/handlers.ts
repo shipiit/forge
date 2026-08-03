@@ -211,6 +211,25 @@ function pick(deps: HandlerDeps, tools: Tool[]): Tool[] {
   return selectTools(tools, deps.toolSelection ?? {});
 }
 
+/**
+ * Apply a workflow-selected skill to a system prompt.
+ *
+ * `skill:` was only ever read by the mention and routine flows, so a workflow
+ * that set it on a review or an issue analysis looked configured and changed
+ * nothing. Returns the prompt untouched when no skill is selected or the name
+ * does not resolve.
+ */
+async function withSkill(deps: HandlerDeps, cwd: string, system: string, task = ''): Promise<string> {
+  if (!deps.skillName && !deps.inlineSkill) return system;
+  const skills = await skillsFor(deps, cwd);
+  const skill = deps.skillName ? skills.get(deps.skillName.toLowerCase()) : deps.inlineSkill;
+  if (!skill) {
+    deps.log(`no skill named "${deps.skillName}" — continuing with the default prompt`);
+    return system;
+  }
+  return applySkill(system, skill, task);
+}
+
 /** Apply the run's extra instructions to a system prompt. */
 function prompt(deps: HandlerDeps, base: string): string {
   return applyExtraPrompt(base, deps.extraPrompt);
@@ -440,7 +459,7 @@ export async function handleIssueAnalyze(
 
       const result = await runAgent({
         client,
-        system: prompt(deps, analyzeSystemPrompt()),
+        system: await withSkill(deps, ws.dir, prompt(deps, analyzeSystemPrompt()), args.issueTitle),
         initialContent,
         tools: pick(deps, reviewToolset()), // read-only: no edits
         limits: limitsFor(deps),
@@ -728,7 +747,11 @@ async function doPrReview(
       client,
       // REVIEW.md overrides the default guidance; FORGE.md is context whose
       // newly-introduced violations are nits.
-      system: prompt(deps, composeReviewSystemPrompt(reviewSystemPrompt({ securityOnly: args.securityOnly }), instructions)),
+      system: await withSkill(
+        deps,
+        ws.dir,
+        prompt(deps, composeReviewSystemPrompt(reviewSystemPrompt({ securityOnly: args.securityOnly }), instructions)),
+      ),
       initialContent,
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps),

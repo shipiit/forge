@@ -1,12 +1,50 @@
-# ShipIT Forge — auto-review every pull request on this repo (using Vertex Gemini).
-# Scoped to PRs only: it reviews new PRs / new commits, and responds to /review,
-# /security, and @shipit-forge comments on a PR. It never auto-approves or merges.
+# ShipIT Forge — auto-review every pull request on this repo.
 #
-# Required repo configuration (Settings → Secrets and variables → Actions):
-#   • Secret   VERTEX_SA_JSON  = the full Vertex service-account JSON
-#   • Variable VERTEX_PROJECT  = your GCP project id
-# Note: secrets are NOT exposed to PRs opened from forks, so Forge runs on
-# same-repo (branch) PRs. That is the safe default.
+# Scoped to PRs: it reviews new PRs and new commits, and answers /review,
+# /security and @shipit-forge comments on a PR. It never approves or merges.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIGURATION — Settings → Secrets and variables → Actions
+#
+# A .env file does NOT work here. Actions never reads a file from the repository
+# for credentials, and .env is gitignored precisely so it cannot be committed.
+# .env is for running the agent on your own machine (`forge run`, `forge fix`);
+# CI reads repository secrets instead.
+#
+# Add these two (Vertex, which is what this repo uses):
+#
+#   Secret  VERTEX_SA_JSON   the full service-account JSON, pasted whole
+#   Secret  VERTEX_PROJECT   your GCP project id  (a Variable works too)
+#
+# Using a different provider? Add its key as a secret and swap the two marked
+# lines below:
+#
+#   anthropic  ANTHROPIC_API_KEY  provider: anthropic
+#                                 anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+#   openai     OPENAI_API_KEY     provider: openai
+#                                 openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+#   gemini     GEMINI_API_KEY     provider: gemini
+#                                 gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHY THE `if:` BELOW IS NOT OPTIONAL — this repository is public
+#
+# GitHub protects secrets from `pull_request` events on forks: a fork PR gets
+# no secrets, so a stranger's PR cannot read them. That protection does NOT
+# extend to `issue_comment`. Comment events run the workflow from the default
+# branch WITH secrets, whoever wrote the comment.
+#
+# On a public repository that means any person on the internet could comment
+# "/review" and start a run that spends your model credits — and, on a fix or
+# mention, clones a branch and runs its tests with GITHUB_TOKEN (contents:
+# write) in the environment. That is the "pwn request" pattern, and it ends in
+# a push to your repository.
+#
+# So every job below is gated on author_association: only the owner, an
+# organization member, or a collaborator can set the agent off, and only
+# same-repository pull requests are reviewed. Removing that gate on a public
+# repository hands your token and your credits to anyone with a keyboard.
+# ─────────────────────────────────────────────────────────────────────────────
 
 name: ShipIT Forge (PR review)
 
@@ -18,7 +56,6 @@ on:
   issue_comment:
     types: [created]
 
-# Only run comment events when they're on a pull request (not plain issues).
 permissions:
   contents: write
   pull-requests: write
@@ -33,18 +70,53 @@ concurrency:
 
 jobs:
   review:
-    # PR events always run; comment events only when on a PR.
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || (github.event_name == 'issue_comment' && github.event.issue.pull_request) }}
+    # Two gates, both required on a public repository (see the note above):
+    #   1. same-repository PRs only — a fork PR gets no secrets anyway, and
+    #      failing loudly on every drive-by PR is just noise.
+    #   2. trusted authors only — OWNER, MEMBER or COLLABORATOR. Anyone else
+    #      commenting "/review" is a stranger spending your credits.
+    if: >-
+      ${{ (github.event_name == 'pull_request'
+            && github.event.pull_request.head.repo.full_name == github.repository)
+       || ((github.event_name == 'pull_request_review_comment'
+            || (github.event_name == 'issue_comment' && github.event.issue.pull_request))
+           && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) }}
     runs-on: ubuntu-latest
+
     steps:
-      - uses: shipiit/forge@v1
+      # Say what is missing, in one line, before spending three minutes getting
+      # an authentication error from inside the container.
+      - name: Check credentials are configured
+        env:
+          SA_JSON: ${{ secrets.VERTEX_SA_JSON }}
+          PROJECT: ${{ vars.VERTEX_PROJECT || secrets.VERTEX_PROJECT }}
+        run: |
+          missing=""
+          [ -z "$SA_JSON" ] && missing="$missing VERTEX_SA_JSON"
+          [ -z "$PROJECT" ] && missing="$missing VERTEX_PROJECT"
+          if [ -n "$missing" ]; then
+            echo "::error::ShipIT Forge is not configured. Missing:$missing"
+            echo "::error::Add them under Settings → Secrets and variables → Actions. Actions does not read a .env file."
+            exit 1
+          fi
+
+      # Pinned to v2. v1 predates every input below and ignores them silently,
+      # so a workflow on @v1 looks configured while doing none of this.
+      - uses: shipiit/forge@v2
         with:
-          provider: vertex
-          vertex-credentials-json: ${{ secrets.VERTEX_SA_JSON }}
+          provider: vertex # ← swap for another provider
+          vertex-credentials-json: ${{ secrets.VERTEX_SA_JSON }} # ← swap for that provider's key
+          github-token: ${{ github.token }}
+          # The committed skill in .forge/skills/deep-review.md — how deep to
+          # look and what a finding must contain lives there, in review, rather
+          # than in this file.
+          skill: deep-review
+          max-turns: '30'
+          max-nits: '5'
         env:
           LLM_PROVIDER: vertex
-          VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT }}
-          VERTEX_LOCATION: us-central1
-          VERTEX_MODEL: gemini-2.5-pro
+          VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT || secrets.VERTEX_PROJECT }}
+          VERTEX_LOCATION: ${{ vars.VERTEX_LOCATION || 'us-central1' }}
+          VERTEX_MODEL: ${{ vars.VERTEX_MODEL || 'gemini-2.5-pro' }}
           FORGE_AUTO_REVIEW: always
           GITHUB_TOKEN: ${{ github.token }}

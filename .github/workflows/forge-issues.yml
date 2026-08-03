@@ -1,0 +1,89 @@
+# ShipIT Forge — research every issue and post the diagnosis.
+#
+# On a new issue it runs the committed `issue-analysis` skill: it reads the
+# code, finds the root cause, and comments with the fix, the risks, the tests
+# to add, and every other place the same pattern appears. It does not change
+# code here — say `/fix` on the issue for that.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIGURATION — Settings → Secrets and variables → Actions
+#
+# The same two values the PR workflow uses. A .env file is not read by Actions;
+# .env is for running the agent on your own machine.
+#
+#   Secret  VERTEX_SA_JSON   the full service-account JSON, pasted whole
+#   Secret  VERTEX_PROJECT   your GCP project id  (a Variable works too)
+#
+# WHY THE `if:` BELOW MATTERS — this repository is public
+#
+# Anyone on the internet can open an issue or comment on one. Issue events run
+# with access to secrets, so without a gate a stranger could open issues in a
+# loop and spend your model budget, or say `/fix` and have the agent push a
+# branch with GITHUB_TOKEN. Every job is therefore gated on author_association:
+# owner, organization member, or collaborator only.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: ShipIT Forge (issue analysis)
+
+on:
+  issues:
+    types: [opened, reopened, labeled]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: forge-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    # Issues only — comments on pull requests belong to the PR workflow — and
+    # only from an author the repository already trusts.
+    if: >-
+      ${{ !github.event.issue.pull_request
+       && ((github.event_name == 'issues'
+            && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
+        || (github.event_name == 'issue_comment'
+            && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))) }}
+    runs-on: ubuntu-latest
+
+    steps:
+      # Say what is missing in one line, rather than an authentication error
+      # from inside the container three minutes later.
+      - name: Check credentials are configured
+        env:
+          SA_JSON: ${{ secrets.VERTEX_SA_JSON }}
+          PROJECT: ${{ vars.VERTEX_PROJECT || secrets.VERTEX_PROJECT }}
+        run: |
+          missing=""
+          [ -z "$SA_JSON" ] && missing="$missing VERTEX_SA_JSON"
+          [ -z "$PROJECT" ] && missing="$missing VERTEX_PROJECT"
+          if [ -n "$missing" ]; then
+            echo "::error::ShipIT Forge is not configured. Missing:$missing"
+            echo "::error::Add them under Settings → Secrets and variables → Actions. Actions does not read a .env file."
+            exit 1
+          fi
+
+      - uses: shipiit/forge@v2
+        with:
+          provider: vertex
+          vertex-credentials-json: ${{ secrets.VERTEX_SA_JSON }}
+          github-token: ${{ github.token }}
+          # The committed skill in .forge/skills/issue-analysis.md — the depth
+          # of the write-up lives there, in review, rather than in this file.
+          skill: issue-analysis
+          max-turns: '30'
+        env:
+          LLM_PROVIDER: vertex
+          VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT || secrets.VERTEX_PROJECT }}
+          VERTEX_LOCATION: ${{ vars.VERTEX_LOCATION || 'us-central1' }}
+          VERTEX_MODEL: ${{ vars.VERTEX_MODEL || 'gemini-2.5-pro' }}
+          # Analyse and explain. Opening a PR unasked on every issue is noise;
+          # `/fix` in a comment is the deliberate act that writes code.
+          FORGE_AUTO_FIX: 'off'
+          GITHUB_TOKEN: ${{ github.token }}

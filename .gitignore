@@ -5,7 +5,13 @@ dist/
 .env.*
 !.env.example
 *.pem
-.forge/
+# Local agent state — the usage database, its artifacts, workspaces. Skills and
+# guidance under .forge are configuration, not state: they have to be committed
+# or the Action cannot load them.
+.forge/*
+!.forge/skills/
+!.forge/security-guidance.md
+!.forge/security-patterns.json
 .DS_Store
 coverage/
 
