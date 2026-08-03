@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { SQLiteRecorder } from '../../src/usage/sqlite.js';
 import type { RunMeta } from '../../src/usage/types.js';
-import { startDashboard } from '../../src/usage/serve.js';
+import { mountDashboard, startDashboard } from '../../src/usage/serve.js';
 import { serveUsage, authorized, windowFrom } from '../../src/usage/api.js';
 import { summary, breakdown, toolStats, runs } from '../../src/usage/queries.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -370,5 +370,114 @@ describe('publishing the standalone dashboard', () => {
     } finally {
       await server.close();
     }
+  });
+});
+
+describe('mounting on the App server', () => {
+  const env = (over: Record<string, string> = {}) => ({ FORGE_USAGE_DB: path.join(dir, 'usage.db'), FORGE_DASHBOARD_TOKEN: 'app-token', ...over });
+
+  /** The shape Probot's express Router presents to us. */
+  function fakeRouter() {
+    const handlers: Array<(req: IncomingMessage, res: ServerResponse, next: () => void) => void> = [];
+    return {
+      mounted: [] as string[],
+      handlers,
+      get: (p?: string) => {
+        return { use: (h: (typeof handlers)[number]) => handlers.push(h) };
+      },
+    };
+  }
+
+  it('refuses to mount without a token, because that host is public', () => {
+    const router = fakeRouter();
+    const log: string[] = [];
+    expect(mountDashboard(router.get, env({ FORGE_DASHBOARD_TOKEN: '' }), (m) => log.push(m))).toBe(false);
+    expect(router.handlers).toHaveLength(0);
+    expect(log.join()).toContain('FORGE_DASHBOARD_TOKEN');
+  });
+
+  it('does not mount when recording is switched off', () => {
+    const router = fakeRouter();
+    expect(mountDashboard(router.get, { FORGE_DASHBOARD_TOKEN: 'app-token' })).toBe(false);
+    expect(router.handlers).toHaveLength(0);
+  });
+
+  it('mounts and serves through the router it was given', async () => {
+    await seed();
+    await rec.close();
+
+    const router = fakeRouter();
+    expect(mountDashboard(router.get, env())).toBe(true);
+    expect(router.handlers).toHaveLength(1);
+
+    // Express strips the mount path before the handler sees it.
+    const res = fakeRes();
+    let fellThrough = false;
+    router.handlers[0]!(
+      // The seed is stamped at a fixed time; ask for everything rather than
+      // the default window, which is relative to the real clock.
+      req('/api/summary?days=3650', { authorization: 'Bearer app-token' }),
+      res as unknown as ServerResponse,
+      () => {
+        fellThrough = true;
+      },
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(fellThrough).toBe(false);
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body).runs).toBe(1);
+  });
+
+  it('tells the operator the mounted URL, not the server root', async () => {
+    const router = fakeRouter();
+    mountDashboard(router.get, env());
+    const res = fakeRes();
+    router.handlers[0]!(req('/', { authorization: 'Bearer app-token', host: 'forge.example.com' }), res as unknown as ServerResponse, () => {});
+    await new Promise((r) => setTimeout(r, 30));
+    // Without the mount path it would say http://forge.example.com, which is
+    // the webhook endpoint, not the dashboard.
+    expect(res.body).toContain('http://forge.example.com/usage');
+  });
+
+  it('escapes the Host header rather than echoing it as markup', async () => {
+    const router = fakeRouter();
+    mountDashboard(router.get, env());
+    const res = fakeRes();
+    router.handlers[0]!(
+      req('/', { authorization: 'Bearer app-token', host: 'x"><script>alert(1)</script>' }),
+      res as unknown as ServerResponse,
+      () => {},
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(res.body).not.toContain('<script>');
+    expect(res.body).toContain('&lt;script&gt;');
+  });
+
+  it('lets a path under the mount that it does not serve fall through', async () => {
+    const router = fakeRouter();
+    mountDashboard(router.get, env());
+    const res = fakeRes();
+    let fellThrough = false;
+    router.handlers[0]!(req('/something-else', { authorization: 'Bearer app-token' }), res as unknown as ServerResponse, () => {
+      fellThrough = true;
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(fellThrough).toBe(true);
+  });
+
+  it('answers an unauthenticated request itself rather than passing it on', async () => {
+    // It is mounted under /usage, so everything reaching it is a dashboard
+    // request; handing an unauthenticated one to the next handler would be
+    // handing it to the webhook receiver.
+    const router = fakeRouter();
+    mountDashboard(router.get, env());
+    const res = fakeRes();
+    let fellThrough = false;
+    router.handlers[0]!(req('/api/summary', {}), res as unknown as ServerResponse, () => {
+      fellThrough = true;
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(fellThrough).toBe(false);
+    expect(res.status).toBe(401);
   });
 });

@@ -51,6 +51,12 @@ export interface ApiOptions {
    * Vite dev proxy and the App's own /usage mount both are.
    */
   origin?: string;
+  /**
+   * Where this is mounted, for display only. Express strips the mount path
+   * before the handler sees it, so the signpost page cannot work it out and
+   * would otherwise tell the operator to point at the wrong URL.
+   */
+  mountPath?: string;
   now?: () => number;
 }
 
@@ -145,7 +151,8 @@ export async function serveUsage(opts: ApiOptions, req: IncomingMessage, res: Se
   try {
     if (route === '/' || route === '/index.html') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...cors });
-      res.end(landing(`${req.headers.host ? `http://${req.headers.host}` : ''}${prefix}`));
+      // The Host header is attacker-controlled; it is echoed into HTML here.
+      res.end(landing(`${req.headers.host ? `http://${escapeHtml(req.headers.host)}` : ''}${opts.mountPath ?? prefix}`));
       return true;
     }
     if (route === '/api/summary') return json(res, 200, summary(db, w, now()), cors), true;
@@ -200,4 +207,9 @@ export async function serveUsage(opts: ApiOptions, req: IncomingMessage, res: Se
     json(res, 500, { error: err instanceof Error ? err.message : 'query failed' }, cors);
     return true;
   }
+}
+
+/** The Host header reaches this page as text; it must not reach it as markup. */
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }

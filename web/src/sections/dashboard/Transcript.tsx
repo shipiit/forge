@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiBase, apiToken, usageUrl } from '../../lib/usage';
+import { apiBase, apiToken, usageHref } from '../../lib/usage';
 import { fmtNum } from '../../lib/format';
 import { Empty } from './charts';
 
@@ -151,7 +151,7 @@ export function Transcript({ artifactId }: { artifactId: string }) {
   if (segments.length === 0) {
     return (
       <Empty title="Not a readable transcript">
-        <a href={usageUrl(`api/artifacts/${artifactId}`)} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+        <a href={usageHref(`api/artifacts/${artifactId}`)} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
           Open the raw file ↗
         </a>
       </Empty>

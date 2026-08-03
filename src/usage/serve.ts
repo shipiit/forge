@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { migrate } from './sqlite.js';
 import { PRAGMAS } from './schema.js';
 import { serveUsage, type ApiOptions } from './api.js';
+import { SQLiteRecorder } from './sqlite.js';
 import { DEFAULT_DB } from './index.js';
 
 /**
@@ -15,6 +16,23 @@ import { DEFAULT_DB } from './index.js';
  * the same handler on the webhook server it already has, so a hosted install
  * gets the dashboard without a second process to deploy.
  */
+
+/**
+ * Delete what has aged out, once, at startup.
+ *
+ * Retention is only a policy if something enforces it; before this, transcripts
+ * accumulated forever and the constants in schema.ts described an intention
+ * rather than a behaviour. Startup is enough — this is a dashboard someone
+ * opens, not a service under load.
+ */
+export async function pruneOnce(file: string): Promise<{ artifacts: number; toolCalls: number }> {
+  const rec = new SQLiteRecorder({ file: path.resolve(file) });
+  try {
+    return await rec.prune();
+  } finally {
+    await rec.close();
+  }
+}
 
 /** Open the usage database read-only-ish: same file, same migrations. */
 export function openUsageDb(file: string): { db: DatabaseSync; artifactDir: string } {
@@ -51,7 +69,13 @@ export function generateToken(bytes = 24): string {
  */
 export async function startDashboard(
   opts: DashboardOptions = {},
-): Promise<{ url: string; token: string; generated: boolean; close: () => Promise<void> }> {
+): Promise<{
+  url: string;
+  token: string;
+  generated: boolean;
+  pruned: { artifacts: number; toolCalls: number };
+  close: () => Promise<void>;
+}> {
   const file = opts.file || process.env.FORGE_USAGE_DB || DEFAULT_DB;
   const configured = opts.token ?? process.env.FORGE_DASHBOARD_TOKEN;
   const token = configured || generateToken();
@@ -59,6 +83,7 @@ export async function startDashboard(
   const port = opts.port ?? Number(process.env.FORGE_DASHBOARD_PORT || 4300);
 
   const origin = opts.origin ?? process.env.FORGE_DASHBOARD_ORIGIN;
+  const pruned = await pruneOnce(file);
   const { db, artifactDir } = openUsageDb(file);
   const api: ApiOptions = { db, artifactDir, token, ...(origin ? { origin } : {}) };
 
@@ -81,6 +106,7 @@ export async function startDashboard(
     url: `http://${shown}:${port}/?token=${token}`,
     token,
     generated: !configured,
+    pruned,
     close: () =>
       new Promise<void>((resolve) => {
         server.close(() => {
@@ -121,7 +147,7 @@ export function mountDashboard(
     const router = getRouter('/usage');
     router.use((req, res, next) => {
       const origin = env.FORGE_DASHBOARD_ORIGIN?.trim();
-      void serveUsage({ db, artifactDir, token, ...(origin ? { origin } : {}) }, req, res).then((handled) => {
+      void serveUsage({ db, artifactDir, token, mountPath: '/usage', ...(origin ? { origin } : {}) }, req, res).then((handled) => {
         if (!handled) next();
       });
     });

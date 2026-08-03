@@ -43,7 +43,7 @@ program
   .option('--host <host>', 'Address to bind (loopback unless a token is set)')
   .option('--token <token>', 'Require this token on every request')
   .action(async (opts: { db: string; port: string; host?: string; token?: string }) => {
-    const { url, token, generated } = await startDashboard({
+    const { url, token, generated, pruned } = await startDashboard({
       file: opts.db,
       port: Number(opts.port),
       ...(opts.host ? { host: opts.host } : {}),
@@ -55,7 +55,11 @@ program
         ? `   Every route requires this token: ${token}\n   Set FORGE_DASHBOARD_TOKEN to keep the same one across restarts.\n`
         : `   Every route requires FORGE_DASHBOARD_TOKEN.\n`,
     );
-    console.log(`   Reading ${opts.db}. Set FORGE_USAGE_DB=${opts.db} on the agent to record into it.\n`);
+    console.log(`   Reading ${opts.db}. Set FORGE_USAGE_DB=${opts.db} on the agent to record into it.`);
+    if (pruned.artifacts || pruned.toolCalls) {
+      console.log(`   Retention: removed ${pruned.artifacts} aged artifact(s) and ${pruned.toolCalls} old tool call(s).`);
+    }
+    console.log('');
   });
 
 program

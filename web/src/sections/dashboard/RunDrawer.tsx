@@ -3,7 +3,7 @@ import { StatusPill } from './Tables';
 import { Empty } from './charts';
 import { Transcript } from './Transcript';
 import { Facts, Findings, Panel, Tools, Turns } from './RunPanels';
-import { fetchUsage, usageUrl, type RunDetail } from '../../lib/usage';
+import { fetchUsage, usageHref, type RunDetail } from '../../lib/usage';
 import { fmtNum } from '../../lib/format';
 
 /**
@@ -120,7 +120,7 @@ export function RunDrawer({ id, onClose }: { id: string | null; onClose: () => v
             )}
           </div>
           {detail && (
-            <a href={usageUrl(`api/runs/${detail.run.id}`)} target="_blank" rel="noopener noreferrer" className="text-[12.5px] text-muted hover:text-text">
+            <a href={usageHref(`api/runs/${detail.run.id}`)} target="_blank" rel="noopener noreferrer" className="text-[12.5px] text-muted hover:text-text">
               raw ↗
             </a>
           )}
@@ -147,7 +147,7 @@ export function RunDrawer({ id, onClose }: { id: string | null; onClose: () => v
                       <div key={a.id} className="flex items-center justify-between text-[12.5px]">
                         <span>{a.kind}</span>
                         <span className="font-mono text-xs text-muted">{fmtNum(a.bytes)} B gzipped</span>
-                        <a href={usageUrl(`api/artifacts/${a.id}`)} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+                        <a href={usageHref(`api/artifacts/${a.id}`)} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
                           open ↗
                         </a>
                       </div>

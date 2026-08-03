@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Link, NavLink, useSearchParams } from 'react-router-dom';
 import type { Facets, Filters } from '../../lib/usage';
 
@@ -139,6 +140,11 @@ export function Topbar({ filters, facets, onChange, onRefresh, loading, onMenu, 
   /** What the page wants to say about what is in view. */
   note: string;
 }) {
+  // Debounced: every keystroke rewrites the URL, and every page here re-runs
+  // ten queries off that — each a nine-column LIKE scan.
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(timer.current), []);
+
   const select = 'appearance-none rounded-[9px] border border-line/[0.08] bg-panel/80 px-3 py-1.5 text-[12.5px] text-text hover:border-line/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent';
 
   return (
@@ -185,7 +191,11 @@ export function Topbar({ filters, facets, onChange, onRefresh, loading, onMenu, 
         type="search"
         placeholder="Search repo, actor, error…"
         defaultValue={filters.q}
-        onChange={(e) => onChange({ q: e.target.value.trim() })}
+        onChange={(e) => {
+          const q = e.target.value.trim();
+          clearTimeout(timer.current);
+          timer.current = setTimeout(() => onChange({ q }), 260);
+        }}
         aria-label="Search runs"
         className="min-w-[210px] rounded-[9px] border border-line/[0.08] bg-panel/80 px-3 py-1.5 text-[12.5px] text-text placeholder:text-faint hover:border-line/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
       />

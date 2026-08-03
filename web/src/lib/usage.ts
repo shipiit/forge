@@ -182,6 +182,19 @@ export function usageUrl(path: string, params: Record<string, string | number | 
   return `${base}/${path}${qs.toString() ? `?${qs}` : ''}`;
 }
 
+/**
+ * A URL for a link, not a fetch.
+ *
+ * Browser navigation sends no Authorization header, so an `<a href>` to the API
+ * has to carry the token in the query string — which `authorized()` accepts for
+ * exactly this reason. Never use this for a fetch: those send the header, and a
+ * token in a URL lands in server logs and browser history.
+ */
+export function usageHref(path: string): string {
+  const token = apiToken();
+  return usageUrl(path, token ? { token } : {});
+}
+
 export async function fetchUsage<T>(
   path: string,
   params: Record<string, string | number | undefined> = {},
