@@ -11,14 +11,14 @@
 # The same two values the PR workflow uses. A .env file is not read by Actions;
 # .env is for running the agent on your own machine.
 #
-#   Secret  VERTEX_SA_JSON   the full service-account JSON, pasted whole
-#   Secret  VERTEX_PROJECT   your GCP project id
+# All four are required Secrets. Nothing is defaulted in this file: a model or
+# a region hardcoded here is one somebody changes in the settings page and then
+# wonders why the run ignored them.
 #
-# Optional, as either a Secret or a Variable — neither is sensitive, so a
-# Variable is easier to read back later:
-#
-#   VERTEX_MODEL     default gemini-2.5-pro; gemini-2.5-flash is cheaper/faster
-#   VERTEX_LOCATION  default us-central1
+#   VERTEX_SA_JSON   the full service-account JSON, pasted whole
+#   VERTEX_PROJECT   your GCP project id
+#   VERTEX_LOCATION  region, e.g. us-central1
+#   VERTEX_MODEL     e.g. gemini-2.5-pro, or gemini-2.5-flash for cheaper runs
 #
 # WHY THE `if:` BELOW MATTERS — this repository is public
 #
@@ -64,11 +64,15 @@ jobs:
       - name: Check credentials are configured
         env:
           SA_JSON: ${{ secrets.VERTEX_SA_JSON }}
-          PROJECT: ${{ vars.VERTEX_PROJECT || secrets.VERTEX_PROJECT }}
+          PROJECT: ${{ secrets.VERTEX_PROJECT }}
+          LOCATION: ${{ secrets.VERTEX_LOCATION }}
+          MODEL: ${{ secrets.VERTEX_MODEL }}
         run: |
           missing=""
-          [ -z "$SA_JSON" ] && missing="$missing VERTEX_SA_JSON"
-          [ -z "$PROJECT" ] && missing="$missing VERTEX_PROJECT"
+          [ -z "$SA_JSON" ]  && missing="$missing VERTEX_SA_JSON"
+          [ -z "$PROJECT" ]  && missing="$missing VERTEX_PROJECT"
+          [ -z "$LOCATION" ] && missing="$missing VERTEX_LOCATION"
+          [ -z "$MODEL" ]    && missing="$missing VERTEX_MODEL"
           if [ -n "$missing" ]; then
             echo "::error::ShipIT Forge is not configured. Missing:$missing"
             echo "::error::Add them under Settings → Secrets and variables → Actions. Actions does not read a .env file."
@@ -86,9 +90,9 @@ jobs:
           max-turns: '30'
         env:
           LLM_PROVIDER: vertex
-          VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT || secrets.VERTEX_PROJECT }}
-          VERTEX_LOCATION: ${{ vars.VERTEX_LOCATION || secrets.VERTEX_LOCATION || 'us-central1' }}
-          VERTEX_MODEL: ${{ vars.VERTEX_MODEL || secrets.VERTEX_MODEL || 'gemini-2.5-pro' }}
+          VERTEX_PROJECT: ${{ secrets.VERTEX_PROJECT }}
+          VERTEX_LOCATION: ${{ secrets.VERTEX_LOCATION }}
+          VERTEX_MODEL: ${{ secrets.VERTEX_MODEL }}
           # Analyse and explain. Opening a PR unasked on every issue is noise;
           # `/fix` in a comment is the deliberate act that writes code.
           FORGE_AUTO_FIX: 'off'
