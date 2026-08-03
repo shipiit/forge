@@ -73,3 +73,19 @@ describe('spend cap and rate limit config', () => {
     expect(c.spendCapPerRunUsd).toBe(Infinity);
   });
 });
+
+describe('publishing what a run cost', () => {
+  it('prints the footer by default', () => {
+    expect(defaultConfig({} as NodeJS.ProcessEnv).showCost).toBe(true);
+  });
+
+  it('can be switched off, so a public repo need not publish its spend', () => {
+    // The run is still recorded either way — the number is unpublished, not lost.
+    expect(defaultConfig({ FORGE_SHOW_COST: '0' } as NodeJS.ProcessEnv).showCost).toBe(false);
+    expect(defaultConfig({ FORGE_SHOW_COST: 'false' } as NodeJS.ProcessEnv).showCost).toBe(false);
+  });
+
+  it('is overridable per repository in agent.yml', () => {
+    expect(mergeConfig({ show_cost: false }, { FORGE_SHOW_COST: '1' } as NodeJS.ProcessEnv).showCost).toBe(false);
+  });
+});

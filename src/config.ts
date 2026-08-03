@@ -47,6 +47,8 @@ export interface ForgeConfig {
   spendCapPerRunUsd: number;
   /** Runs allowed per repository per hour. 0 or less means no limit. */
   maxRunsPerHour: number;
+  /** Print the token/spend footer under the agent's comments. */
+  showCost: boolean;
   /** Turn findings into issues: off, one rollup issue, or one issue each. */
   findingsToIssues: FindingIssueMode;
   /** Findings below this severity never become issues. */
@@ -79,6 +81,7 @@ export function defaultConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig
     routines: [],
     spendCapPerRunUsd: parseCap(env.FORGE_SPEND_CAP_RUN),
     maxRunsPerHour: Number(env.FORGE_MAX_RUNS_PER_HOUR ?? 0),
+    showCost: env.FORGE_SHOW_COST !== '0' && env.FORGE_SHOW_COST !== 'false',
     findingsToIssues: (env.FORGE_FINDINGS_TO_ISSUES as FindingIssueMode) || 'off',
     findingsMinSeverity: (env.FORGE_FINDINGS_MIN_SEVERITY as ReviewFinding['severity']) || 'high',
     findingsMaxIssues: Number(env.FORGE_FINDINGS_MAX_ISSUES ?? 10),
@@ -125,6 +128,7 @@ export function mergeConfig(raw: unknown, base: ForgeConfig = defaultConfig()): 
         ? r.spend_cap_per_run_usd
         : base.spendCapPerRunUsd,
     maxRunsPerHour: intOr(r.max_runs_per_hour, base.maxRunsPerHour),
+    showCost: typeof r.show_cost === 'boolean' ? r.show_cost : base.showCost,
     findingsToIssues: enumOr(r.findings_to_issues, ['off', 'rollup', 'per_finding'] as const, base.findingsToIssues),
     findingsMinSeverity: enumOr(
       r.findings_min_severity,
