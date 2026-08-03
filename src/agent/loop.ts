@@ -2,7 +2,8 @@ import type { ContentPart, LLMClient, Msg, Usage } from '../providers/types.js';
 import { type Tool, type ToolContext, type SecurityScannerLike } from './tools/types.js';
 import { indexTools } from './tools/registry.js';
 import { withRetry } from '../util/resilience.js';
-import { addUsage } from '../util/cost.js';
+import { addUsage, estimateCost } from '../util/cost.js';
+import { NO_CAP, budgetState, wouldExceed, type BudgetState } from '../util/budget.js';
 import { compactMessages } from './compaction.js';
 
 /**
@@ -15,14 +16,25 @@ export const DEFAULT_MAX_OUTPUT_TOKENS = Number(process.env.FORGE_MAX_OUTPUT_TOK
 export interface AgentLimits {
   maxIterations: number;
   maxOutputTokens: number;
+  /**
+   * USD ceiling for this run. Omit or pass Infinity for no cap.
+   *
+   * maxIterations bounds turns, which is not the same as bounding cost — the
+   * same turn count is a very different bill on a large repository or an
+   * expensive model.
+   */
+  maxSpendUsd?: number;
 }
 
 export interface AgentResult {
   finalText: string;
   iterations: number;
-  stoppedBy: 'end' | 'limit';
+  /** `budget` means it stopped early because the spend cap was reached. */
+  stoppedBy: 'end' | 'limit' | 'budget';
   messages: Msg[];
   usage: Usage;
+  /** Set when stoppedBy is 'budget'; what it had spent when it stopped. */
+  budget?: BudgetState;
 }
 
 export interface RunAgentOptions {
@@ -44,7 +56,8 @@ export type AgentEvent =
   | { type: 'tool'; name: string; args: Record<string, unknown> }
   | { type: 'tool_error'; name: string; message: string }
   | { type: 'assistant_text'; text: string }
-  | { type: 'compacted'; savedChars: number };
+  | { type: 'compacted'; savedChars: number }
+  | { type: 'budget'; spentUsd: number; capUsd: number };
 
 /**
  * Drive the model/tool loop until the model finishes or limits are hit.
@@ -62,6 +75,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   let messages: Msg[] = [{ role: 'user', content: initialContent }];
   let usage: Usage = { inputTokens: 0, outputTokens: 0 };
   let finalText = '';
+  const capUsd = limits.maxSpendUsd ?? NO_CAP;
   let nudged = false; // ensure the model actually writes a final answer if it ends empty
 
   for (let n = 1; n <= limits.maxIterations; n++) {
@@ -77,7 +91,18 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     }
 
     const res = await withRetry(() => client.chat({ system, messages, tools: toolSpecs, maxTokens: limits.maxOutputTokens }));
+    const turnUsd = estimateCost(res.usage, client.model).usd;
     usage = addUsage(usage, res.usage);
+
+    // Spend cap. Checked after the turn that was already paid for, and again
+    // projected forward, so the run stops *before* an overspend rather than
+    // discovering it afterwards.
+    const budget = budgetState(usage, client.model, capUsd);
+    if (budget.exceeded || wouldExceed(budget, turnUsd)) {
+      onEvent?.({ type: 'budget', spentUsd: budget.spentUsd, capUsd: budget.capUsd });
+      if (res.text) finalText = res.text;
+      return { finalText, iterations: n, stoppedBy: 'budget', messages, usage, budget };
+    }
 
     // Record the assistant turn (text + any tool_use calls).
     const assistantParts: ContentPart[] = [];

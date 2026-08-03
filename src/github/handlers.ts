@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { LLMClient, Usage } from '../providers/types.js';
 import { estimateCost, formatCost, addUsage } from '../util/cost.js';
-import { runAgent, DEFAULT_MAX_OUTPUT_TOKENS } from '../agent/loop.js';
+import { runAgent, DEFAULT_MAX_OUTPUT_TOKENS, type AgentLimits, type AgentResult } from '../agent/loop.js';
 import { editToolset, reviewToolset, selectTools, type ToolSelection } from '../agent/tools/registry.js';
 import type { Tool } from '../agent/tools/types.js';
 import { applyExtraPrompt } from '../actionInputs.js';
@@ -25,6 +25,14 @@ import { applySkill, parseSkillInvocation, renderSkillList, resolveSkills, type 
 import type { Routine } from '../routines.js';
 import { loadRepoInstructions, renderProjectContextBlock, composeReviewSystemPrompt } from './conventions.js';
 import { buildCheckRunRequest } from './checkrun.js';
+import { NO_CAP, renderBudgetStop } from '../util/budget.js';
+import {
+  MemoryRateLimitStore,
+  checkRateLimit,
+  renderRateLimited,
+  repoKey,
+  type RateLimitStore,
+} from '../util/rateLimit.js';
 import {
   alreadyRecorded,
   insertHistoryEntry,
@@ -89,6 +97,66 @@ export interface HandlerDeps {
   inlineSkill?: Skill;
   /** Extra directory to load committed skills from. */
   skillsPath?: string;
+  /** USD ceiling for a single run. Infinity (the default) means no cap. */
+  spendCapPerRunUsd?: number;
+  /** Runs allowed per repository per hour. 0 or less means no limit. */
+  maxRunsPerHour?: number;
+  /** Where the rate-limit window lives. Defaults to a process-local store. */
+  rateLimitStore?: RateLimitStore;
+  /** Injectable clock, so tests never depend on wall time. */
+  now?: () => number;
+}
+
+/** Process-local window, shared by every handler in this process. */
+const defaultRateLimitStore = new MemoryRateLimitStore();
+
+/** The limits every runAgent call in a handler should carry. */
+function limitsFor(deps: HandlerDeps, maxIterations = MAX_ITER): AgentLimits {
+  return {
+    maxIterations,
+    maxOutputTokens: MAX_TOKENS,
+    maxSpendUsd: deps.spendCapPerRunUsd ?? NO_CAP,
+  };
+}
+
+/**
+ * Ask whether this repository may start another run, and consume capacity if so.
+ *
+ * Posts one comment when it declines, so a maintainer sees why nothing happened
+ * rather than assuming the agent is broken. Returns true when the run may go on.
+ */
+async function allowRun(
+  deps: HandlerDeps,
+  owner: string,
+  repo: string,
+  issueNumber?: number,
+): Promise<boolean> {
+  const limit = deps.maxRunsPerHour ?? 0;
+  if (!limit || limit <= 0) return true;
+
+  const now = (deps.now ?? Date.now)();
+  const decision = await checkRateLimit(
+    deps.rateLimitStore ?? defaultRateLimitStore,
+    repoKey(owner, repo),
+    limit,
+    now,
+  );
+  if (decision.allowed) return true;
+
+  deps.log(`rate limit reached for ${owner}/${repo}: ${decision.used}/${decision.limit} in the last hour`);
+  if (issueNumber) {
+    try {
+      await deps.octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        body: renderRateLimited(decision, now),
+      });
+    } catch {
+      /* the limit still applies even if we could not say so */
+    }
+  }
+  return false;
 }
 
 /** Resolve every skill available to this run: built-ins, repo files, workflow-inline. */
@@ -133,6 +201,17 @@ export function costFooter(usage: Usage, model: string): string {
   return `\n\n<sub>🧮 ${formatCost(c)} · model \`${model}\`</sub>`;
 }
 
+/**
+ * Prefix a result with the spend-cap notice when the run stopped early.
+ *
+ * Without this, a truncated run reads as a confident, complete answer — which is
+ * the worst possible failure mode for something that writes code reviews.
+ */
+export function withBudgetNotice(result: AgentResult, model: string, body: string): string {
+  if (result.stoppedBy !== 'budget' || !result.budget) return body;
+  return `${renderBudgetStop(result.budget, model)}\n\n---\n\n${body}`;
+}
+
 /** Collapse repeated lines and cap length so a rambling model summary stays readable. */
 export function cleanSummary(text: string, maxChars = 1200): string {
   const seen = new Set<string>();
@@ -167,6 +246,7 @@ export async function handleIssueAnalyze(
   inFlight.add(lockKey);
   const wsOps = deps.workspace ?? realWorkspace;
   try {
+    if (!(await allowRun(deps, args.owner, args.repo, args.issueNumber))) return;
     const commentsRes = await octokit.rest.issues.listComments({ owner: args.owner, repo: args.repo, issue_number: args.issueNumber });
     const comments: CommentLike[] = commentsRes.data
       .filter((c) => c.body && !isFromForge(c.user?.login))
@@ -196,7 +276,7 @@ export async function handleIssueAnalyze(
         system: prompt(deps, analyzeSystemPrompt()),
         initialContent,
         tools: pick(deps, reviewToolset()), // read-only: no edits
-        limits: { maxIterations: MAX_ITER, maxOutputTokens: MAX_TOKENS },
+        limits: limitsFor(deps),
         cwd: ws.dir,
         onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
       });
@@ -244,6 +324,8 @@ async function doIssueFix(
   const wsOps = deps.workspace ?? realWorkspace;
   const repoRef: RepoRef = { owner: args.owner, repo: args.repo, ref: args.defaultBranch };
   const branch = `forge/issue-${args.issueNumber}`;
+
+  if (!(await allowRun(deps, args.owner, args.repo, args.issueNumber))) return;
 
   // Idempotency: if a fix PR for this issue is already open, do nothing.
   const existing = await octokit.rest.pulls.list({
@@ -294,7 +376,7 @@ async function doIssueFix(
     if (conventions) initialContent.unshift({ type: 'text', text: conventions });
     initialContent.unshift({ type: 'text', text: repoMap });
 
-    const fixLimits = { maxIterations: MAX_ITER, maxOutputTokens: MAX_TOKENS };
+    const fixLimits = limitsFor(deps);
     const result = await runAgent({
       client,
       system: prompt(deps, fixSystemPrompt()),
@@ -344,7 +426,7 @@ async function doIssueFix(
         system: reviewSystemPrompt(),
         initialContent: [{ type: 'text', text: `Review your own change before it becomes a PR. Be strict about correctness and regressions.\n\nIssue: ${args.issueTitle}\n\nDiff:\n\`\`\`diff\n${diff}\n\`\`\`` }],
         tools: pick(deps, reviewToolset()),
-        limits: { maxIterations: MAX_ITER, maxOutputTokens: MAX_TOKENS },
+        limits: limitsFor(deps),
         cwd: ws.dir,
       });
       totalUsage = addUsage(totalUsage, reviewRes.usage);
@@ -413,6 +495,8 @@ async function doPrReview(
 
   // Acknowledge first (like the issue/fix flows), then post the formal review and
   // update this comment with a one-line verdict.
+  if (!(await allowRun(deps, args.owner, args.repo, args.pullNumber))) return;
+
   // "review always" subscribes this PR to push-triggered re-review. Forge is
   // stateless, so the subscription lives on the PR itself as a label — durable,
   // visible to the team, and free.
@@ -466,7 +550,7 @@ async function doPrReview(
       system: prompt(deps, composeReviewSystemPrompt(reviewSystemPrompt({ securityOnly: args.securityOnly }), instructions)),
       initialContent,
       tools: pick(deps, reviewToolset()),
-      limits: { maxIterations: MAX_ITER, maxOutputTokens: MAX_TOKENS },
+      limits: limitsFor(deps),
       cwd: ws.dir,
     });
 
@@ -565,7 +649,7 @@ async function doPrFollowup(
         { type: 'text', text: `You are working on the branch of PR #${args.pullNumber}. Request:\n\n${args.question}\n\nIf code changes are needed, make them and verify with tests.` },
       ],
       tools: pick(deps, editToolset({ testCommand: deps.testCommand })),
-      limits: { maxIterations: MAX_ITER, maxOutputTokens: MAX_TOKENS },
+      limits: limitsFor(deps),
       cwd: ws.dir,
       onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
     });
@@ -633,7 +717,7 @@ async function doMention(
       system,
       initialContent: [{ type: 'text', text: repoMap }, { type: 'text', text: args.question }],
       tools: pick(deps, selectTools(reviewToolset(), { allowed: skill?.tools ?? [] })),
-      limits: { maxIterations: MAX_ITER, maxOutputTokens: MAX_TOKENS },
+      limits: limitsFor(deps),
       cwd: ws.dir,
       onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
     });
@@ -661,6 +745,7 @@ async function doAudit(
   args: { owner: string; repo: string; issueNumber: number; ref: string },
 ): Promise<void> {
   const { octokit, client, token, log } = deps;
+  if (!(await allowRun(deps, args.owner, args.repo, args.issueNumber))) return;
   const ack = await octokit.rest.issues.createComment({
     owner: args.owner,
     repo: args.repo,
@@ -675,7 +760,7 @@ async function doAudit(
       system: prompt(deps, auditSystemPrompt()),
       initialContent: [{ type: 'text', text: `${repoMap}\n\nAudit this repository for security vulnerabilities. Be thorough; follow untrusted input to dangerous sinks.` }],
       tools: pick(deps, reviewToolset()),
-      limits: { maxIterations: Math.max(MAX_ITER, 40), maxOutputTokens: MAX_TOKENS },
+      limits: limitsFor(deps, Math.max(MAX_ITER, 40)),
       cwd: ws.dir,
       onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
     });
@@ -755,7 +840,7 @@ async function doCiFailure(
         { type: 'text', text: `CI is failing on PR #${args.pullNumber} (branch ${args.headBranch}). Failing checks:\n\n${failureText}\n\nFix the code so CI passes, then verify with run_tests.` },
       ],
       tools: pick(deps, editToolset({ testCommand: deps.testCommand })),
-      limits: { maxIterations: MAX_ITER, maxOutputTokens: MAX_TOKENS },
+      limits: limitsFor(deps),
       cwd: ws.dir,
       onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
     });
@@ -875,7 +960,7 @@ async function doHistory(
         },
       ],
       tools: pick(deps, reviewToolset()),
-      limits: { maxIterations: Math.min(MAX_ITER, 12), maxOutputTokens: MAX_TOKENS },
+      limits: limitsFor(deps, Math.min(MAX_ITER, 12)),
       cwd: ws.dir,
       onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
     });
@@ -987,7 +1072,7 @@ async function doRoutine(
         { type: 'text', text: task },
       ],
       tools: pick(deps, selectTools(base, { allowed })),
-      limits: { maxIterations: MAX_ITER, maxOutputTokens: MAX_TOKENS },
+      limits: limitsFor(deps),
       cwd: ws.dir,
       ...(r.write ? { security: await createWorkspaceScanner(ws.dir) } : {}),
       onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
@@ -1084,7 +1169,7 @@ async function doRelease(
         { type: 'text', text: `Release ${args.tag}. Commits included:\n\n${commits.slice(0, 40_000)}` },
       ],
       tools: pick(deps, reviewToolset()),
-      limits: { maxIterations: Math.min(MAX_ITER, 10), maxOutputTokens: MAX_TOKENS },
+      limits: limitsFor(deps, Math.min(MAX_ITER, 10)),
       cwd: ws.dir,
     });
 

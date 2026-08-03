@@ -42,3 +42,34 @@ describe('config', () => {
     expect(mergeConfig('not an object').autoFix).toBe('label');
   });
 });
+
+describe('spend cap and rate limit config', () => {
+  it('defaults to no cap and no limit', () => {
+    const c = defaultConfig({} as NodeJS.ProcessEnv);
+    expect(c.spendCapPerRunUsd).toBe(Infinity);
+    expect(c.maxRunsPerHour).toBe(0);
+  });
+
+  it('reads both from the environment', () => {
+    const c = defaultConfig({
+      FORGE_SPEND_CAP_RUN: '2.50',
+      FORGE_MAX_RUNS_PER_HOUR: '20',
+    } as NodeJS.ProcessEnv);
+    expect(c.spendCapPerRunUsd).toBe(2.5);
+    expect(c.maxRunsPerHour).toBe(20);
+  });
+
+  it('lets a repository override both', () => {
+    const c = mergeConfig(
+      { spend_cap_per_run_usd: 1.25, max_runs_per_hour: 6 },
+      defaultConfig({} as NodeJS.ProcessEnv),
+    );
+    expect(c.spendCapPerRunUsd).toBe(1.25);
+    expect(c.maxRunsPerHour).toBe(6);
+  });
+
+  it('ignores a nonsensical cap rather than spending nothing', () => {
+    const c = mergeConfig({ spend_cap_per_run_usd: 0 }, defaultConfig({} as NodeJS.ProcessEnv));
+    expect(c.spendCapPerRunUsd).toBe(Infinity);
+  });
+});

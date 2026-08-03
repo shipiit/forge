@@ -1,5 +1,6 @@
 import { parseFilters, type TriggerFilter } from './github/filters.js';
 import { parseRoutines, type Routine } from './routines.js';
+import { parseCap } from './util/budget.js';
 
 /** Per-repository configuration, read from `.github/agent.yml` (all optional). */
 export interface ForgeConfig {
@@ -40,6 +41,10 @@ export interface ForgeConfig {
   historyMode: 'single' | 'per_commit';
   /** Saved agent configurations plus their triggers. */
   routines: Routine[];
+  /** USD ceiling for a single run. Infinity means no cap. */
+  spendCapPerRunUsd: number;
+  /** Runs allowed per repository per hour. 0 or less means no limit. */
+  maxRunsPerHour: number;
 }
 
 const REVIEW_BEHAVIORS = ['opened', 'every_push', 'manual'] as const;
@@ -64,6 +69,8 @@ export function defaultConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig
     historyPath: env.FORGE_HISTORY_PATH || 'docs/CHANGE-HISTORY.md',
     historyMode: (env.FORGE_HISTORY_MODE as ForgeConfig['historyMode']) || 'single',
     routines: [],
+    spendCapPerRunUsd: parseCap(env.FORGE_SPEND_CAP_RUN),
+    maxRunsPerHour: Number(env.FORGE_MAX_RUNS_PER_HOUR ?? 0),
   };
 }
 
@@ -102,5 +109,10 @@ export function mergeConfig(raw: unknown, base: ForgeConfig = defaultConfig()): 
     historyPath: typeof r.history_path === 'string' ? r.history_path : base.historyPath,
     historyMode: enumOr(r.history_mode, ['single', 'per_commit'] as const, base.historyMode),
     routines: r.routines !== undefined ? parseRoutines(r.routines) : base.routines,
+    spendCapPerRunUsd:
+      typeof r.spend_cap_per_run_usd === 'number' && r.spend_cap_per_run_usd > 0
+        ? r.spend_cap_per_run_usd
+        : base.spendCapPerRunUsd,
+    maxRunsPerHour: intOr(r.max_runs_per_hour, base.maxRunsPerHour),
   };
 }

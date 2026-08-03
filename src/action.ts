@@ -111,6 +111,8 @@ async function main(): Promise<void> {
     skillsPath: inputs.skillsPath,
     historyPath: config.historyPath,
     historyMode: config.historyMode,
+    spendCapPerRunUsd: config.spendCapPerRunUsd,
+    maxRunsPerHour: config.maxRunsPerHour,
     selfReview: true,
   };
 

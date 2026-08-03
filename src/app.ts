@@ -37,6 +37,8 @@ async function deps(context: Context, config: ForgeConfig): Promise<HandlerDeps>
     maxNits: config.maxNits,
     historyPath: config.historyPath,
     historyMode: config.historyMode,
+    spendCapPerRunUsd: config.spendCapPerRunUsd,
+    maxRunsPerHour: config.maxRunsPerHour,
     selfReview: true,
   };
 }
