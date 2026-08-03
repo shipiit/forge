@@ -138,6 +138,10 @@ export function parseSkillFile(name: string, text: string): Skill | null {
     description: meta.description || `Skill: ${name}`,
     prompt,
     ...(meta.tools ? { tools: meta.tools.split(/[,\s]+/).filter(Boolean) } : {}),
+    // A committed skill can declare that it answers with structured findings,
+    // the same way the built-ins do — otherwise a repository's own review skill
+    // returns prose that nothing downstream can count, file or chart.
+    ...(meta.reports === 'findings' ? { reports: 'findings' as const } : {}),
   };
 }
 

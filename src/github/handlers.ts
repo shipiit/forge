@@ -130,6 +130,8 @@ export interface HandlerDeps {
   findingsMinSeverity?: ReviewFinding['severity'];
   /** Ceiling on issues opened by a single run. */
   findingsMaxIssues?: number;
+  /** Print the token/spend footer under comments (default true). */
+  showCost?: boolean;
   /** Injectable clock, so tests never depend on wall time. */
   now?: () => number;
   /** Records what this run did. Absent means nothing is being recorded. */
@@ -211,6 +213,25 @@ function pick(deps: HandlerDeps, tools: Tool[]): Tool[] {
   return selectTools(tools, deps.toolSelection ?? {});
 }
 
+/**
+ * Apply a workflow-selected skill to a system prompt.
+ *
+ * `skill:` was only ever read by the mention and routine flows, so a workflow
+ * that set it on a review or an issue analysis looked configured and changed
+ * nothing. Returns the prompt untouched when no skill is selected or the name
+ * does not resolve.
+ */
+async function withSkill(deps: HandlerDeps, cwd: string, system: string, task = ''): Promise<string> {
+  if (!deps.skillName && !deps.inlineSkill) return system;
+  const skills = await skillsFor(deps, cwd);
+  const skill = deps.skillName ? skills.get(deps.skillName.toLowerCase()) : deps.inlineSkill;
+  if (!skill) {
+    deps.log(`no skill named "${deps.skillName}" — continuing with the default prompt`);
+    return system;
+  }
+  return applySkill(system, skill, task);
+}
+
 /** Apply the run's extra instructions to a system prompt. */
 function prompt(deps: HandlerDeps, base: string): string {
   return applyExtraPrompt(base, deps.extraPrompt);
@@ -237,7 +258,16 @@ async function withLock(key: string, log: (m: string) => void, fn: () => Promise
  * A one-line run-cost footer for a comment or PR body. Previously cost was only
  * ever shown by the CLI, so the flows that actually spend money reported nothing.
  */
-export function costFooter(usage: Usage, model: string): string {
+/**
+ * The token/spend line under a comment.
+ *
+ * Off by default on a public repository is the wrong call — but so is printing
+ * what a team spends under every comment on one. `show_cost` in agent.yml, or
+ * FORGE_SHOW_COST=0, hides it; the run is still recorded either way, so the
+ * number is not lost, only unpublished.
+ */
+export function costFooter(usage: Usage, model: string, show = true): string {
+  if (!show) return '';
   const c = estimateCost(usage, model);
   if (c.inputTokens === 0 && c.outputTokens === 0) return '';
   return `\n\n<sub>🧮 ${formatCost(c)} · model \`${model}\`</sub>`;
@@ -440,7 +470,7 @@ export async function handleIssueAnalyze(
 
       const result = await runAgent({
         client,
-        system: prompt(deps, analyzeSystemPrompt()),
+        system: await withSkill(deps, ws.dir, prompt(deps, analyzeSystemPrompt()), args.issueTitle),
         initialContent,
         tools: pick(deps, reviewToolset()), // read-only: no edits
         limits: limitsFor(deps),
@@ -457,7 +487,7 @@ export async function handleIssueAnalyze(
           `### 🔍 ${DISPLAY} — analysis of #${args.issueNumber}\n\n` +
           `${cleanSummary(result.finalText, 4000)}\n\n` +
           `---\n_Want me to implement this and open a PR — with an automated **security + code review** and tests run on the change? Comment **\`/fix\`** and I'll do it._` +
-          costFooter(result.usage, client.model),
+          costFooter(result.usage, client.model, deps.showCost),
       });
     } finally {
       await ws.cleanup();
@@ -653,7 +683,7 @@ async function doIssueFix(
         `**Verification**\n${verify}\n\n` +
         `Review and merge ${pr.url} to apply the fix.` +
         (selfReviewNote ? `\n${selfReviewNote}` : '') +
-        costFooter(totalUsage, client.model),
+        costFooter(totalUsage, client.model, deps.showCost),
     });
   } finally {
     await ws.cleanup();
@@ -728,7 +758,11 @@ async function doPrReview(
       client,
       // REVIEW.md overrides the default guidance; FORGE.md is context whose
       // newly-introduced violations are nits.
-      system: prompt(deps, composeReviewSystemPrompt(reviewSystemPrompt({ securityOnly: args.securityOnly }), instructions)),
+      system: await withSkill(
+        deps,
+        ws.dir,
+        prompt(deps, composeReviewSystemPrompt(reviewSystemPrompt({ securityOnly: args.securityOnly }), instructions)),
+      ),
       initialContent,
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps),
@@ -801,7 +835,7 @@ async function doPrReview(
           client.model,
           `### 🔍 ${DISPLAY} reviewed this PR — ${verdict}\n\n${findings.length} finding(s) (${sec} security). See the review above for inline details and suggested fixes.` +
             renderSkipped(plan),
-        ) + costFooter(result.usage, client.model),
+        ) + costFooter(result.usage, client.model, deps.showCost),
     });
   } finally {
     await ws.cleanup();
@@ -977,7 +1011,7 @@ async function doAudit(
       body:
         withBudgetNotice(result, client.model, renderAuditReport(findings, DISPLAY)) +
         issueNote +
-        costFooter(result.usage, client.model),
+        costFooter(result.usage, client.model, deps.showCost),
     });
   } finally {
     await ws.cleanup();
@@ -1205,7 +1239,7 @@ async function doHistory(
       body:
         `Records ${args.pullNumber ? `#${args.pullNumber}` : `\`${(sha ?? '').slice(0, 7)}\``} in \`${historyPath}\`.\n\n` +
         `Written from that change's diff only.\n\n---\n\n${renderHistoryEntry(entry)}` +
-        costFooter(result.usage, client.model),
+        costFooter(result.usage, client.model, deps.showCost),
       head: branch,
       base: args.defaultBranch,
     });
@@ -1299,7 +1333,7 @@ async function doRoutine(
           owner: args.owner,
           repo: args.repo,
           title: `${r.name}: automated update`.slice(0, 250),
-          body: `${cleanSummary(result.finalText, 4000)}${costFooter(result.usage, client.model)}`,
+          body: `${cleanSummary(result.finalText, 4000)}${costFooter(result.usage, client.model, deps.showCost)}`,
           head: branch,
           base: args.defaultBranch,
         });
@@ -1311,7 +1345,7 @@ async function doRoutine(
 
     const report =
       `### 🤖 ${DISPLAY} — routine \`${r.name}\`\n\n${cleanSummary(result.finalText, 4000)}` +
-      costFooter(result.usage, client.model);
+      costFooter(result.usage, client.model, deps.showCost);
 
     if (args.issueNumber) {
       // Started from a thread (`/run` or an event) — reply where it was asked.
@@ -1391,7 +1425,7 @@ async function doRelease(
       owner: args.owner,
       repo: args.repo,
       release_id: args.releaseId,
-      body: `${notes}\n\n---\n<sub>Generated by ${DISPLAY}.</sub>${costFooter(result.usage, client.model)}`,
+      body: `${notes}\n\n---\n<sub>Generated by ${DISPLAY}.</sub>${costFooter(result.usage, client.model, deps.showCost)}`,
     });
     log(`release: updated notes for ${args.tag}`);
   } finally {

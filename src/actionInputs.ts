@@ -4,7 +4,8 @@ import type { Skill } from './agent/skills.js';
 /**
  * GitHub Actions inputs → runtime settings.
  *
- * Actions exposes an input named `foo-bar` as `INPUT_FOO_BAR`. Everything here
+ * Actions exposes an input named `foo-bar` as `INPUT_FOO-BAR` — it uppercases
+ * and replaces spaces, but keeps dashes. Everything here
  * is optional: with no inputs at all the behaviour is exactly the pre-existing
  * default, so adding this can't change how existing workflows run.
  *
@@ -31,10 +32,28 @@ export interface ActionInputs {
   skillsPath?: string;
 }
 
+/**
+ * Read one Action input.
+ *
+ * The runner sets `INPUT_VERTEX-CREDENTIALS-JSON` — uppercased, spaces to
+ * underscores, dashes kept. This looked for the all-underscore spelling, which
+ * the runner never sets, so every multi-word input was silently empty: a
+ * workflow passing `vertex-credentials-json:` got "Missing credentials" and no
+ * hint as to why. The underscore form is still accepted for anyone who worked
+ * around it by exporting the variable by hand.
+ */
 function input(name: string, env: NodeJS.ProcessEnv): string | undefined {
-  const key = `INPUT_${name.toUpperCase().replace(/-/g, '_')}`;
-  const v = env[key];
-  return v && v.trim() ? v.trim() : undefined;
+  const upper = name.toUpperCase();
+  for (const key of [`INPUT_${upper}`, `INPUT_${upper.replace(/-/g, '_')}`]) {
+    const v = env[key];
+    if (v && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
+/** The same lookup, for callers outside this module. */
+export function actionInput(name: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return input(name, env);
 }
 
 function num(v: string | undefined): number | undefined {
