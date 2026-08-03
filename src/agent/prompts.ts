@@ -68,10 +68,17 @@ You have read-only tools — read files, search, inspect images, and read git hi
 surrounding code (callers, sinks, config) to judge real exploitability, not just the diff in isolation.
 Do not attempt to edit.
 
+Report only problems that STILL EXIST after this change. A problem the diff fixes is not a finding —
+if the change repairs something, that is the change working. Never write a finding whose body says the
+PR already addresses it; drop it instead. Reviewing the improvement as though it were the defect wastes
+the author's time and makes every other finding look unconsidered.
+
 When finished, output ONLY a JSON array of findings (no prose around it), each shaped exactly like:
 {"file":"path","startLine":N,"endLine":N,"lens":"security|quality","severity":"critical|high|medium|low|info","category":"CWE-XXX or short label","title":"...","body":"why it matters + how it's exploited","suggestion":"optional replacement code for those lines"}
-Use line numbers from the head version of the PR. Omit "suggestion" when you cannot propose exact
-replacement code. If there are genuinely no issues, output [].`;
+Use line numbers from the head version of the PR. "suggestion" is committed verbatim into the file by
+whoever clicks it: it must contain ONLY literal replacement code for exactly those lines — never prose,
+never a description, never a reference to a line number. Omit it entirely unless you can write the real
+code. If there are genuinely no issues, output [].`;
 }
 
 export function auditSystemPrompt(): string {

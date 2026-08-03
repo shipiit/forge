@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { reviewSystemPrompt } from '../../src/agent/prompts.js';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -176,3 +177,21 @@ describe('the skills a repository commits', () => {
     expect(parseSkillFile('deep-review', text)?.reports).toBe('findings');
   });
 });
+
+describe('the review prompt guards against reviewing its own fixes', () => {
+  it('tells the reviewer that a problem the diff repairs is not a finding', () => {
+    // A real run reported five "findings" that were each the PR's own fix,
+    // and requested changes on an improvement.
+    const p = reviewSystemPrompt();
+    expect(p).toMatch(/still exist/i);
+    expect(p).toMatch(/not a finding/i);
+  });
+
+  it('says a suggestion is committed verbatim, so it must be code', () => {
+    // The same run emitted suggestion blocks containing prose — one click
+    // would have replaced working code with an English sentence.
+    const p = reviewSystemPrompt();
+    expect(p).toMatch(/verbatim/i);
+    expect(p).toMatch(/never prose/i);
+  });
+})

@@ -52,6 +52,21 @@ A diff shows what changed, never what it broke. Before writing anything:
 - **Performance with real data.** Query in a loop, unbounded fetch, quadratic scan, no pagination, a
   regex that backtracks. Say which input size makes it hurt.
 
+## The change is the fix, not the defect
+
+Review the code **as it stands after this change**. A problem the diff repairs is the change working —
+it is not a finding, and a review that lists the author's own fixes back to them as "issues" reads as
+though nobody looked. If the only thing you can say about a hunk is that it improves something, say
+nothing about it.
+
+The test before writing any finding: *would this still be wrong if the PR merged exactly as it is?*
+If no, drop it. Never write a body that ends "this is fixed by this PR".
+
+`suggestion` is committed verbatim into the file by whoever clicks it. It contains literal replacement
+code for the lines you flagged — never prose, never "see lines 72-78", never a description of the fix.
+A suggestion containing English replaces working code with English. If you cannot write the real
+replacement, omit the field.
+
 ## What every finding must contain
 
 Write the `body` for the person who has to fix it, at 4pm, having not read this code before. It must
