@@ -34,7 +34,14 @@ export type Route =
   | ({ kind: 'fix'; issueNumber: number; issueTitle: string; issueBody: string | null } & RepoBits)
   | ({ kind: 'review'; pullNumber: number; securityOnly: boolean; subscribe?: boolean } & RepoBits)
   | ({ kind: 'followup'; pullNumber: number; question: string } & RepoBits)
-  | ({ kind: 'mention'; issueNumber: number; question: string } & RepoBits)
+  | ({
+      kind: 'mention';
+      issueNumber: number;
+      question: string;
+      /** The thread's own text — the agent has no tool for fetching it. */
+      issueTitle?: string;
+      issueBody?: string | null;
+    } & RepoBits)
   | ({ kind: 'audit'; issueNumber: number; ref: string } & RepoBits)
   | ({ kind: 'history'; pullNumber?: number; title: string; ref: string } & RepoBits)
   | ({ kind: 'release'; tag: string; releaseId: number } & RepoBits)
@@ -102,8 +109,15 @@ export function routeEvent(eventName: string, payload: any, opts: RouteOpts): Ro
     case 'issue_comment': {
       if (action !== 'created') return { kind: 'none', reason: 'not a new comment' };
       const issue = payload.issue;
-      const body: string = (payload.comment?.body ?? '').trim();
+      const raw: string = (payload.comment?.body ?? '').trim();
       const isPr = Boolean(issue?.pull_request);
+
+      // "@forge /fix" is how people actually ask — address the agent, then say
+      // what you want. Commands were only recognised at the very start of a
+      // comment, so the mention swallowed them and `/fix` came out the other
+      // end looking like the name of a skill nobody had written.
+      const mentioned = raw.toLowerCase().startsWith(opts.mentionHandle.toLowerCase());
+      const body = mentioned ? stripMention(raw, opts.mentionHandle) : raw;
 
       if (/^\/fix\b/i.test(body) && !isPr) {
         return { kind: 'fix', ...bits, issueNumber: issue.number, issueTitle: issue.title, issueBody: issue.body ?? null };
@@ -118,20 +132,26 @@ export function routeEvent(eventName: string, payload: any, opts: RouteOpts): Ro
         return { kind: 'routine', ...bits, routine: run.name, args: run.args, issueNumber: issue.number };
       }
 
-      // A review command, with or without the mention prefix.
-      const withoutMention = body.toLowerCase().startsWith(opts.mentionHandle.toLowerCase())
-        ? stripMention(body, opts.mentionHandle)
-        : body;
-      const cmd = parseReviewCommand(withoutMention);
+      const cmd = parseReviewCommand(body);
       if (isPr && cmd) {
         return { kind: 'review', ...bits, pullNumber: issue.number, securityOnly: cmd.securityOnly, subscribe: cmd.subscribe };
       }
 
-      if (body.toLowerCase().includes(opts.mentionHandle.toLowerCase())) {
-        const question = stripMention(body, opts.mentionHandle) || 'Please help with this thread.';
+      if (mentioned || raw.toLowerCase().includes(opts.mentionHandle.toLowerCase())) {
+        const question = (mentioned ? body : stripMention(raw, opts.mentionHandle)) || 'Please help with this thread.';
         return isPr
           ? { kind: 'followup', ...bits, pullNumber: issue.number, question }
-          : { kind: 'mention', ...bits, issueNumber: issue.number, question };
+          : {
+              kind: 'mention',
+              ...bits,
+              issueNumber: issue.number,
+              question,
+              // The agent has no tool for reading the thread it was called
+              // into. Without these it answers "I need more information" to a
+              // question about an issue it cannot see.
+              issueTitle: issue.title ?? '',
+              issueBody: issue.body ?? null,
+            };
       }
       return { kind: 'none', reason: 'comment had no command or mention' };
     }

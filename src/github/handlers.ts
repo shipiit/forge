@@ -907,14 +907,32 @@ async function doPrFollowup(
 /** Respond to an @mention with a contextual reply (read-only). */
 export function handleMention(
   deps: HandlerDeps,
-  args: { owner: string; repo: string; issueNumber: number; question: string; defaultBranch: string },
+  args: {
+    owner: string;
+    repo: string;
+    issueNumber: number;
+    question: string;
+    defaultBranch: string;
+    /** The thread's own text. Without it the agent is answering blind. */
+    issueTitle?: string;
+    issueBody?: string | null;
+  },
 ): Promise<void> {
   return withLock(`mention:${args.owner}/${args.repo}#${args.issueNumber}`, deps.log, () => doMention(deps, args));
 }
 
 async function doMention(
   deps: HandlerDeps,
-  args: { owner: string; repo: string; issueNumber: number; question: string; defaultBranch: string },
+  args: {
+    owner: string;
+    repo: string;
+    issueNumber: number;
+    question: string;
+    defaultBranch: string;
+    /** The thread's own text. Without it the agent is answering blind. */
+    issueTitle?: string;
+    issueBody?: string | null;
+  },
 ): Promise<void> {
   const { octokit, client, token, log } = deps;
   const ws = await (deps.workspace ?? realWorkspace).clone({ owner: args.owner, repo: args.repo, ref: args.defaultBranch }, token);
@@ -943,7 +961,21 @@ async function doMention(
     const result = await runAgent({
       client,
       system,
-      initialContent: [{ type: 'text', text: repoMap }, { type: 'text', text: args.question }],
+      initialContent: [
+        { type: 'text', text: repoMap },
+        // The agent has no tool for reading the issue it was mentioned on, so
+        // without this it answers "I need more information" to a question
+        // about a thread sitting right in front of the person who asked.
+        ...(args.issueTitle || args.issueBody
+          ? [
+              {
+                type: 'text' as const,
+                text: `The thread you were called into — issue #${args.issueNumber}: ${args.issueTitle ?? ''}\n\n${args.issueBody ?? '(no description)'}`,
+              },
+            ]
+          : []),
+        { type: 'text', text: args.question },
+      ],
       tools: pick(deps, selectTools(reviewToolset(), { allowed: skill?.tools ?? [] })),
       limits: limitsFor(deps),
       cwd: ws.dir,

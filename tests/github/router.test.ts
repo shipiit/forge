@@ -51,3 +51,45 @@ describe('routeEvent', () => {
     expect(routeEvent('issues', { action: 'opened' }, opts)).toMatchObject({ kind: 'none' }); // no repository
   });
 });
+
+describe('commands addressed to the agent by name', () => {
+  const comment = (body: string, opts: Record<string, unknown> = {}) =>
+    routeEvent(
+      'issue_comment',
+      {
+        action: 'created',
+        comment: { body },
+        issue: { number: 7, title: 'Broken', body: 'It breaks.' },
+        repository: { owner: { login: 'o' }, name: 'r', default_branch: 'main' },
+        ...opts,
+      } as never,
+      { mentionHandle: '@shipit-forge', autoFix: 'label', autoReview: 'always', reviewBehavior: 'comment', filters: {}, historyEnabled: false } as never,
+    );
+
+  it('runs /fix when it is addressed to the agent first', () => {
+    // "@forge /fix" is how people actually ask. It used to fall through to the
+    // mention handler, which read `/fix` as the name of a skill and replied
+    // "No skill named /fix" with a list of skills.
+    expect(comment('@shipit-forge /fix').kind).toBe('fix');
+    expect(comment('/fix').kind).toBe('fix');
+  });
+
+  it('runs the other commands after a mention too', () => {
+    expect(comment('@shipit-forge /audit').kind).toBe('audit');
+    expect(comment('@ShipIT-Forge /fix please').kind).toBe('fix');
+  });
+
+  it('still treats a plain mention as a question', () => {
+    const r = comment('@shipit-forge what does this do?');
+    expect(r.kind).toBe('mention');
+    expect('question' in r && r.question).toBe('what does this do?');
+  });
+
+  it('hands the thread text to a mention, so it is not answering blind', () => {
+    // Without these the agent replies "I need more information" about an issue
+    // that is sitting directly above the comment.
+    const r = comment('@shipit-forge diagnose this');
+    expect('issueTitle' in r && r.issueTitle).toBe('Broken');
+    expect('issueBody' in r && r.issueBody).toBe('It breaks.');
+  });
+});
