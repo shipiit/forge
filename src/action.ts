@@ -35,7 +35,7 @@ import { resolveHost } from './github/host.js';
  * matching handler using the workflow's GITHUB_TOKEN.
  */
 async function main(): Promise<void> {
-  const token = process.env.GITHUB_TOKEN || process.env.INPUT_GITHUB_TOKEN;
+  const token = process.env.GITHUB_TOKEN || actionInput('github-token');
   const eventName = process.env.GITHUB_EVENT_NAME;
   const eventPath = process.env.GITHUB_EVENT_PATH;
   if (!token) throw new Error('GITHUB_TOKEN is required (pass `github-token` input or env).');
@@ -46,8 +46,12 @@ async function main(): Promise<void> {
 
   // If a GitHub App's credentials are provided, act AS the app (its bot identity +
   // permissions, like Claude's app). Otherwise fall back to the workflow token.
-  const appId = process.env.APP_ID || process.env.INPUT_APP_ID;
-  const privateKey = (process.env.PRIVATE_KEY || process.env.INPUT_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  // Same input-name bug as the credentials: these read the all-underscore
+  // spelling the runner never sets, so `app-id:`/`private-key:` in a workflow
+  // did nothing and every comment came from github-actions[bot] instead of the
+  // App — configured, and silently ignored.
+  const appId = process.env.APP_ID || actionInput('app-id');
+  const privateKey = (process.env.PRIVATE_KEY || actionInput('private-key') || '').replace(/\\n/g, '\n');
   let effectiveToken = token;
   if (appId && privateKey && repoOwner && repoName) {
     try {

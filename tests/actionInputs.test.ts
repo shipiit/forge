@@ -42,3 +42,18 @@ describe('the env var names the runner actually sets', () => {
     expect(actionInput('provider', { INPUT_PROVIDER: 'vertex' } as NodeJS.ProcessEnv)).toBe('vertex');
   });
 });
+
+describe('the inputs that decide who the review comes from', () => {
+  it('reads app-id and private-key under the runner spelling', () => {
+    // These had the same underscore bug as the credentials, so `app-id:` in a
+    // workflow did nothing and every review was posted by github-actions[bot]
+    // rather than by the app — configured, and silently ignored.
+    const env = { 'INPUT_APP-ID': '12345', 'INPUT_PRIVATE-KEY': '-----BEGIN RSA PRIVATE KEY-----' } as NodeJS.ProcessEnv;
+    expect(actionInput('app-id', env)).toBe('12345');
+    expect(actionInput('private-key', env)).toContain('BEGIN RSA PRIVATE KEY');
+  });
+
+  it('reads github-token under the runner spelling', () => {
+    expect(actionInput('github-token', { 'INPUT_GITHUB-TOKEN': 'ghs_x' } as NodeJS.ProcessEnv)).toBe('ghs_x');
+  });
+});

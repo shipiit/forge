@@ -22,6 +22,12 @@
 #   VERTEX_LOCATION  region, e.g. us-central1
 #   VERTEX_MODEL     e.g. gemini-2.5-pro, or gemini-2.5-flash for cheaper runs
 #
+# Optional, and worth adding — without them every review is posted by
+# "github-actions[bot]" rather than by your app:
+#
+#   FORGE_APP_ID       the GitHub App's numeric id (Settings → Developer settings)
+#   FORGE_PRIVATE_KEY  that app's private key, the whole PEM including headers
+#
 # Using a different provider? Add its key as a secret and swap the two marked
 # lines below:
 #
@@ -124,6 +130,12 @@ jobs:
           provider: vertex # ← swap for another provider
           vertex-credentials-json: ${{ secrets.VERTEX_SA_JSON }} # ← swap for that provider's key
           github-token: ${{ github.token }}
+          # Optional. With these, comments and reviews come from your GitHub
+          # App — "ShipIT Forge" — instead of github-actions[bot], which is
+          # what the identity on a review should say. Without them it still
+          # works, just under the runner's own bot.
+          app-id: ${{ secrets.FORGE_APP_ID }}
+          private-key: ${{ secrets.FORGE_PRIVATE_KEY }}
           # The committed skill in .forge/skills/deep-review.md — how deep to
           # look and what a finding must contain lives there, in review, rather
           # than in this file.

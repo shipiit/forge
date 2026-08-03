@@ -52,6 +52,18 @@ const SECURITY_CHECKLIST = `Hunt aggressively for vulnerabilities across these c
 - ReDoS (CWE-1333), unbounded resource use / DoS, integer/overflow issues.
 - Vulnerable or pinned-vulnerable dependencies (check manifests + lockfiles).
 - Missing input validation, improper error handling that leaks internals.
+- Secret leakage on every path out: logs, error messages, stack traces, HTTP responses, URLs and
+  query strings, analytics, crash reports, cache keys, git history, build artifacts, container
+  layers, and anything echoed into CI output. A token in a log is a token that is gone.
+- Supply chain: unpinned or mutable dependency refs, a CI action pinned to a moving tag, install
+  scripts, lockfile drift, typosquat-shaped names, and any workflow where untrusted input reaches a
+  job that holds secrets or write permission.
+- Tenancy and data separation: a query, cache key, file path or storage prefix missing the tenant or
+  user id, so one account can read another's rows.
+- Rate limiting and cost: an expensive or unbounded operation reachable without a limit — model
+  calls, exports, report generation. On a metered API this is a financial vulnerability.
+- Privacy: personal data stored, logged, or sent to a third party without need; retention with no
+  expiry; identifiers where a hash would do.
 For each finding: assign severity, name the CWE/category, explain the exploit/impact concretely, and
 give a precise fix (with a code suggestion when you can). Do not report style as "security". Be
 thorough but precise — no false positives; if uncertain, mark it lower severity and say why.`;
