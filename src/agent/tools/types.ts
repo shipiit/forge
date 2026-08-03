@@ -34,8 +34,8 @@ export interface Tool {
 }
 
 /** Convenience: wrap a string as a single text content part. */
-export function textPart(text: string): ContentPart[] {
-  return [{ type: 'text', text }];
+export function textPart(text: string, isError = false): ContentPart[] {
+  return [{ type: 'text', text, isError }];
 }
 
 /**

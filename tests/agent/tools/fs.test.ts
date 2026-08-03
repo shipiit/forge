@@ -20,7 +20,7 @@ describe('fs tools', () => {
   it('write_file then read_file round-trips', async () => {
     await writeFile.run({ path: 'a.txt', content: 'HELLO' }, ctx);
     const out = await readFile.run({ path: 'a.txt' }, ctx);
-    expect(out[0]).toEqual({ type: 'text', text: 'HELLO' });
+    expect(out[0]).toEqual({ type: 'text', text: 'HELLO', isError: false });
   });
 
   it('write_file creates nested directories', async () => {
@@ -32,7 +32,7 @@ describe('fs tools', () => {
     await writeFile.run({ path: 'c.txt', content: 'one two three' }, ctx);
     await editFile.run({ path: 'c.txt', old_string: 'two', new_string: 'TWO' }, ctx);
     const out = await readFile.run({ path: 'c.txt' }, ctx);
-    expect(out[0]).toEqual({ type: 'text', text: 'one TWO three' });
+    expect(out[0]).toEqual({ type: 'text', text: 'one TWO three', isError: false });
   });
 
   it('edit_file refuses a non-unique old_string', async () => {
@@ -53,7 +53,7 @@ describe('fs tools', () => {
     await writeFile.run({ path: 'f.txt', content: '1' }, ctx);
     await fs.mkdir(path.join(dir, 'sub'));
     const out = await listDir.run({ path: '.' }, ctx);
-    expect(out[0]).toEqual({ type: 'text', text: 'f.txt\nsub/' });
+    expect(out[0]).toEqual({ type: 'text', text: 'f.txt\nsub/', isError: false });
   });
 
   it('read_image returns an image part and base64 for a png', async () => {

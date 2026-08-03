@@ -39,7 +39,7 @@ describe('config', () => {
 
   it('tolerates null/garbage raw config', () => {
     expect(mergeConfig(null).triggerLabel).toBe('agent-fix');
-    expect(mergeConfig('not an object').autoFix).toBe('label');
+    expect(mergeConfig('not an object').autoFix).toBe('off');
   });
 });
 

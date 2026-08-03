@@ -72,7 +72,7 @@ export async function runCommand(
     if (body.length > MAX_OUTPUT_CHARS) {
       body = body.slice(0, MAX_OUTPUT_CHARS) + `\n... (output truncated at ${MAX_OUTPUT_CHARS} chars)`;
     }
-    return textPart(`exit_code: ${exitCode}\n${body}`);
+    return textPart(`exit_code: ${exitCode}\n${body}`, exitCode !== 0);
   } catch (err) {
     if (timedOut) {
       return [{ type: 'tool_result', toolCallId: '', content: `Command timed out after ${timeoutMs}ms: ${command}`, isError: true }];
