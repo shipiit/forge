@@ -129,6 +129,23 @@ CREATE TABLE IF NOT EXISTS findings (
 CREATE INDEX IF NOT EXISTS findings_run ON findings (run_id);
 CREATE INDEX IF NOT EXISTS findings_sev ON findings (severity, lens);
 `,
+
+  // 2 — what a run produced
+  `
+CREATE TABLE IF NOT EXISTS outputs (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  -- commit | pull_request | issue | comment | branch | file | release
+  kind            TEXT NOT NULL,
+  -- The sha, number, path — whatever identifies it on the other side.
+  ref             TEXT,
+  url             TEXT,
+  title           TEXT,
+  created_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS outputs_run  ON outputs (run_id);
+CREATE INDEX IF NOT EXISTS outputs_kind ON outputs (kind, created_at DESC);
+`,
 ];
 
 /** The schema version this build expects. */

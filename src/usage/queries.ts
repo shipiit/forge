@@ -22,6 +22,7 @@ export interface Window {
   owner?: string;
   repo?: string;
   flow?: string;
+  skill?: string;
   status?: string;
   model?: string;
 }
@@ -60,6 +61,7 @@ export function where(w: Window, now: number, prefix = 'runs.'): { sql: string; 
     ['owner', w.owner],
     ['repo', w.repo],
     ['flow', w.flow],
+    ['skill', w.skill],
     ['status', w.status],
     ['model', w.model],
   ] as const) {
@@ -244,9 +246,12 @@ export function runs(db: DatabaseSync, w: Window & { limit?: number; before?: st
     params.push(w.before);
   }
   if (w.q) {
-    extra.push('(repo LIKE ? OR owner LIKE ? OR actor LIKE ? OR error LIKE ?)');
+    // Everything a person might type into one box: where it ran, who set it
+    // off, what it was doing, and what went wrong.
+    const columns = ['repo', 'owner', 'actor', 'error', 'skill', 'routine', 'flow', 'trigger', 'model'];
+    extra.push(`(${columns.map((c) => `${c} LIKE ?`).join(' OR ')})`);
     const like = `%${w.q}%`;
-    params.push(like, like, like, like);
+    params.push(...columns.map(() => like));
   }
   const clause = extra.length ? `${sql ? `${sql} AND` : 'WHERE'} ${extra.join(' AND ')}` : sql;
   const limit = Math.min(200, Math.max(1, w.limit ?? 50));
@@ -263,6 +268,7 @@ export function runDetail(db: DatabaseSync, id: string): Row | undefined {
     tools: all(db, `SELECT * FROM tool_calls WHERE run_id = ? ORDER BY id`, [id]),
     findings: all(db, `SELECT * FROM findings WHERE run_id = ? ORDER BY severity`, [id]),
     artifacts: all(db, `SELECT id, kind, bytes, created_at FROM artifacts WHERE run_id = ?`, [id]),
+    outputs: all(db, `SELECT kind, ref, url, title, created_at FROM outputs WHERE run_id = ? ORDER BY created_at`, [id]),
   };
 }
 
@@ -272,6 +278,7 @@ export function facets(db: DatabaseSync, now = Date.now()): Row {
     all(db, `SELECT DISTINCT ${col} v FROM runs WHERE ${col} IS NOT NULL ORDER BY v`, []).map((r) => r.v);
   return {
     flows: distinct('flow'),
+    skills: distinct('skill'),
     models: distinct('model'),
     repos: all(db, `SELECT DISTINCT owner || '/' || repo v FROM runs ORDER BY v`, []).map((r) => r.v),
     statuses: distinct('status'),
@@ -347,6 +354,22 @@ export function toolErrors(db: DatabaseSync, w: Window & { limit?: number; name?
        FROM tool_calls t JOIN runs r ON r.id = t.run_id
       WHERE ${clauses.join(' AND ')}
       ORDER BY r.started_at DESC LIMIT ${limit}`,
+    params,
+  );
+}
+
+/** Everything the agent produced — commits, PRs, issues — newest first. */
+export function outputs(db: DatabaseSync, w: Window & { kind?: string; limit?: number }, now = Date.now()): Row[] {
+  const { sql, params } = where(w, now, 'r.');
+  const clause = w.kind ? `${sql ? `${sql} AND` : 'WHERE'} o.kind = ?` : sql;
+  if (w.kind) params.push(w.kind);
+  const limit = Math.min(500, Math.max(1, w.limit ?? 100));
+  return all(
+    db,
+    `SELECT o.kind, o.ref, o.url, o.title, o.created_at,
+            r.id run_id, r.owner, r.repo, r.flow, r.actor, r.model, r.usd, r.started_at
+       FROM outputs o JOIN runs r ON r.id = o.run_id ${clause}
+      ORDER BY o.created_at DESC LIMIT ${limit}`,
     params,
   );
 }

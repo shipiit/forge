@@ -3,6 +3,8 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SQLiteRecorder } from '../../src/usage/sqlite.js';
+import type { RunMeta } from '../../src/usage/types.js';
+import { startDashboard } from '../../src/usage/serve.js';
 import { serveUsage, authorized, windowFrom } from '../../src/usage/api.js';
 import { summary, breakdown, toolStats, runs } from '../../src/usage/queries.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -34,30 +36,36 @@ function fakeRes() {
 
 const req = (url: string, headers: Record<string, string> = {}) => ({ url, headers }) as unknown as IncomingMessage;
 
-const call = async (url: string, token?: string, headers?: Record<string, string>) => {
+const TOKEN = 'test-token';
+
+/** Reads authenticate by default; the gate itself is tested explicitly. */
+const call = async (url: string, token = TOKEN, headers?: Record<string, string>) => {
   const res = fakeRes();
   const handled = await serveUsage(
-    { db: rec.database, artifactDir: path.join(dir, 'artifacts'), ...(token ? { token } : {}), now: () => T0 + DAY },
-    req(url, headers ?? {}),
+    { db: rec.database, artifactDir: path.join(dir, 'artifacts'), token, now: () => T0 + DAY },
+    req(url, headers ?? { authorization: `Bearer ${TOKEN}` }),
     res as unknown as ServerResponse,
   );
   return { handled, status: res.status, headers: res.headers, body: res.body, json: () => JSON.parse(res.body || '{}') };
 };
 
+const meta = (over: Partial<RunMeta> = {}): RunMeta => ({
+  host: 'github.com',
+  owner: 'acme',
+  repo: 'web',
+  surface: 'app',
+  flow: 'review',
+  trigger: 'pull_request.opened',
+  provider: 'anthropic',
+  model: 'claude-sonnet-4-5',
+  prNumber: 3,
+  actor: 'octocat',
+  startedAt: T0,
+  ...over,
+});
+
 async function seed() {
-  const id = await rec.startRun({
-    host: 'github.com',
-    owner: 'acme',
-    repo: 'web',
-    surface: 'app',
-    flow: 'review',
-    trigger: 'pull_request.opened',
-    provider: 'anthropic',
-    model: 'claude-sonnet-4-5',
-    prNumber: 3,
-    actor: 'octocat',
-    startedAt: T0,
-  });
+  const id = await rec.startRun(meta());
   await rec.recordTurn(id, { idx: 1, startedAt: T0, latencyMs: 800, usage: { inputTokens: 900, outputTokens: 120, cacheReadTokens: 4000 }, stopReason: 'end' });
   await rec.recordTool(id, { turnIdx: 1, name: 'read_file', durationMs: 4, ok: true, outputBytes: 200 });
   await rec.recordTool(id, { turnIdx: 1, name: 'run_tests', durationMs: 30_000, ok: false, error: 'timed out' });
@@ -89,7 +97,7 @@ describe('the access gate', () => {
   it('refuses every route without the token', async () => {
     await seed();
     for (const route of ['/', '/api/summary', '/api/runs', '/api/facets']) {
-      const res = await call(route, 'secret');
+      const res = await call(route, 'secret', {});
       expect(res.status, route).toBe(401);
     }
   });
@@ -97,7 +105,7 @@ describe('the access gate', () => {
   it('accepts the token as a header or, for the page link, a query parameter', async () => {
     await seed();
     expect((await call('/api/summary', 'secret', { authorization: 'Bearer secret' })).status).toBe(200);
-    expect((await call('/api/summary?token=secret', 'secret')).status).toBe(200);
+    expect((await call('/api/summary?token=secret', 'secret', {})).status).toBe(200);
   });
 
   it('does not accept a prefix of the token', async () => {
@@ -105,10 +113,12 @@ describe('the access gate', () => {
     expect(authorized(req('/', {}), new URL('http://x/?token=secretlonger'), 'secret')).toBe(false);
   });
 
-  it('is open only when the caller deliberately configured no token', async () => {
-    // The standalone dashboard binds to loopback in that case; the App refuses
-    // to mount at all.
-    expect(authorized(req('/', {}), new URL('http://x/'), undefined)).toBe(true);
+  it('fails closed when no token is configured at all', async () => {
+    // An empty token is a misconfiguration, not permission. Nothing in the
+    // codebase can construct an unauthenticated server: the standalone one
+    // generates a token, and the App refuses to mount without one.
+    expect(authorized(req('/', {}), new URL('http://x/'), '')).toBe(false);
+    expect(authorized(req('/', { authorization: 'Bearer anything' }), new URL('http://x/'), '')).toBe(false);
   });
 });
 
@@ -216,5 +226,149 @@ describe('aggregates', () => {
     await seed();
     expect(runs(rec.database, { q: 'octocat' }, T0 + DAY)).toHaveLength(1);
     expect(runs(rec.database, { q: 'nobody' }, T0 + DAY)).toHaveLength(0);
+  });
+});
+
+describe('what a run produced', () => {
+  it('records commits, pull requests and issues against the run', async () => {
+    const id = await seed();
+    await rec.recordOutput(id, { kind: 'pull_request', ref: '3', url: 'https://github.com/acme/web/pull/3', title: 'Fix: crash' });
+    await rec.recordOutput(id, { kind: 'commit', ref: 'forge/issue-1', title: 'fix: handle empty input' });
+    await rec.recordOutput(id, { kind: 'issue', ref: '9', url: 'https://github.com/acme/web/issues/9', title: 'SQLi in query.ts' });
+
+    const detail = (await call(`/api/runs/${id}`)).json();
+    expect(detail.outputs.map((o: { kind: string }) => o.kind)).toEqual(['pull_request', 'commit', 'issue']);
+
+    const list = (await call('/api/outputs')).json();
+    expect(list).toHaveLength(3);
+    // The listing carries the run's context, so it reads without a second call.
+    expect(list[0].owner).toBe('acme');
+    expect(list[0].flow).toBe('review');
+  });
+
+  it('filters outputs by kind', async () => {
+    const id = await seed();
+    await rec.recordOutput(id, { kind: 'commit', ref: 'abc123' });
+    await rec.recordOutput(id, { kind: 'issue', ref: '9' });
+    expect((await call('/api/outputs?kind=commit')).json()).toHaveLength(1);
+    expect((await call('/api/outputs?kind=release')).json()).toHaveLength(0);
+  });
+
+  it('drops them with the run they belong to', async () => {
+    const id = await seed();
+    await rec.recordOutput(id, { kind: 'commit', ref: 'abc123' });
+    rec.database.prepare('DELETE FROM runs WHERE id = ?').run(id);
+    expect(rec.database.prepare('SELECT * FROM outputs').all()).toHaveLength(0);
+  });
+});
+
+describe('the detail lists', () => {
+  it('returns findings with the run that reported them', async () => {
+    await seed();
+    const rows = (await call('/api/findings/list')).json();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe('XSS');
+    expect(rows[0].repo).toBe('web');
+    expect(rows[0].run_id).toBeTruthy();
+  });
+
+  it('filters findings by severity', async () => {
+    await seed();
+    expect((await call('/api/findings/list?severity=high')).json()).toHaveLength(1);
+    expect((await call('/api/findings/list?severity=critical')).json()).toHaveLength(0);
+  });
+
+  it('returns each tool failure with what it said and what it was called with', async () => {
+    await seed();
+    const rows = (await call('/api/tools/errors')).json();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe('run_tests');
+    expect(rows[0].error).toContain('timed out');
+    // Successes are not failures; the point of the list is what broke.
+    expect(rows.every((r: { name: string }) => r.name !== 'read_file')).toBe(true);
+  });
+
+  it('filters failures to one tool', async () => {
+    await seed();
+    expect((await call('/api/tools/errors?name=run_tests')).json()).toHaveLength(1);
+    expect((await call('/api/tools/errors?name=read_file')).json()).toHaveLength(0);
+  });
+});
+
+describe('filtering', () => {
+  it('searches the fields a person would actually type', async () => {
+    const id = await rec.startRun({ ...meta(), skill: 'security-audit', actor: 'mona' });
+    await rec.endRun(id, { endedAt: T0 + 10, status: 'ok', iterations: 1, usage: { inputTokens: 1, outputTokens: 1 }, usd: 0, usdUncached: 0 });
+    // A skill name is the most natural thing to search for and it was not
+    // covered until the search grew past repo/actor/error.
+    expect((await call('/api/runs?q=security-audit')).json()).toHaveLength(1);
+    expect((await call('/api/runs?q=mona')).json()).toHaveLength(1);
+    expect((await call('/api/runs?q=claude')).json()).toHaveLength(1);
+  });
+
+  it('filters by skill', async () => {
+    const id = await rec.startRun({ ...meta(), skill: 'security-audit' });
+    await rec.endRun(id, { endedAt: T0 + 10, status: 'ok', iterations: 1, usage: { inputTokens: 1, outputTokens: 1 }, usd: 0, usdUncached: 0 });
+    expect((await call('/api/runs?skill=security-audit')).json()).toHaveLength(1);
+    expect((await call('/api/runs?skill=triage')).json()).toHaveLength(0);
+  });
+
+  it('offers skills as a filter value', async () => {
+    const id = await rec.startRun({ ...meta(), skill: 'security-audit' });
+    await rec.endRun(id, { endedAt: T0 + 10, status: 'ok', iterations: 1, usage: { inputTokens: 1, outputTokens: 1 }, usd: 0, usdUncached: 0 });
+    expect((await call('/api/facets')).json().skills).toEqual(['security-audit']);
+  });
+
+  it('shifts the window by its own length for a like-for-like comparison', async () => {
+    await seed();
+    // The run is inside the current window and outside the one before it.
+    expect((await call('/api/summary?days=7')).json().runs).toBe(1);
+    expect((await call('/api/summary?days=7&shift=7')).json().runs).toBe(0);
+  });
+
+  it('groups by trigger, which is how you find the expensive webhook', async () => {
+    await seed();
+    const rows = (await call('/api/breakdown?by=trigger')).json();
+    expect(rows[0].key).toBe('pull_request.opened');
+  });
+});
+
+describe('publishing the standalone dashboard', () => {
+  it('generates a token when none is configured, rather than serving open', async () => {
+    // Found by the agent auditing this very file: a dashboard with no token
+    // served repository names, actor logins and error strings to anything that
+    // could reach the port.
+    const server = await startDashboard({ file: path.join(dir, 'usage.db'), port: 4399, host: '127.0.0.1' });
+    try {
+      expect(server.generated).toBe(true);
+      expect(server.token.length).toBeGreaterThan(20);
+      expect(server.url).toContain(`token=${server.token}`);
+
+      const open = await fetch('http://127.0.0.1:4399/api/summary');
+      expect(open.status).toBe(401);
+      const authed = await fetch('http://127.0.0.1:4399/api/summary', { headers: { authorization: `Bearer ${server.token}` } });
+      expect(authed.status).toBe(200);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('keeps the configured token when there is one', async () => {
+    const server = await startDashboard({ file: path.join(dir, 'usage.db'), port: 4398, host: '127.0.0.1', token: 'chosen' });
+    try {
+      expect(server.generated).toBe(false);
+      expect(server.token).toBe('chosen');
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('binds to loopback unless told otherwise, so publishing is deliberate', async () => {
+    const server = await startDashboard({ file: path.join(dir, 'usage.db'), port: 4397 });
+    try {
+      expect(server.url).toContain('http://127.0.0.1:4397/');
+    } finally {
+      await server.close();
+    }
   });
 });

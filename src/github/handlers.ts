@@ -309,6 +309,11 @@ async function fileFindingIssues(
         labels: [FINDING_LABEL],
       });
       opened.push(res.data.html_url);
+      deps.run?.output('issue', {
+        ref: String(res.data.number),
+        url: res.data.html_url,
+        title: rollupTitle(DISPLAY, args.date, selection.selected.length),
+      });
     } else {
       for (const f of selection.selected) {
         const res = await deps.octokit.rest.issues.create({
@@ -319,6 +324,7 @@ async function fileFindingIssues(
           labels: labelsFor(f),
         });
         opened.push(res.data.html_url);
+        deps.run?.output('issue', { ref: String(res.data.number), url: res.data.html_url, title: issueTitle(f, DISPLAY) });
       }
     }
 
@@ -572,6 +578,7 @@ async function doIssueFix(
 
     const summary = cleanSummary(result.finalText);
     const committed = await wsOps.commitAll(ws, `fix: ${args.issueTitle}\n\n${summary}`.slice(0, 2000));
+    if (committed) deps.run?.output('commit', { ref: branch, title: `fix: ${args.issueTitle}`.slice(0, 200) });
     if (!committed) {
       await octokit.rest.issues.updateComment({
         owner: args.owner,
@@ -632,7 +639,7 @@ async function doIssueFix(
       base: args.defaultBranch,
       draft: testsPassed === false || selfBlocker,
     });
-    deps.run?.link(pr.url);
+    deps.run?.output('pull_request', { url: pr.url, title: `Fix: ${args.issueTitle}`.slice(0, 250) });
 
     // Update the ack comment in place — root cause + reasoning, files, verification, PR link.
     await octokit.rest.issues.updateComment({
@@ -841,6 +848,7 @@ async function doPrFollowup(
     deps.run?.add(result);
 
     const committed = await wsOps.commitAll(ws, `forge: ${args.question}`.slice(0, 200) + `\n\n${result.finalText}`.slice(0, 3000));
+    if (committed) deps.run?.output('commit', { title: `forge: ${args.question}`.slice(0, 200) });
     if (committed) {
       await wsOps.pushBranch(ws, headRef);
       await octokit.rest.issues.createComment({
@@ -1044,6 +1052,7 @@ async function doCiFailure(
     });
     deps.run?.add(result);
     const committed = await wsOps.commitAll(ws, `ci-fix: resolve failing CI on #${args.pullNumber}\n\n${cleanSummary(result.finalText, 1500)}`);
+    if (committed) deps.run?.output('commit', { ref: args.headBranch, title: `ci-fix: resolve failing CI on #${args.pullNumber}` });
     if (committed) {
       await wsOps.pushBranch(ws, args.headBranch);
       await octokit.rest.issues.updateComment({
@@ -1183,6 +1192,7 @@ async function doHistory(
     await fs.writeFile(path.join(ws.dir, target), contents, 'utf8');
 
     const committed = await wsOps.commitAll(ws, `docs: record "${args.title}" in the change history`.slice(0, 200));
+    if (committed) deps.run?.output('commit', { title: `docs: record "${args.title}" in the change history`.slice(0, 200) });
     if (!committed) {
       log('history: nothing to commit.');
       return;

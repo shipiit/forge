@@ -1,10 +1,20 @@
 import { DatabaseSync } from 'node:sqlite';
-import { promises as fs } from 'node:fs';
+import { promises as fs, mkdirSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import path from 'node:path';
 import { redactSecrets } from '../util/resilience.js';
 import { MIGRATIONS, PRAGMAS, RETENTION_DAYS, SCHEMA_VERSION } from './schema.js';
-import { newId, type ArtifactKind, type FindingRecord, type Recorder, type RunMeta, type RunOutcome, type ToolRecord, type TurnRecord } from './types.js';
+import {
+  newId,
+  type ArtifactKind,
+  type FindingRecord,
+  type OutputRecord,
+  type Recorder,
+  type RunMeta,
+  type RunOutcome,
+  type ToolRecord,
+  type TurnRecord,
+} from './types.js';
 
 /**
  * SQLite-backed recorder.
@@ -22,6 +32,11 @@ export class SQLiteRecorder implements Recorder {
   private now: () => number;
 
   constructor(opts: { file: string; artifactDir?: string; now?: () => number }) {
+    // SQLite will not create the directory, and the caller's failure path is a
+    // silent fall back to recording nothing — so `FORGE_USAGE_DB=.forge/usage.db`
+    // on a machine without a .forge directory looked exactly like recording
+    // being switched off.
+    mkdirSync(path.dirname(path.resolve(opts.file)), { recursive: true });
     this.db = new DatabaseSync(opts.file);
     this.db.exec(PRAGMAS);
     migrate(this.db);
@@ -142,6 +157,15 @@ export class SQLiteRecorder implements Recorder {
         );
       }
     });
+  }
+
+  async recordOutput(runId: string, o: OutputRecord): Promise<void> {
+    if (!runId) return;
+    this.safe(() =>
+      this.db
+        .prepare(`INSERT INTO outputs (id, run_id, kind, ref, url, title, created_at) VALUES (?,?,?,?,?,?,?)`)
+        .run(newId(this.now()), runId, o.kind, o.ref ?? null, o.url ?? null, o.title ? o.title.slice(0, 300) : null, this.now()),
+    );
   }
 
   /** Gzip to disk, index by path. A transcript never enters a column. */

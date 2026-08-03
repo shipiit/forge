@@ -16,6 +16,13 @@ const config: Config = {
         accentWarm: 'rgb(var(--accent-warm) / <alpha-value>)',
         forge1: 'rgb(var(--forge1) / <alpha-value>)',
         forge2: 'rgb(var(--forge2) / <alpha-value>)',
+        rail: 'rgb(var(--rail) / <alpha-value>)',
+        faint: 'rgb(var(--faint) / <alpha-value>)',
+        ok: 'rgb(var(--ok) / <alpha-value>)',
+        warn: 'rgb(var(--warn) / <alpha-value>)',
+        bad: 'rgb(var(--bad) / <alpha-value>)',
+        info: 'rgb(var(--info) / <alpha-value>)',
+        teal: 'rgb(var(--teal) / <alpha-value>)',
       },
       boxShadow: {
         glow: '0 18px 80px rgba(0,0,0,0.34)',

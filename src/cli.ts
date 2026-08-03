@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import { loadEnvFile } from './util/env.js';
+import { parseFindings, renderAuditReport } from './github/review.js';
+
 import { execa } from 'execa';
 import type { ProviderId } from './providers/types.js';
 import { createLLMClient } from './providers/index.js';
 import { runAgent, DEFAULT_MAX_OUTPUT_TOKENS } from './agent/loop.js';
 import { editToolset, reviewToolset, selectTools } from './agent/tools/registry.js';
-import { fixSystemPrompt, mentionSystemPrompt } from './agent/prompts.js';
+import { auditSystemPrompt, fixSystemPrompt, mentionSystemPrompt } from './agent/prompts.js';
 import { applySkill, renderSkillList, resolveSkills } from './agent/skills.js';
 import { createWorkspaceScanner } from './agent/tools/security.js';
 import { runSetup } from './setup.js';
@@ -14,6 +17,10 @@ import { startDashboard } from './usage/serve.js';
 import { cliRun } from './usage/cli.js';
 import { SUPPORTED_PROVIDERS } from './providers/index.js';
 import { estimateCost, formatCost } from './util/cost.js';
+
+// Before anything reads process.env: a machine configured through .env should
+// work from the command line the same way it works under the App.
+loadEnvFile();
 
 const program = new Command();
 program
@@ -36,13 +43,18 @@ program
   .option('--host <host>', 'Address to bind (loopback unless a token is set)')
   .option('--token <token>', 'Require this token on every request')
   .action(async (opts: { db: string; port: string; host?: string; token?: string }) => {
-    const { url } = await startDashboard({
+    const { url, token, generated } = await startDashboard({
       file: opts.db,
       port: Number(opts.port),
       ...(opts.host ? { host: opts.host } : {}),
       ...(opts.token ? { token: opts.token } : {}),
     });
     console.log(`\n📊 ShipIT Forge usage dashboard\n   ${url}\n`);
+    console.log(
+      generated
+        ? `   Every route requires this token: ${token}\n   Set FORGE_DASHBOARD_TOKEN to keep the same one across restarts.\n`
+        : `   Every route requires FORGE_DASHBOARD_TOKEN.\n`,
+    );
     console.log(`   Reading ${opts.db}. Set FORGE_USAGE_DB=${opts.db} on the agent to record into it.\n`);
   });
 
@@ -103,7 +115,10 @@ program
     const track = await cliRun(client, { flow: 'routine', trigger: 'forge run', repo: opts.repo, skill: skill.name });
     const result = track.add(await runAgent({
       client,
-      system: applySkill(mentionSystemPrompt(), skill, opts.task),
+      // A skill that reports findings needs the prompt that defines the finding
+      // format; without it the model answers in prose and nothing downstream —
+      // counts, issues, the dashboard — has anything to work with.
+      system: applySkill(skill.reports === 'findings' ? auditSystemPrompt() : mentionSystemPrompt(), skill, opts.task),
       initialContent: [{ type: 'text', text: opts.task || `Run the ${skill.name} skill on this repository.` }],
       tools: selectTools(base, { allowed: skill.tools ?? [] }),
       limits: { maxIterations: Number(opts.maxIterations), maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS },
@@ -114,9 +129,18 @@ program
         if (e.type === 'compacted') console.log(`   ♻️  compacted context (${e.savedChars} chars)`);
       }),
     }));
+    // A review or audit skill reports findings in its answer; parsing them here
+    // is what puts a command-line run on the findings page alongside the ones
+    // the App files as issues.
+    const findings = parseFindings(result.finalText);
+    track.findings(findings);
+    track.artifact('final_text', result.finalText);
     await track.finish();
 
-    console.log(`\n${result.finalText}\n`);
+    // Render the findings rather than printing the JSON they arrived as: the
+    // structure is for the recorder, the prose is for the person reading.
+    const structured = skill.reports === 'findings';
+    console.log(`\n${structured ? renderAuditReport(findings, 'ShipIT Forge') : result.finalText}\n`);
     console.log(`📊 ${result.iterations} iterations, stopped by: ${result.stoppedBy}`);
     console.log(`💰 ${formatCost(estimateCost(result.usage, client.model))}\n`);
   });

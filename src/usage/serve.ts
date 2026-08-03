@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
@@ -33,22 +34,33 @@ export interface DashboardOptions {
   origin?: string;
 }
 
+/** A token for a run that did not configure one. Printed, never stored. */
+export function generateToken(bytes = 24): string {
+  return randomBytes(bytes).toString('base64url');
+}
+
 /**
  * Start the standalone dashboard.
  *
- * Binds to loopback by default. Without a token these routes are readable by
- * anything that can reach the port, so the safe default is that only this
- * machine can — pass a host explicitly, with a token, to publish it.
+ * Always authenticated. When no token is configured one is generated for the
+ * lifetime of the process and printed with the URL — an unauthenticated port,
+ * even on loopback, is readable by anything else running on the machine, and
+ * "it was only local" is not a property anyone can check later.
+ *
+ * Binds to loopback unless told otherwise, so publishing it is a deliberate act.
  */
-export async function startDashboard(opts: DashboardOptions = {}): Promise<{ url: string; close: () => Promise<void> }> {
+export async function startDashboard(
+  opts: DashboardOptions = {},
+): Promise<{ url: string; token: string; generated: boolean; close: () => Promise<void> }> {
   const file = opts.file || process.env.FORGE_USAGE_DB || DEFAULT_DB;
-  const token = opts.token ?? process.env.FORGE_DASHBOARD_TOKEN;
-  const host = opts.host || (token ? '0.0.0.0' : '127.0.0.1');
+  const configured = opts.token ?? process.env.FORGE_DASHBOARD_TOKEN;
+  const token = configured || generateToken();
+  const host = opts.host || '127.0.0.1';
   const port = opts.port ?? Number(process.env.FORGE_DASHBOARD_PORT || 4300);
 
   const origin = opts.origin ?? process.env.FORGE_DASHBOARD_ORIGIN;
   const { db, artifactDir } = openUsageDb(file);
-  const api: ApiOptions = { db, artifactDir, ...(token ? { token } : {}), ...(origin ? { origin } : {}) };
+  const api: ApiOptions = { db, artifactDir, token, ...(origin ? { origin } : {}) };
 
   const server = http.createServer((req, res) => {
     void serveUsage(api, req, res).then((handled) => {
@@ -66,7 +78,9 @@ export async function startDashboard(opts: DashboardOptions = {}): Promise<{ url
 
   const shown = host === '0.0.0.0' ? 'localhost' : host;
   return {
-    url: `http://${shown}:${port}/${token ? `?token=${token}` : ''}`,
+    url: `http://${shown}:${port}/?token=${token}`,
+    token,
+    generated: !configured,
     close: () =>
       new Promise<void>((resolve) => {
         server.close(() => {

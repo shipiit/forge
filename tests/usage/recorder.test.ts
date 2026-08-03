@@ -309,3 +309,16 @@ describe('the loop-to-recorder bridge', () => {
     expect(rec0).toMatchObject({ file: 'a.ts', line: 4, severity: 'high', postedInline: true });
   });
 });
+
+describe('opening the database', () => {
+  it('creates the directory it was pointed at', async () => {
+    // The caller's failure path is a silent fall back to recording nothing, so
+    // a missing directory looked exactly like recording being switched off.
+    const nested = path.join(dir, 'deep', 'forge', 'usage.db');
+    const r = new SQLiteRecorder({ file: nested, now: () => T0 });
+    const id = await r.startRun(meta());
+    expect(id).not.toBe('');
+    await r.close();
+    await expect(fs.stat(nested)).resolves.toBeTruthy();
+  });
+});

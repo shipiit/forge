@@ -2,15 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Dark is the default and the marketing pages never leave it. Light exists for
+   the dashboard, which people keep open all day next to an editor — it opts in
+   with data-theme="light" on <html>, and every token below has a sibling. */
 :root {
   --bg: 7 7 9;
+  --canvas: 7 7 9;            /* alias of --bg, for the Tailwind `canvas` colour */
   --panel: 14 14 18;
   --panel-strong: 20 20 26;
+  --rail: 12 12 16;           /* dashboard sidebar */
   --line: 255 255 255;        /* used at low alpha */
+  --line-alpha: 0.09;         /* so hairlines can invert with the theme */
   --text: 245 246 250;
   --muted: 138 141 153;
+  --faint: 100 103 118;
   --accent: 167 139 250;      /* violet — used sparingly */
   --accent2: 236 72 153;      /* pink */
+  --accent-soft: 196 181 253;
+  --accent-warm: 251 146 60;
+  --forge1: 167 139 250;
+  --forge2: 236 72 153;
+
+  /* Status + series colours. Charts need more than one hue, and picking them
+     here keeps a legend and a pill referring to the same thing the same way. */
+  --ok: 52 211 153;
+  --warn: 251 191 36;
+  --bad: 248 113 113;
+  --info: 96 165 250;
+  --teal: 45 212 191;
+  --panel-tint: 14 14 18;     /* what .panel fills with */
+  --panel-tint-alpha: 0.8;
 
   /* Syntax tokens — derived from the palette above so code blocks track the
      brand instead of importing a stock highlighter theme. */
@@ -23,6 +44,43 @@
   --syn-prop: 249 168 212;     /* pink 300 — accent2, tinted */
   --syn-punct: 148 152 166;
   color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: 247 248 251;
+  --canvas: 247 248 251;
+  --panel: 255 255 255;
+  --panel-strong: 249 250 252;
+  --rail: 255 255 255;
+  --line: 16 20 34;           /* the hairline colour inverts, the alphas do not */
+  --line-alpha: 0.1;
+  --text: 18 21 30;
+  --muted: 100 107 124;
+  --faint: 138 145 162;
+  --accent: 106 62 232;       /* darkened: violet-400 on white fails AA */
+  --accent2: 219 39 119;
+  --accent-soft: 139 92 246;
+  --accent-warm: 217 119 6;
+  --forge1: 106 62 232;
+  --forge2: 219 39 119;
+
+  --ok: 5 150 105;
+  --warn: 176 118 8;
+  --bad: 208 48 48;
+  --info: 37 99 235;
+  --teal: 13 148 136;
+  --panel-tint: 255 255 255;
+  --panel-tint-alpha: 1;
+
+  --syn-keyword: 109 40 217;
+  --syn-string: 4 120 87;
+  --syn-number: 180 83 9;
+  --syn-comment: 120 128 146;
+  --syn-fn: 2 108 158;
+  --syn-type: 146 64 14;
+  --syn-prop: 190 24 93;
+  --syn-punct: 100 107 124;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -39,28 +97,39 @@ body {
 body::before {
   content: ''; position: fixed; inset: 0; z-index: -2; pointer-events: none;
   background:
-    radial-gradient(1200px 700px at 70% -5%, rgba(255,255,255,0.035), transparent 60%),
-    radial-gradient(900px 600px at 20% 110%, rgba(167,139,250,0.05), transparent 60%);
+    radial-gradient(1200px 700px at 70% -5%, rgb(var(--line) / 0.035), transparent 60%),
+    radial-gradient(900px 600px at 20% 110%, rgb(var(--accent) / 0.05), transparent 60%);
 }
 
 @keyframes ringpulse { 0%{transform:scale(.6);opacity:.5} 100%{transform:scale(1.6);opacity:0} }
 @keyframes floaty { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
 @keyframes spinslow { to { transform: rotate(360deg) } }
 @keyframes dotpulse { 0%,100%{opacity:.4} 50%{opacity:1} }
+@keyframes grow { from { transform: scaleX(0) } }
+@keyframes rise { from { opacity: 0; transform: translateY(6px) } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 @layer utilities {
   .animate-floaty { animation: floaty 6s cubic-bezier(.22,1,.36,1) infinite; }
   .animate-spinslow { animation: spinslow 9s linear infinite; }
   .animate-dotpulse { animation: dotpulse 2s ease-in-out infinite; }
   .text-balance { text-wrap: balance; }
-  .hairline { border-color: rgba(255,255,255,0.09); }
+  .hairline { border-color: rgb(var(--line) / var(--line-alpha)); }
 }
 
 @layer components {
   .eyebrow {
     @apply inline-flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted;
   }
-  .eyebrow::before { content: ''; width: 28px; height: 1px; background: rgba(255,255,255,0.3); display: inline-block; }
+  .eyebrow::before { content: ''; width: 28px; height: 1px; background: rgb(var(--line) / 0.3); display: inline-block; }
   /* huge two-tone display headline helpers */
   .display { font-weight: 800; letter-spacing: -0.045em; line-height: 0.98; }
   .dim { color: rgb(var(--muted)); }
@@ -68,13 +137,14 @@ body::before {
   .btn:focus-visible { outline: 2px solid rgba(255,255,255,.5); outline-offset: 3px; }
   .btn-white { @apply bg-white text-black; }
   .btn-white:hover { @apply bg-white/90; transform: translateY(-1px); }
-  .btn-line { @apply border border-white/15 text-text; }
-  .btn-line:hover { @apply border-white/35 bg-white/5; }
+  .btn-line { @apply text-text; border: 1px solid rgb(var(--line) / 0.15); }
+  .btn-line:hover { border-color: rgb(var(--line) / 0.35); background: rgb(var(--line) / 0.05); }
   .panel {
-    @apply rounded-2xl border border-white/[0.08] backdrop-blur;
-    background: rgba(14, 14, 18, 0.8);
+    @apply rounded-2xl backdrop-blur;
+    border: 1px solid rgb(var(--line) / 0.08);
+    background: rgb(var(--panel-tint) / var(--panel-tint-alpha));
   }
-  .row-line { @apply border-t border-white/[0.08]; }
+  .row-line { border-top: 1px solid rgb(var(--line) / 0.08); }
 
   /* Syntax highlighting — one class per token type, all token-driven. */
   .tok-keyword { color: rgb(var(--syn-keyword)); }

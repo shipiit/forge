@@ -22,6 +22,12 @@ export interface Skill {
   tools?: string[];
   /** True for skills that ship with forge rather than the repository. */
   builtIn?: boolean;
+  /**
+   * `findings` means this skill answers with structured findings rather than
+   * prose, so callers can parse, count, file and chart what it reported instead
+   * of storing a paragraph.
+   */
+  reports?: 'findings';
 }
 
 const READ_ONLY_TOOLS = ['read_file', 'list_dir', 'glob', 'search', 'git_history', 'read_image'];
@@ -31,6 +37,7 @@ export const BUILT_IN_SKILLS: Skill[] = [
     name: 'code-review',
     description: 'Review a change for correctness bugs, regressions, and security issues.',
     builtIn: true,
+    reports: 'findings',
     tools: READ_ONLY_TOOLS,
     prompt: `Review ONLY the code this change touches. Read surrounding code freely to judge whether an
 issue is real, but do not report problems in files the change did not modify.
@@ -90,6 +97,7 @@ the failure modes a user will actually hit. Skip anything the signature already 
     name: 'security-audit',
     description: 'Hunt for exploitable vulnerabilities and report them with CWE and severity.',
     builtIn: true,
+    reports: 'findings',
     tools: READ_ONLY_TOOLS,
     prompt: `Trace untrusted input from every entry point to every dangerous sink: HTTP handlers, CLI
 arguments, webhooks, queue consumers, and file uploads.

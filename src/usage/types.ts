@@ -98,11 +98,24 @@ export interface RunOutcome {
 
 export type ArtifactKind = 'transcript' | 'final_text' | 'diff' | 'findings';
 
+/** The kinds of thing a run leaves behind on GitHub or on disk. */
+export type OutputKind = 'commit' | 'pull_request' | 'issue' | 'comment' | 'branch' | 'file' | 'release';
+
+export interface OutputRecord {
+  kind: OutputKind;
+  /** The sha, number or path — whatever identifies it on the other side. */
+  ref?: string;
+  url?: string;
+  title?: string;
+}
+
 export interface Recorder {
   startRun(meta: RunMeta): Promise<string>;
   recordTurn(runId: string, turn: TurnRecord): Promise<void>;
   recordTool(runId: string, tool: ToolRecord): Promise<void>;
   recordFindings(runId: string, findings: FindingRecord[]): Promise<void>;
+  /** A commit, a PR, an issue — the thing a maintainer actually sees. */
+  recordOutput(runId: string, output: OutputRecord): Promise<void>;
   putArtifact(runId: string, kind: ArtifactKind, body: string): Promise<void>;
   endRun(runId: string, outcome: RunOutcome): Promise<void>;
   close?(): Promise<void>;
@@ -120,6 +133,7 @@ export const noopRecorder: Recorder = {
   async recordTurn() {},
   async recordTool() {},
   async recordFindings() {},
+  async recordOutput() {},
   async putArtifact() {},
   async endRun() {},
 };

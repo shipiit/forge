@@ -6,4 +6,16 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   base: process.env.VITE_BASE || '/',
   plugins: [react()],
+  server: {
+    proxy: {
+      // The usage dashboard reads from the agent's API (`forge dashboard`).
+      // Proxying in dev keeps it same-origin, so there is no CORS round trip
+      // and no token in a query string while developing.
+      '/usage-api': {
+        target: process.env.FORGE_API || 'http://127.0.0.1:4300',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/usage-api/, ''),
+      },
+    },
+  },
 });

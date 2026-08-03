@@ -3,7 +3,7 @@ import type { LLMClient, Usage } from '../providers/types.js';
 import type { ReviewFinding } from '../github/review.js';
 import { estimateCost } from '../util/cost.js';
 import { findingRecords, recordingListener } from './record.js';
-import { noopRecorder, type ArtifactKind, type Recorder, type RunMeta } from './types.js';
+import { noopRecorder, type ArtifactKind, type OutputKind, type Recorder, type RunMeta } from './types.js';
 
 /**
  * One run, tracked from open to close.
@@ -26,6 +26,8 @@ export interface RunTracker {
   add(result: AgentResult): AgentResult;
   findings(findings: ReviewFinding[], postedInline?: Set<string>): void;
   artifact(kind: ArtifactKind, body: string): void;
+  /** Something the run left behind: a commit, a PR, an issue, a comment. */
+  output(kind: OutputKind, about?: { ref?: string; url?: string; title?: string }): void;
   /** The PR, issue, or comment this run produced. */
   link(url: string): void;
   /** Close as deliberately-did-nothing rather than as a success. */
@@ -114,6 +116,12 @@ export async function tracked<T>(
     artifact(kind, text) {
       if (!id || !text) return;
       void recorder.putArtifact(id, kind, text);
+    },
+    output(kind, about = {}) {
+      if (!id) return;
+      void recorder.recordOutput(id, { kind, ...about });
+      // The first thing a run produces is the thing to link it to.
+      if (about.url && !resultUrl) resultUrl = about.url;
     },
     link(url) {
       resultUrl = url;

@@ -11,6 +11,7 @@ import {
   findingStats,
   findingTrend,
   findingsList,
+  outputs,
   toolErrors,
   runDetail,
   runs,
@@ -34,13 +35,14 @@ export interface ApiOptions {
   db: DatabaseSync;
   artifactDir: string;
   /**
-   * Shared secret. Every route requires it.
+   * Shared secret. Required, not optional.
    *
-   * Not optional when this is mounted on the webhook server: that host is
-   * public by definition — it is how GitHub reaches you — and these routes
-   * return repository names, actor logins, PR numbers and error strings.
+   * Every route returns repository names, actor logins, PR numbers and error
+   * strings. There is no deployment where serving that unauthenticated is the
+   * right default, so the type does not allow it — the standalone server
+   * generates one when the operator has not set one.
    */
-  token?: string;
+  token: string;
   /**
    * Origin allowed to read this API from a browser.
    *
@@ -81,8 +83,9 @@ function tokenMatches(given: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function authorized(req: IncomingMessage, url: URL, token?: string): boolean {
-  if (!token) return true; // caller decided this deployment needs no gate
+export function authorized(req: IncomingMessage, url: URL, token: string): boolean {
+  // Fail closed: an empty token is a misconfiguration, not permission.
+  if (!token) return false;
   const header = req.headers.authorization ?? '';
   const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
   // The query parameter exists so the page itself can be opened from a link;
@@ -104,6 +107,7 @@ export function windowFrom(url: URL): Window & { limit?: number; before?: string
     ...(owner ? { owner } : {}),
     ...(name ? { repo: name } : {}),
     ...(s('flow') ? { flow: s('flow') } : {}),
+    ...(s('skill') ? { skill: s('skill') } : {}),
     ...(s('status') ? { status: s('status') } : {}),
     ...(s('model') ? { model: s('model') } : {}),
     ...(s('q') ? { q: s('q') } : {}),
@@ -164,6 +168,10 @@ export async function serveUsage(opts: ApiOptions, req: IncomingMessage, res: Se
       return json(res, 200, breakdown(db, by, w, now()), cors), true;
     }
     if (route === '/api/runs') return json(res, 200, runs(db, w, now()), cors), true;
+    if (route === '/api/outputs') {
+      const kind = url.searchParams.get('kind') ?? undefined;
+      return json(res, 200, outputs(db, { ...w, ...(kind ? { kind } : {}) }, now()), cors), true;
+    }
 
     const run = route.match(/^\/api\/runs\/([\w-]+)$/);
     if (run) {
