@@ -81,18 +81,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The gate is its own job so it can say why it declined. As a one-line `if:`
+  # on the work itself, a skipped run is indistinguishable from a broken
+  # expression, and there is nothing in the log to tell them apart.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          ASSOC: ${{ github.event.comment.author_association }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+          IS_PR_COMMENT: ${{ github.event.issue.pull_request != null }}
+        run: |
+          allowed=false
+          case "$EVENT" in
+            pull_request)
+              # A fork PR gets no secrets anyway; failing on every drive-by PR
+              # is noise, so decline it quietly here instead.
+              [ "$HEAD_REPO" = "$THIS_REPO" ] && allowed=true
+              reason="head=$HEAD_REPO this=$THIS_REPO"
+              ;;
+            pull_request_review_comment)
+              case "$ASSOC" in OWNER|MEMBER|COLLABORATOR) allowed=true ;; esac
+              reason="association=$ASSOC"
+              ;;
+            issue_comment)
+              # Only comments on pull requests; plain issues are the other workflow.
+              if [ "$IS_PR_COMMENT" = "true" ]; then
+                case "$ASSOC" in OWNER|MEMBER|COLLABORATOR) allowed=true ;; esac
+              fi
+              reason="association=$ASSOC on_pull_request=$IS_PR_COMMENT"
+              ;;
+          esac
+
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+          echo "::notice::event=$EVENT $reason → allowed=$allowed"
+          if [ "$allowed" != "true" ]; then
+            echo "::notice::Declined. Same-repository pull requests, and comments from OWNER, MEMBER or COLLABORATOR only."
+          fi
+
   review:
-    # Two gates, both required on a public repository (see the note above):
-    #   1. same-repository PRs only — a fork PR gets no secrets anyway, and
-    #      failing loudly on every drive-by PR is just noise.
-    #   2. trusted authors only — OWNER, MEMBER or COLLABORATOR. Anyone else
-    #      commenting "/review" is a stranger spending your credits.
-    if: >-
-      ${{ (github.event_name == 'pull_request'
-            && github.event.pull_request.head.repo.full_name == github.repository)
-       || ((github.event_name == 'pull_request_review_comment'
-            || (github.event_name == 'issue_comment' && github.event.issue.pull_request))
-           && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) }}
+    needs: gate
+    if: needs.gate.outputs.allowed == 'true'
     runs-on: ubuntu-latest
 
     steps:
