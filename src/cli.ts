@@ -10,6 +10,8 @@ import { applySkill, renderSkillList, resolveSkills } from './agent/skills.js';
 import { createWorkspaceScanner } from './agent/tools/security.js';
 import { runSetup } from './setup.js';
 import { buildDoctorReport, renderDoctorReport } from './doctor.js';
+import { startDashboard } from './usage/serve.js';
+import { cliRun } from './usage/cli.js';
 import { SUPPORTED_PROVIDERS } from './providers/index.js';
 import { estimateCost, formatCost } from './util/cost.js';
 
@@ -24,6 +26,24 @@ program
   .description('Interactively configure a provider + credentials, saved securely to .env')
   .action(async () => {
     await runSetup(process.cwd());
+  });
+
+program
+  .command('dashboard')
+  .description('Serve the usage dashboard: every run, turn, tool call and dollar')
+  .option('--db <path>', 'Usage database file', process.env.FORGE_USAGE_DB || '.forge/usage.db')
+  .option('--port <n>', 'Port to listen on', process.env.FORGE_DASHBOARD_PORT || '4300')
+  .option('--host <host>', 'Address to bind (loopback unless a token is set)')
+  .option('--token <token>', 'Require this token on every request')
+  .action(async (opts: { db: string; port: string; host?: string; token?: string }) => {
+    const { url } = await startDashboard({
+      file: opts.db,
+      port: Number(opts.port),
+      ...(opts.host ? { host: opts.host } : {}),
+      ...(opts.token ? { token: opts.token } : {}),
+    });
+    console.log(`\n📊 ShipIT Forge usage dashboard\n   ${url}\n`);
+    console.log(`   Reading ${opts.db}. Set FORGE_USAGE_DB=${opts.db} on the agent to record into it.\n`);
   });
 
 program
@@ -80,7 +100,8 @@ program
     console.log(`\n🧩 ${skill.name} — ${skill.description}\n   repo: ${opts.repo}  provider: ${client.id}\n`);
 
     const base = opts.write ? editToolset() : reviewToolset();
-    const result = await runAgent({
+    const track = await cliRun(client, { flow: 'routine', trigger: 'forge run', repo: opts.repo, skill: skill.name });
+    const result = track.add(await runAgent({
       client,
       system: applySkill(mentionSystemPrompt(), skill, opts.task),
       initialContent: [{ type: 'text', text: opts.task || `Run the ${skill.name} skill on this repository.` }],
@@ -88,11 +109,12 @@ program
       limits: { maxIterations: Number(opts.maxIterations), maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS },
       cwd: opts.repo,
       ...(opts.write ? { security: await createWorkspaceScanner(opts.repo) } : {}),
-      onEvent: (e) => {
+      onEvent: track.listen('main', (e) => {
         if (e.type === 'tool') console.log(`   → ${e.name}`);
         if (e.type === 'compacted') console.log(`   ♻️  compacted context (${e.savedChars} chars)`);
-      },
-    });
+      }),
+    }));
+    await track.finish();
 
     console.log(`\n${result.finalText}\n`);
     console.log(`📊 ${result.iterations} iterations, stopped by: ${result.stoppedBy}`);
@@ -115,18 +137,21 @@ program
 
     console.log(`\n🔧 ShipIT Forge — fixing in ${opts.repo}\n   provider: ${client.id}  task: ${opts.task}\n`);
 
-    const result = await runAgent({
+    const track = await cliRun(client, { flow: 'fix', trigger: 'forge fix', repo: opts.repo });
+    const result = track.add(await runAgent({
       client,
       system: fixSystemPrompt(),
       initialContent: [{ type: 'text', text: opts.task }],
       tools: editToolset(),
       limits: { maxIterations: Number(opts.maxIterations), maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS },
       cwd: opts.repo,
-      onEvent: (e) => {
+      onEvent: track.listen('main', (e) => {
         if (e.type === 'tool') console.log(`   → ${e.name}(${JSON.stringify(e.args)})`);
         if (e.type === 'tool_error') console.log(`   ✗ ${e.name}: ${e.message}`);
-      },
-    });
+      }),
+    }));
+    track.artifact('final_text', result.finalText);
+    await track.finish();
 
     console.log(`\n💬 ${result.finalText}`);
     const cost = estimateCost(result.usage, client.model);

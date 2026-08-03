@@ -25,6 +25,8 @@ import { loadRepoConfig } from './github/repoConfig.js';
 import { findRoutine } from './routines.js';
 import type { OctokitLike } from './github/pr.js';
 import { redactSecrets } from './util/resilience.js';
+import { createRecorder, tracked, type Flow } from './usage/index.js';
+import { resolveHost } from './github/host.js';
 
 /**
  * GitHub Action entry point. Each org adds a workflow that runs this with their
@@ -120,6 +122,35 @@ async function main(): Promise<void> {
   };
 
   log(`ShipIT Forge: handling ${route.kind} for ${route.owner}/${route.repo} (provider: ${provider}).`);
+
+  // Recorded the same way the App records, so a workflow-driven run and a
+  // webhook-driven one land in the same dashboard. Off unless FORGE_USAGE_DB
+  // points somewhere that outlives the container.
+  await tracked(
+    {
+      recorder: createRecorder(),
+      client: deps.client,
+      meta: {
+        host: resolveHost().host,
+        owner: route.owner,
+        repo: route.repo,
+        surface: 'action',
+        flow: route.kind as Flow,
+        trigger: eventName,
+        ...(payload?.sender?.login ? { actor: payload.sender.login as string } : {}),
+        ...(inputs.skillName ? { skill: inputs.skillName } : {}),
+        ...('pullNumber' in route && route.pullNumber ? { prNumber: route.pullNumber as number } : {}),
+        ...('issueNumber' in route && route.issueNumber ? { issueNumber: route.issueNumber as number } : {}),
+      },
+    },
+    async (run) => {
+      deps.run = run;
+      await dispatchRoute();
+    },
+  );
+  log('ShipIT Forge: done.');
+
+  async function dispatchRoute(): Promise<void> {
   switch (route.kind) {
     case 'fix':
       await handleIssueFix(deps, route);
@@ -161,7 +192,7 @@ async function main(): Promise<void> {
       break;
     }
   }
-  log('ShipIT Forge: done.');
+  }
 }
 
 main().catch((err) => {

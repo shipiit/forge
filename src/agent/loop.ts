@@ -54,7 +54,17 @@ export interface RunAgentOptions {
 export type AgentEvent =
   | { type: 'iteration'; n: number }
   | { type: 'tool'; name: string; args: Record<string, unknown> }
-  | { type: 'tool_done'; name: string; turnIdx: number; durationMs: number; ok: boolean; error?: string; outputBytes: number }
+  | {
+      type: 'tool_done';
+      name: string;
+      turnIdx: number;
+      /** The call's arguments, for the record. Redacted before storage. */
+      args: Record<string, unknown>;
+      durationMs: number;
+      ok: boolean;
+      error?: string;
+      outputBytes: number;
+    }
   | { type: 'turn'; idx: number; startedAt: number; latencyMs: number; usage: Usage; stopReason: string; reasoningChars?: number }
   | { type: 'tool_error'; name: string; message: string }
   | { type: 'assistant_text'; text: string }
@@ -160,6 +170,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
           type: 'tool_done',
           name: call.name,
           turnIdx: n,
+          args: call.args,
           durationMs: Date.now() - toolStartedAt,
           ok: true,
           outputBytes: normalized.reduce((sum, p) => sum + ('content' in p ? p.content.length : 0), 0),
@@ -171,6 +182,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
           type: 'tool_done',
           name: call.name,
           turnIdx: n,
+          args: call.args,
           durationMs: Date.now() - toolStartedAt,
           ok: false,
           error: message,

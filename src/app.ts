@@ -21,6 +21,7 @@ import { findRoutine, parseRunCommand, routinesForEvent } from "./routines.js";
 import { prSubject } from "./github/router.js";
 import { resolveHost } from "./github/host.js";
 import { createRecorder, tracked, type Flow } from "./usage/index.js";
+import { mountDashboard, type RouterLike } from './usage/serve.js';
 
 // Read env lazily (inside functions): .env is loaded by Probot AFTER this module
 // is imported, so module-level reads would miss it.
@@ -120,7 +121,11 @@ function actorOf(context: Context): string | undefined {
   return p.sender?.login;
 }
 
-export default function app(probot: Probot): void {
+export default function app(probot: Probot, options: { getRouter?: (path?: string) => RouterLike } = {}): void {
+  // The usage dashboard, on the server that is already running. Gated on
+  // FORGE_DASHBOARD_TOKEN and mounted only when recording is on.
+  mountDashboard(options.getRouter, process.env, (msg) => probot.log.info(msg));
+
   // --- Analyze a new issue (default): post a detailed diagnosis comment, no PR. ---
   probot.on("issues.opened", async (context) => {
     const config = await loadConfig(context);

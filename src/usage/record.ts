@@ -40,6 +40,9 @@ export function recordingListener(
         phase,
         turnIdx: e.turnIdx,
         name: e.name,
+        // What it was called with, not just that it was called: "read_file
+        // failed" is a different fact from "read_file src/x.ts failed".
+        argsPreview: safeArgs(e.args),
         durationMs: e.durationMs,
         ok: e.ok,
         ...(e.error ? { error: e.error } : {}),
@@ -91,4 +94,14 @@ export function runMeta(
   startedAt: number,
 ): RunMeta {
   return { ...base, provider: client.id, model: client.model, startedAt };
+}
+
+/** Arguments as one line, bounded. Redaction happens at the storage layer. */
+function safeArgs(args: Record<string, unknown>): string | undefined {
+  try {
+    const text = JSON.stringify(args);
+    return text && text !== '{}' ? text.slice(0, 600) : undefined;
+  } catch {
+    return undefined; // a circular or unserialisable argument is not worth a throw
+  }
 }

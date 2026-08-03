@@ -90,6 +90,7 @@ export async function tracked<T>(
   const stops: string[] = [];
   let resultUrl: string | undefined;
   let skipped: string | undefined;
+  const transcript: unknown[] = [];
 
   const run: TrackerInternals = {
     id,
@@ -100,6 +101,10 @@ export async function tracked<T>(
       usage = accumulate(usage, result.usage);
       iterations += result.iterations;
       stops.push(result.stoppedBy);
+      // Collected rather than written per segment: every artifact of a run
+      // shares one path, so writing here would have each segment overwrite the
+      // last and leave a stale row behind for each.
+      if (id) transcript.push({ segment: stops.length, messages: result.messages, finalText: result.finalText });
       return result;
     },
     findings(findings, postedInline) {
@@ -118,6 +123,13 @@ export async function tracked<T>(
     },
     async finish(error?: unknown) {
       if (!id) return;
+      if (transcript.length) {
+        try {
+          await recorder.putArtifact(id, 'transcript', JSON.stringify(transcript));
+        } catch {
+          /* the run is the point; its transcript is a nice-to-have */
+        }
+      }
       const cost = estimateCost(usage, opts.client.model);
       const message = error instanceof Error ? error.message : error ? String(error) : undefined;
       try {
