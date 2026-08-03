@@ -67,6 +67,8 @@ always completes as `neutral` so it can't block a merge through branch protectio
 - **Cost reporting** — every comment and PR carries a footer with tokens used, how many were served from
   cache, and the estimated spend.
 - **Per-model output caps** — a shared 16k budget is clamped to what each model actually accepts.
+- **Usage recording** — opt-in, and off unless you ask for it. Every run, turn, tool call, finding and
+  transcript is written to a local SQLite file, which the [dashboard](#-usage-dashboard) reads.
 
 ### 🔒 Security
 
@@ -120,7 +122,7 @@ npm install
 # 3. Build (compiles TypeScript → dist/)
 npm run build
 
-# 4. Verify everything works (88 unit + integration tests)
+# 4. Verify everything works (546 unit + integration tests)
 npm test
 ```
 
@@ -325,6 +327,58 @@ it runs in **your** Actions with **your** key and compute. No server to host, no
 > **Action vs hosted App:** the **Action** = per-org keys, zero infra, runs in their CI. The
 > **App** (above) = one server you host and pay for, one-click install for others. Same engine.
 
+## 📊 Usage dashboard
+
+Where the money goes, which tool is slow, and why a particular run cost what it did.
+
+**Recording is opt-in and off by default** — it stores repository names, actor logins and error strings,
+which is not something to switch on for somebody without asking. Set `FORGE_USAGE_DB` (a path) or
+`FORGE_USAGE=1` on whichever surface runs the agent — the App, the Action, or the CLI — and runs start
+landing in it.
+
+```bash
+# 1. Record into a local database
+export FORGE_USAGE_DB=.forge/usage.db
+
+# 2. Serve the API (always authenticated; prints a token if you have not set one)
+npx forge dashboard --db .forge/usage.db --port 4300
+
+# 3. Open the dashboard and point it at that API under "Connection"
+#    https://shipiit.github.io/forge/dashboard
+```
+
+What it answers:
+
+| Page | Question it answers |
+|---|---|
+| **Overview** | What did this month cost, how much did caching save, what is the success rate? |
+| **Runs** | Every run, sortable, with a turn-by-turn breakdown and the full transcript. |
+| **Events** | Which trigger, surface and actor started the work — and what each one costs. |
+| **Tool reliability** | p95 latency and error rate per tool, plus every failure with what it said. |
+| **Findings** | Every finding the review and audit flows reported, by severity, lens and file. |
+
+Opening a run shows each turn's latency, tokens and **cache reads** (so you can watch the cache grow), the
+tool calls with their arguments, the findings, the commit or PR it produced, and the transcript rendered as
+a conversation rather than a wall of JSON.
+
+**Everything is token-gated.** There is no unauthenticated mode: the standalone server generates a token
+when you have not configured one and prints it with the URL, and it binds to loopback unless you say
+otherwise. To mount it on a hosted App's existing webhook server instead:
+
+```bash
+FORGE_USAGE_DB=/data/usage.db
+FORGE_DASHBOARD_TOKEN=<a long random string>   # without it, nothing is mounted at all
+FORGE_DASHBOARD_ORIGIN=https://your-site       # only if the dashboard is served elsewhere
+```
+
+It appears at `/usage` on the same host. Retention runs at startup: transcripts are kept 14 days, diffs and
+tool calls 90, and the run/turn/finding history — the trend data, and the small part — forever.
+
+**Storage**: metadata in SQLite, payloads gzipped to disk beside it. Roughly 20 KB per run, so a thousand
+runs a month is about 20 MB a year.
+
+---
+
 ## 🧩 Configuration
 
 Per-repo via `.github/agent.yml` (all optional), with env-var defaults:
@@ -379,7 +433,7 @@ issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
 ## 🧪 Testing
 
 ```bash
-npm test         # vitest — 401 unit + integration tests
+npm test         # vitest — 546 unit + integration tests
 npm run typecheck
 ```
 
@@ -411,6 +465,10 @@ PR never touched all have a test pinning the behaviour.
 - [x] GitHub Action distribution (per-org credentials, no server)
 - [x] Sub-agents — orchestrator can delegate focused subtasks (depth-bounded)
 - [x] Marketplace listing kit + privacy policy ([`deploy/MARKETPLACE.md`](./deploy/MARKETPLACE.md))
+- [x] Spend caps + per-repository rate limiting
+- [x] Findings → trackable issues, with fingerprints so a re-run does not refile them
+- [x] Review thread resolution (no duplicate comments on a re-review)
+- [x] Usage recording + dashboard (runs, turns, tools, findings, transcripts)
 - [ ] Submit the Marketplace listing (needs the public, verified, hosted App — your step)
 
 ---
