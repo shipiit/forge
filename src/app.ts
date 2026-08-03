@@ -312,7 +312,13 @@ export default function app(probot: Probot, options: { getRouter?: (path?: strin
           config,
           { flow: "mention", ...ref, issueNumber: issue.number },
           (d) =>
-            handleMention(d, { ...base, issueNumber: issue.number, question }),
+            handleMention(d, {
+            ...base,
+            issueNumber: issue.number,
+            question,
+            issueTitle: issue.title,
+            issueBody: issue.body,
+          }),
         );
       }
     }
