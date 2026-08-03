@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import path from 'node:path';
 import { redactSecrets } from '../util/resilience.js';
-import { RETENTION_DAYS, SCHEMA } from './schema.js';
+import { MIGRATIONS, PRAGMAS, RETENTION_DAYS, SCHEMA_VERSION } from './schema.js';
 import { newId, type ArtifactKind, type FindingRecord, type Recorder, type RunMeta, type RunOutcome, type ToolRecord, type TurnRecord } from './types.js';
 
 /**
@@ -23,7 +23,8 @@ export class SQLiteRecorder implements Recorder {
 
   constructor(opts: { file: string; artifactDir?: string; now?: () => number }) {
     this.db = new DatabaseSync(opts.file);
-    this.db.exec(SCHEMA);
+    this.db.exec(PRAGMAS);
+    migrate(this.db);
     this.artifactDir = opts.artifactDir ?? path.join(path.dirname(opts.file), 'artifacts');
     this.now = opts.now ?? Date.now;
   }
@@ -73,13 +74,14 @@ export class SQLiteRecorder implements Recorder {
     this.safe(() =>
       this.db
         .prepare(
-          `INSERT OR REPLACE INTO turns (id, run_id, idx, started_at, latency_ms,
+          `INSERT OR REPLACE INTO turns (id, run_id, phase, idx, started_at, latency_ms,
              input_tokens, output_tokens, cache_read, cache_write, stop_reason, reasoning_chars, retries)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           newId(t.startedAt),
           runId,
+          t.phase ?? 'main',
           t.idx,
           t.startedAt,
           t.latencyMs,
@@ -99,12 +101,13 @@ export class SQLiteRecorder implements Recorder {
     this.safe(() =>
       this.db
         .prepare(
-          `INSERT INTO tool_calls (id, run_id, turn_idx, name, args_preview, duration_ms, ok, error, output_bytes)
-           VALUES (?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO tool_calls (id, run_id, phase, turn_idx, name, args_preview, duration_ms, ok, error, output_bytes)
+           VALUES (?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           newId(this.now()),
           runId,
+          t.phase ?? 'main',
           t.turnIdx,
           t.name,
           // Tool arguments carry file paths and sometimes file contents.
@@ -211,6 +214,7 @@ export class SQLiteRecorder implements Recorder {
     try {
       for (const [kind, days] of [
         ['transcript', RETENTION_DAYS.transcript],
+        ['final_text', RETENTION_DAYS.final_text],
         ['diff', RETENTION_DAYS.diff],
         ['findings', RETENTION_DAYS.findings_artifact],
       ] as const) {
@@ -247,4 +251,22 @@ export class SQLiteRecorder implements Recorder {
   async close(): Promise<void> {
     this.safe(() => this.db.close());
   }
+}
+
+/**
+ * Run whatever migrations this database has not seen.
+ *
+ * `user_version` is a SQLite-native integer with no table of its own, which
+ * makes it the cheapest possible place to keep this.
+ */
+export function migrate(db: DatabaseSync): number {
+  const row = db.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined;
+  const at = Number(row?.user_version ?? 0);
+  for (let v = at; v < MIGRATIONS.length; v++) {
+    db.exec(MIGRATIONS[v]!);
+    // Not bindable in a PRAGMA, hence the interpolation — the value is a
+    // loop counter, never user input.
+    db.exec(`PRAGMA user_version = ${v + 1}`);
+  }
+  return SCHEMA_VERSION;
 }

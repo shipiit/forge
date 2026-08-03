@@ -1,5 +1,5 @@
 /**
- * The usage schema, as one idempotent migration.
+ * The usage schema.
  *
  * Metadata lives here; payloads do not. A transcript is 200 KB of repetitive
  * JSON and there can be one per run — putting that in a column bloats the file,
@@ -9,11 +9,24 @@
  * The practical consequence: ~20 KB of metadata per run, so a thousand runs a
  * month is ~20 MB a year. SQLite does not notice that.
  */
-export const SCHEMA = `
+
+/** Applied on every open. Connection state, not schema. */
+export const PRAGMAS = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 PRAGMA synchronous = NORMAL;
+`;
 
+/**
+ * Ordered migrations. Index + 1 is the `user_version` a database is at after
+ * running it, so an existing file only runs what it has not seen.
+ *
+ * `CREATE TABLE IF NOT EXISTS` cannot add a column to a table that already
+ * exists, so a schema change is a new entry here, never an edit to an old one.
+ */
+export const MIGRATIONS: string[] = [
+  // 1 — initial
+  `
 CREATE TABLE IF NOT EXISTS runs (
   id              TEXT PRIMARY KEY,
   started_at      INTEGER NOT NULL,
@@ -57,6 +70,7 @@ CREATE INDEX IF NOT EXISTS runs_flow   ON runs (flow, started_at DESC);
 CREATE TABLE IF NOT EXISTS turns (
   id              TEXT PRIMARY KEY,
   run_id          TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  phase           TEXT NOT NULL DEFAULT 'main',
   idx             INTEGER NOT NULL,
   started_at      INTEGER NOT NULL,
   latency_ms      INTEGER,
@@ -67,13 +81,17 @@ CREATE TABLE IF NOT EXISTS turns (
   stop_reason     TEXT,
   reasoning_chars INTEGER,
   retries         INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (run_id, idx)
+  -- A run has several agent segments (the fix, then the self-review, then any
+  -- sub-agents). Each numbers its turns from 1, so the phase is part of what
+  -- makes a turn unique — without it the self-review overwrites the fix.
+  UNIQUE (run_id, phase, idx)
 );
 CREATE INDEX IF NOT EXISTS turns_run ON turns (run_id, idx);
 
 CREATE TABLE IF NOT EXISTS tool_calls (
   id              TEXT PRIMARY KEY,
   run_id          TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  phase           TEXT NOT NULL DEFAULT 'main',
   turn_idx        INTEGER NOT NULL,
   name            TEXT NOT NULL,
   args_preview    TEXT,
@@ -110,7 +128,11 @@ CREATE TABLE IF NOT EXISTS findings (
 );
 CREATE INDEX IF NOT EXISTS findings_run ON findings (run_id);
 CREATE INDEX IF NOT EXISTS findings_sev ON findings (severity, lens);
-`;
+`,
+];
+
+/** The schema version this build expects. */
+export const SCHEMA_VERSION = MIGRATIONS.length;
 
 /**
  * Retention, in days. Zero means keep forever.
@@ -121,6 +143,8 @@ CREATE INDEX IF NOT EXISTS findings_sev ON findings (severity, lens);
 export const RETENTION_DAYS = {
   /** Only useful while debugging a specific run. */
   transcript: 14,
+  /** The agent's own closing summary; small, and the run list shows it. */
+  final_text: 90,
   diff: 90,
   findings_artifact: 90,
   /** The bulk of the rows. */

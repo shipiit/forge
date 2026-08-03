@@ -270,7 +270,7 @@ describe('the loop-to-recorder bridge', () => {
 
   it('still forwards events to the caller listener', () => {
     const seen: string[] = [];
-    const listen = recordingListener(noopRecorder, 'id', (e) => seen.push(e.type));
+    const listen = recordingListener(noopRecorder, 'id', 'main', (e) => seen.push(e.type));
     listen({ type: 'iteration', n: 1 } as AgentEvent);
     expect(seen).toEqual(['iteration']);
   });

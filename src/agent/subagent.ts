@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { LLMClient } from '../providers/types.js';
-import { runAgent, type AgentLimits } from './loop.js';
+import { runAgent, type AgentEvent, type AgentLimits } from './loop.js';
 import { editToolset } from './tools/registry.js';
 import { type Tool, textPart } from './tools/types.js';
 
@@ -17,6 +17,14 @@ export interface SubagentOptions {
   /** Maximum nesting depth allowed. */
   maxDepth: number;
   testCommand?: string;
+  /**
+   * Build a listener for a delegated segment, given its label.
+   *
+   * Without this a sub-agent's turns and tokens are invisible: it runs its own
+   * loop, and its usage never reaches the parent's total. The label separates
+   * one delegation from the next.
+   */
+  segment?: (label: string) => ((e: AgentEvent) => void) | undefined;
 }
 
 /**
@@ -26,6 +34,9 @@ export interface SubagentOptions {
  * file/search/edit tools are always available so work still gets done at max depth.
  */
 export function makeSubagentTool(opts: SubagentOptions): Tool {
+  // Two delegations in one run would otherwise both be "sub", and each numbers
+  // its turns from 1.
+  let delegations = 0;
   return {
     spec: {
       name: 'spawn_subagent',
@@ -44,6 +55,7 @@ export function makeSubagentTool(opts: SubagentOptions): Tool {
       if (opts.depth >= opts.maxDepth) {
         return textPart('Max sub-agent depth reached — complete this subtask directly with your own tools.');
       }
+      const label = `sub${opts.depth}.${++delegations}`;
       const result = await runAgent({
         client: opts.client,
         system: SUBAGENT_SYSTEM,
@@ -51,6 +63,7 @@ export function makeSubagentTool(opts: SubagentOptions): Tool {
         tools: orchestratorToolset({ ...opts, depth: opts.depth + 1 }),
         limits: opts.limits,
         cwd: ctx.cwd,
+        ...(opts.segment ? { onEvent: opts.segment(label) } : {}),
       });
       return textPart(`Sub-agent completed "${task}".\n\n${result.finalText}`);
     },

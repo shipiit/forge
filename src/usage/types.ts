@@ -12,14 +12,30 @@ import type { Usage } from '../providers/types.js';
  * a reason to fail somebody's code review.
  */
 
+/**
+ * The flows a run can belong to. Pinned to a union deliberately: handlers
+ * passing ad-hoc strings would give the dashboard `review` and `pr_review` as
+ * two different rows in every group-by.
+ */
+export type Flow =
+  | 'analyze'
+  | 'fix'
+  | 'review'
+  | 'followup'
+  | 'mention'
+  | 'audit'
+  | 'ci'
+  | 'history'
+  | 'routine'
+  | 'release';
+
 export interface RunMeta {
   host: string;
   owner: string;
   repo: string;
   /** Which entry point this ran from. */
   surface: 'app' | 'action' | 'cli';
-  /** fix | review | audit | history | routine | … */
-  flow: string;
+  flow: Flow;
   /** What started it: issues.opened, /fix, schedule, … */
   trigger: string;
   provider: string;
@@ -33,6 +49,8 @@ export interface RunMeta {
 }
 
 export interface TurnRecord {
+  /** Which agent segment this turn belongs to: main, self_review, sub1, … */
+  phase?: string;
   idx: number;
   startedAt: number;
   latencyMs: number;
@@ -43,6 +61,7 @@ export interface TurnRecord {
 }
 
 export interface ToolRecord {
+  phase?: string;
   turnIdx: number;
   name: string;
   /** Truncated and redacted before it ever reaches here. */

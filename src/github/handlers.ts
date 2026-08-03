@@ -2,7 +2,8 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { LLMClient, Usage } from '../providers/types.js';
 import { estimateCost, formatCost, addUsage } from '../util/cost.js';
-import { runAgent, DEFAULT_MAX_OUTPUT_TOKENS, type AgentLimits, type AgentResult } from '../agent/loop.js';
+import { runAgent, DEFAULT_MAX_OUTPUT_TOKENS, type AgentEvent, type AgentLimits, type AgentResult } from '../agent/loop.js';
+import type { RunTracker } from '../usage/track.js';
 import { editToolset, reviewToolset, selectTools, type ToolSelection } from '../agent/tools/registry.js';
 import type { Tool } from '../agent/tools/types.js';
 import { applyExtraPrompt } from '../actionInputs.js';
@@ -131,6 +132,8 @@ export interface HandlerDeps {
   findingsMaxIssues?: number;
   /** Injectable clock, so tests never depend on wall time. */
   now?: () => number;
+  /** Records what this run did. Absent means nothing is being recorded. */
+  run?: RunTracker;
 }
 
 /** Process-local window, shared by every handler in this process. */
@@ -170,6 +173,7 @@ async function allowRun(
   if (decision.allowed) return true;
 
   deps.log(`rate limit reached for ${owner}/${repo}: ${decision.used}/${decision.limit} in the last hour`);
+  deps.run?.skip('rate limited');
   if (issueNumber) {
     try {
       await deps.octokit.rest.issues.createComment({
@@ -188,6 +192,18 @@ async function allowRun(
 /** Resolve every skill available to this run: built-ins, repo files, workflow-inline. */
 function skillsFor(deps: HandlerDeps, cwd: string) {
   return resolveSkills(cwd, { extraDir: deps.skillsPath, inline: deps.inlineSkill });
+}
+
+/**
+ * The event listener for one agent segment: records it when a run is being
+ * tracked, and keeps whatever logging the call site already did either way.
+ */
+function watch(
+  deps: HandlerDeps,
+  phase = 'main',
+  onEvent?: (e: AgentEvent) => void,
+): ((e: AgentEvent) => void) | undefined {
+  return deps.run ? deps.run.listen(phase, onEvent) : onEvent;
 }
 
 /** Apply the run's tool allow/deny selection to a toolset. */
@@ -423,8 +439,9 @@ export async function handleIssueAnalyze(
         tools: pick(deps, reviewToolset()), // read-only: no edits
         limits: limitsFor(deps),
         cwd: ws.dir,
-        onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+        onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
       });
+      deps.run?.add(result);
 
       await octokit.rest.issues.updateComment({
         owner: args.owner,
@@ -481,6 +498,7 @@ async function doIssueFix(
   });
   if (existing.data.length > 0) {
     log(`fix PR already open for issue #${args.issueNumber} (${existing.data[0]!.html_url}); skipping.`);
+    deps.run?.skip('a fix PR is already open');
     return;
   }
 
@@ -527,12 +545,20 @@ async function doIssueFix(
       system: prompt(deps, fixSystemPrompt()),
       initialContent,
       // Orchestrator toolset: edit tools + spawn_subagent so big fixes can be split up.
-      tools: orchestratorToolset({ client, limits: fixLimits, depth: 0, maxDepth: 2, testCommand: deps.testCommand }),
+      tools: orchestratorToolset({
+        client,
+        limits: fixLimits,
+        depth: 0,
+        maxDepth: 2,
+        testCommand: deps.testCommand,
+        segment: (label) => watch(deps, label),
+      }),
       limits: fixLimits,
       cwd: ws.dir,
       security: await createWorkspaceScanner(ws.dir),
-      onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
+    deps.run?.add(result);
 
     // Verify with the project's tests, if any.
     const testCmd = await detectTestCommand(ws.dir, deps.testCommand);
@@ -573,7 +599,9 @@ async function doIssueFix(
         tools: pick(deps, reviewToolset()),
         limits: limitsFor(deps),
         cwd: ws.dir,
+        onEvent: watch(deps, 'self_review'),
       });
+      deps.run?.add(reviewRes);
       totalUsage = addUsage(totalUsage, reviewRes.usage);
       const selfFindings = parseFindings(reviewRes.finalText);
       selfBlocker = selfFindings.some((f) => f.severity === 'critical' || f.severity === 'high');
@@ -604,6 +632,7 @@ async function doIssueFix(
       base: args.defaultBranch,
       draft: testsPassed === false || selfBlocker,
     });
+    deps.run?.link(pr.url);
 
     // Update the ack comment in place — root cause + reasoning, files, verification, PR link.
     await octokit.rest.issues.updateComment({
@@ -697,11 +726,15 @@ async function doPrReview(
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps),
       cwd: ws.dir,
+      onEvent: watch(deps),
     });
+    deps.run?.add(result);
 
     // Hard-enforce the scope: the prompt asks for changed files only, this
     // guarantees it even if the model wanders.
     const findings = scopeFindingsToDiff(parseFindings(result.finalText), diff);
+    deps.run?.findings(findings);
+    deps.run?.artifact('diff', diff);
 
     // Merge live Dependabot alerts (current CVEs from GitHub's Advisory Database).
     findings.push(...(await fetchDependabotFindings(octokit, args.owner, args.repo, log)));
@@ -803,8 +836,9 @@ async function doPrFollowup(
       tools: pick(deps, editToolset({ testCommand: deps.testCommand })),
       limits: limitsFor(deps),
       cwd: ws.dir,
-      onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
+    deps.run?.add(result);
 
     const committed = await wsOps.commitAll(ws, `forge: ${args.question}`.slice(0, 200) + `\n\n${result.finalText}`.slice(0, 3000));
     if (committed) {
@@ -871,8 +905,9 @@ async function doMention(
       tools: pick(deps, selectTools(reviewToolset(), { allowed: skill?.tools ?? [] })),
       limits: limitsFor(deps),
       cwd: ws.dir,
-      onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
+    deps.run?.add(result);
     await octokit.rest.issues.createComment({
       owner: args.owner,
       repo: args.repo,
@@ -914,9 +949,11 @@ async function doAudit(
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps, Math.max(MAX_ITER, 40)),
       cwd: ws.dir,
-      onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
+    deps.run?.add(result);
     const findings = parseFindings(result.finalText);
+    deps.run?.findings(findings);
     // Merge live Dependabot alerts (current CVEs from GitHub's Advisory Database).
     findings.push(...(await fetchDependabotFindings(octokit, args.owner, args.repo, log)));
     const issueNote = await fileFindingIssues(
@@ -1003,8 +1040,9 @@ async function doCiFailure(
       tools: pick(deps, editToolset({ testCommand: deps.testCommand })),
       limits: limitsFor(deps),
       cwd: ws.dir,
-      onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
+    deps.run?.add(result);
     const committed = await wsOps.commitAll(ws, `ci-fix: resolve failing CI on #${args.pullNumber}\n\n${cleanSummary(result.finalText, 1500)}`);
     if (committed) {
       await wsOps.pushBranch(ws, args.headBranch);
@@ -1123,8 +1161,9 @@ async function doHistory(
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps, Math.min(MAX_ITER, 12)),
       cwd: ws.dir,
-      onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
+    deps.run?.add(result);
 
     const payload = parseHistoryPayload(result.finalText);
     if (!payload) {
@@ -1236,8 +1275,9 @@ async function doRoutine(
       limits: limitsFor(deps),
       cwd: ws.dir,
       ...(r.write ? { security: await createWorkspaceScanner(ws.dir) } : {}),
-      onEvent: (e) => e.type === 'tool' && log(`tool: ${e.name}`),
+      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
+    deps.run?.add(result);
 
     // A write routine ships its work as a PR — never a direct push.
     if (r.write) {
@@ -1332,7 +1372,9 @@ async function doRelease(
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps, Math.min(MAX_ITER, 10)),
       cwd: ws.dir,
+      onEvent: watch(deps),
     });
+    deps.run?.add(result);
 
     const notes = cleanSummary(result.finalText, 30_000);
     await octokit.rest.repos.updateRelease?.({

@@ -16,6 +16,7 @@ import type { FindingRecord, Recorder, RunMeta, RunOutcome } from './types.js';
 export function recordingListener(
   recorder: Recorder,
   runId: string,
+  phase = 'main',
   onEvent?: (e: AgentEvent) => void,
 ): (e: AgentEvent) => void {
   return (e: AgentEvent) => {
@@ -26,6 +27,7 @@ export function recordingListener(
     // implementation already swallows its own failures.
     if (e.type === 'turn') {
       void recorder.recordTurn(runId, {
+        phase,
         idx: e.idx,
         startedAt: e.startedAt,
         latencyMs: e.latencyMs,
@@ -35,6 +37,7 @@ export function recordingListener(
       });
     } else if (e.type === 'tool_done') {
       void recorder.recordTool(runId, {
+        phase,
         turnIdx: e.turnIdx,
         name: e.name,
         durationMs: e.durationMs,
