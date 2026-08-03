@@ -79,7 +79,11 @@ jobs:
             exit 1
           fi
 
-      - uses: shipiit/forge@v2
+      # Runs the action from this commit rather than a tag — see the note in
+      # forge.yml. Consumers use `shipiit/forge@v2`.
+      - uses: actions/checkout@v4
+
+      - uses: ./
         with:
           provider: vertex
           vertex-credentials-json: ${{ secrets.VERTEX_SA_JSON }}

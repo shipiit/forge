@@ -110,9 +110,16 @@ jobs:
             exit 1
           fi
 
-      # Pinned to v2. v1 predates every input below and ignores them silently,
-      # so a workflow on @v1 looks configured while doing none of this.
-      - uses: shipiit/forge@v2
+      # This repository IS the action, so it runs the action from this commit,
+      # not from a tag. A tag lags: the input-name bug that made every
+      # credential input silently empty sat inside @v2 while CI here passed,
+      # because CI was testing the tag rather than the code in the PR.
+      #
+      # Consumers use `shipiit/forge@v2` — see the README. Only this repository
+      # uses `./`.
+      - uses: actions/checkout@v4
+
+      - uses: ./
         with:
           provider: vertex # ← swap for another provider
           vertex-credentials-json: ${{ secrets.VERTEX_SA_JSON }} # ← swap for that provider's key
