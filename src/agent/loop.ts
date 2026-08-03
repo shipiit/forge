@@ -54,6 +54,8 @@ export interface RunAgentOptions {
 export type AgentEvent =
   | { type: 'iteration'; n: number }
   | { type: 'tool'; name: string; args: Record<string, unknown> }
+  | { type: 'tool_done'; name: string; turnIdx: number; durationMs: number; ok: boolean; error?: string; outputBytes: number }
+  | { type: 'turn'; idx: number; startedAt: number; latencyMs: number; usage: Usage; stopReason: string; reasoningChars?: number }
   | { type: 'tool_error'; name: string; message: string }
   | { type: 'assistant_text'; text: string }
   | { type: 'compacted'; savedChars: number }
@@ -90,7 +92,17 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       onEvent?.({ type: 'compacted', savedChars: compaction.savedChars });
     }
 
+    const turnStartedAt = Date.now();
     const res = await withRetry(() => client.chat({ system, messages, tools: toolSpecs, maxTokens: limits.maxOutputTokens }));
+    onEvent?.({
+      type: 'turn',
+      idx: n,
+      startedAt: turnStartedAt,
+      latencyMs: Date.now() - turnStartedAt,
+      usage: res.usage,
+      stopReason: res.stopReason,
+      ...(res.reasoning ? { reasoningChars: res.reasoning.length } : {}),
+    });
     const turnUsd = estimateCost(res.usage, client.model).usd;
     usage = addUsage(usage, res.usage);
 
@@ -139,12 +151,31 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         resultParts.push({ type: 'tool_result', toolCallId: call.id, content: `Unknown tool: ${call.name}`, isError: true });
         continue;
       }
+      const toolStartedAt = Date.now();
       try {
         const parts = await tool.run(call.args, ctx);
-        resultParts.push(...normalizeToolResult(call.id, parts));
+        const normalized = normalizeToolResult(call.id, parts);
+        resultParts.push(...normalized);
+        onEvent?.({
+          type: 'tool_done',
+          name: call.name,
+          turnIdx: n,
+          durationMs: Date.now() - toolStartedAt,
+          ok: true,
+          outputBytes: normalized.reduce((sum, p) => sum + ('content' in p ? p.content.length : 0), 0),
+        });
       } catch (err) {
         const message = (err as Error).message;
         onEvent?.({ type: 'tool_error', name: call.name, message });
+        onEvent?.({
+          type: 'tool_done',
+          name: call.name,
+          turnIdx: n,
+          durationMs: Date.now() - toolStartedAt,
+          ok: false,
+          error: message,
+          outputBytes: 0,
+        });
         resultParts.push({ type: 'tool_result', toolCallId: call.id, content: `Error: ${message}`, isError: true });
       }
     }
