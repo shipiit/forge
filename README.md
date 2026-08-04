@@ -440,6 +440,9 @@ attacked cannot lock out everybody else. Set `FORGE_USAGE_DB` (a path) or
 `FORGE_USAGE=1` on whichever surface runs the agent — the App, the Action, or the CLI — and runs start
 landing in it.
 
+Deploying it on a server? **[`deploy/DASHBOARD.md`](./deploy/DASHBOARD.md)** is the `.env` block, the
+persistent-disk requirement, and how to create the first account from inside a container.
+
 ```bash
 # 1. Record into a local database
 export FORGE_USAGE_DB=.forge/usage.db
