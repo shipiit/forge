@@ -84,6 +84,39 @@ export interface WorkspacePort {
   commitAll(ws: Workspace, message: string): Promise<boolean>;
   pushBranch(ws: Workspace, branch: string): Promise<void>;
   diffHead(ws: Workspace): Promise<string>;
+  commitSubjects(ws: Workspace, range: string, limit?: number): Promise<string>;
+}
+
+/**
+ * Is this a ref name we are willing to hand to git?
+ *
+ * git's own rules (git-check-ref-format) already forbid spaces, `~`, `^`, `:`,
+ * `?`, `*`, `[` and control characters — but they permit `;`, `$`, `(`, `)`,
+ * `&` and `|`, every one of which is a shell metacharacter. This is the second
+ * line: the first is that nothing here reaches a shell at all.
+ */
+export function isSafeRef(ref: string): boolean {
+  return /^[A-Za-z0-9._\/-]{1,255}$/.test(ref) && !ref.includes('..') && !ref.startsWith('-');
+}
+
+/**
+ * Commit subjects in a range, without a shell.
+ *
+ * The range contains a tag name, and a tag name is written by whoever pushed
+ * it. Interpolating one into a shell string is remote code execution for
+ * anybody with push access; git accepts `;` and `$()` in a ref name quite
+ * happily. Passing arguments as an array means there is no shell to inject
+ * into, whatever the tag is called.
+ */
+export async function commitSubjects(ws: Workspace, range: string, limit = 300): Promise<string> {
+  try {
+    const out = await ws.git.raw(['log', '--no-merges', '--pretty=format:- %s (%an)', `--max-count=${limit}`, range]);
+    return out.trim();
+  } catch {
+    // An unknown or malformed range is a bad request, not a crash: the caller
+    // reports "no commits" and stops.
+    return '';
+  }
 }
 
 /** Unified diff of the most recent commit (HEAD~1..HEAD), for self-review. */
@@ -95,4 +128,11 @@ export async function diffHead(ws: Workspace): Promise<string> {
   }
 }
 
-export const realWorkspace: WorkspacePort = { clone: cloneRepo, createBranch, commitAll, pushBranch, diffHead };
+export const realWorkspace: WorkspacePort = {
+  clone: cloneRepo,
+  createBranch,
+  commitAll,
+  pushBranch,
+  diffHead,
+  commitSubjects,
+};

@@ -75,7 +75,7 @@ import {
 import { parseSarif } from './sarif.js';
 import { mergeFindings, runScanners } from '../scan/index.js';
 import { fetchDependabotFindings } from './dependabot.js';
-import { realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
+import { isSafeRef, realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
   composeFixPrBody,
   fetchPrDiff,
@@ -1437,19 +1437,21 @@ async function doRelease(
   args: { owner: string; repo: string; defaultBranch: string; tag: string; releaseId: number; previousTag?: string },
 ): Promise<void> {
   const { octokit, client, token, log } = deps;
-  const ws = await (deps.workspace ?? realWorkspace).clone(
-    { owner: args.owner, repo: args.repo, ref: args.defaultBranch },
-    token,
-  );
+  const wsOps = deps.workspace ?? realWorkspace;
+  const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: args.defaultBranch }, token);
   try {
     // Commit subjects since the previous tag — the input to the notes.
+    //
+    // The tag is whatever the person who pushed it chose to call it, and git
+    // permits `;` and `$()` in a ref name. This used to be interpolated into a
+    // shell string, which made publishing a release a way to run commands on
+    // the runner. Both halves are checked and neither reaches a shell.
+    if (!isSafeRef(args.tag) || (args.previousTag && !isSafeRef(args.previousTag))) {
+      log(`release: refusing to read history for an unsafe tag name (${args.tag.slice(0, 40)}); skipping.`);
+      return;
+    }
     const range = args.previousTag ? `${args.previousTag}..${args.tag}` : args.tag;
-    const out = await runCommand(
-      `git log --no-merges --pretty=format:'- %s (%an)' ${range} | head -300`,
-      { cwd: ws.dir, supportsVision: client.supportsVision },
-      { timeoutMs: 60_000 },
-    );
-    const commits = out.map((p) => ('content' in p ? p.content : 'text' in p ? p.text : '')).join('\n');
+    const commits = await wsOps.commitSubjects(ws, range);
     if (!commits.trim()) {
       log('release: no commits found for the range; skipping.');
       return;
