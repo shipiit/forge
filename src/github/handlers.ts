@@ -758,6 +758,14 @@ async function doPrReview(
     const instructions = await loadRepoInstructions(ws.dir);
     if (instructions.found.length) log(`repo instructions: ${instructions.found.join(', ')}`);
 
+    // Scan before the model, not after. Two reasons: the deterministic pass
+    // costs nothing, so a review that stops early for budget still carries the
+    // findings that were free; and the model is told what was already found,
+    // so it spends its turns judging whether those are reachable rather than
+    // rediscovering a key it would have read past anyway.
+    const scanned = await runScanners({ cwd: ws.dir, only: new Set(parseDiffValidLines(diff).keys()) });
+    if (scanned.length) log(`scanners: ${scanned.length} finding(s) before the model ran`);
+
     const result = await runAgent({
       client,
       // REVIEW.md overrides the default guidance; FORGE.md is context whose
@@ -767,7 +775,18 @@ async function doPrReview(
         ws.dir,
         prompt(deps, composeReviewSystemPrompt(reviewSystemPrompt({ securityOnly: args.securityOnly }), instructions)),
       ),
-      initialContent,
+      initialContent: scanned.length
+        ? [
+            ...initialContent,
+            {
+              type: 'text' as const,
+              text:
+                `A deterministic scan of the changed files already found these. Do not repeat them; ` +
+                `judge whether each is reachable and say so only if you disagree:\n` +
+                scanned.map((f) => `- ${f.file}:${f.endLine} ${f.severity} ${f.category} — ${f.title}`).join('\n'),
+            },
+          ]
+        : initialContent,
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps),
       cwd: ws.dir,
@@ -777,11 +796,6 @@ async function doPrReview(
 
     // Hard-enforce the scope: the prompt asks for changed files only, this
     // guarantees it even if the model wanders.
-    // The deterministic scanners see the same files the model reviewed. They
-    // cost nothing and catch the things a model reads past — a key in a config
-    // file, a workflow that interpolates an issue title into a shell.
-    // The paths the diff touched, which is exactly what the model reviewed.
-    const scanned = await runScanners({ cwd: ws.dir, only: new Set(parseDiffValidLines(diff).keys()) });
     const findings = scopeFindingsToDiff(
       mergeFindings(parseFindings(result.finalText), scanned),
       diff,
@@ -1035,6 +1049,11 @@ async function doAudit(
   const ws = await (deps.workspace ?? realWorkspace).clone({ owner: args.owner, repo: args.repo, ref: args.ref }, token);
   try {
     const repoMap = await buildRepoMap(ws.dir, { maxEntries: 800 });
+    // Same order as a review: the free pass first, and the model is told what
+    // it already found so it spends its turns on reachability instead.
+    const scannedRepo = await runScanners({ cwd: ws.dir });
+    if (scannedRepo.length) log(`scanners: ${scannedRepo.length} finding(s) before the model ran`);
+
     const result = await runAgent({
       client,
       system: prompt(deps, auditSystemPrompt()),
@@ -1045,7 +1064,7 @@ async function doAudit(
       onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
     deps.run?.add(result);
-    const findings = mergeFindings(parseFindings(result.finalText), await runScanners({ cwd: ws.dir }));
+    const findings = mergeFindings(parseFindings(result.finalText), scannedRepo);
     deps.run?.findings(findings);
     // Merge live Dependabot alerts (current CVEs from GitHub's Advisory Database).
     findings.push(...(await fetchDependabotFindings(octokit, args.owner, args.repo, log)));
