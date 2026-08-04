@@ -231,7 +231,7 @@ export function Landing() {
             <span className="eyebrow">Economics</span>
             <h2 className="display mt-6 text-[clamp(34px,5vw,60px)]">Your key.<br /><span className="dim">No markup.</span></h2>
             <p className="mt-5 max-w-2xl text-muted">
-              Forge reports its own spend on every comment it writes — tokens used, how many came from cache, and
+              Forge tracks its own spend to the token — tokens used, how many came from cache, and
               the estimated cost. And it works hard to keep that number small.
             </p>
           </motion.div>

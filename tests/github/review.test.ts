@@ -150,8 +150,14 @@ describe('the cost footer', () => {
     expect(costFooter({ inputTokens: 100, outputTokens: 20 }, 'gemini-2.5-flash', false)).toBe('');
   });
 
-  it('still prints when nothing says otherwise', () => {
-    expect(costFooter({ inputTokens: 100, outputTokens: 20 }, 'gemini-2.5-flash')).toContain('🧮');
+  it('is omitted when nothing says otherwise', () => {
+    // Off by default: what a run cost is business information, and it was
+    // being printed under every comment on every public repository.
+    expect(costFooter({ inputTokens: 100, outputTokens: 20 }, 'gemini-2.5-flash')).toBe('');
+  });
+
+  it('prints when it is explicitly asked for', () => {
+    expect(costFooter({ inputTokens: 100, outputTokens: 20 }, 'gemini-2.5-flash', true)).toContain('🧮');
   });
 });
 

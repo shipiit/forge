@@ -45,7 +45,7 @@ FORGE_USAGE_DB=/data/usage.db      # MUST be on a persistent disk — see below
 FORGE_SPEND_CAP_RUN=0.50           # stops before the turn that would cross it
 FORGE_MAX_RUNS_PER_HOUR=10
 FORGE_PROMPT_CACHE=1               # on by default; this is what makes it cheap
-FORGE_SHOW_COST=0                  # do not print spend under public comments
+# FORGE_SHOW_COST=1                # publish spend under each comment (off by default)
 ```
 
 Put the private key in as one line with `\n` escapes, or use `PRIVATE_KEY_FILE`

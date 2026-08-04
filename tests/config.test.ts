@@ -75,14 +75,18 @@ describe('spend cap and rate limit config', () => {
 });
 
 describe('publishing what a run cost', () => {
-  it('prints the footer by default', () => {
-    expect(defaultConfig({} as NodeJS.ProcessEnv).showCost).toBe(true);
+  it('does not publish spend unless asked', () => {
+    // How much a team spends on review — and by inference how much code it is
+    // shipping — is not something to put under every comment on a public
+    // repository by default.
+    expect(defaultConfig({} as NodeJS.ProcessEnv).showCost).toBe(false);
+    expect(defaultConfig({ FORGE_SHOW_COST: '0' } as NodeJS.ProcessEnv).showCost).toBe(false);
   });
 
-  it('can be switched off, so a public repo need not publish its spend', () => {
-    // The run is still recorded either way — the number is unpublished, not lost.
-    expect(defaultConfig({ FORGE_SHOW_COST: '0' } as NodeJS.ProcessEnv).showCost).toBe(false);
-    expect(defaultConfig({ FORGE_SHOW_COST: 'false' } as NodeJS.ProcessEnv).showCost).toBe(false);
+  it('prints it when it is opted into', () => {
+    // The run is recorded either way — the number is unpublished, not lost.
+    expect(defaultConfig({ FORGE_SHOW_COST: '1' } as NodeJS.ProcessEnv).showCost).toBe(true);
+    expect(defaultConfig({ FORGE_SHOW_COST: 'true' } as NodeJS.ProcessEnv).showCost).toBe(true);
   });
 
   it('is overridable per repository in agent.yml', () => {

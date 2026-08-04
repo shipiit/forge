@@ -88,7 +88,11 @@ export function defaultConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig
     routines: [],
     spendCapPerRunUsd: parseCap(env.FORGE_SPEND_CAP_RUN),
     maxRunsPerHour: Number(env.FORGE_MAX_RUNS_PER_HOUR ?? 0),
-    showCost: env.FORGE_SHOW_COST !== '0' && env.FORGE_SHOW_COST !== 'false',
+    // Off unless asked for. What a run cost is business information — how much
+    // a team spends on review, and by inference how much code it is shipping —
+    // and it was being printed under every comment on every public repository
+    // by default. Set FORGE_SHOW_COST=1 (or `show_cost: true`) to see it.
+    showCost: env.FORGE_SHOW_COST === '1' || env.FORGE_SHOW_COST === 'true',
     // On by default: a committed credential is the one finding whose cost of
     // being missed is unbounded, and the scan is free.
     secretScan: env.FORGE_SECRET_SCAN !== '0' && env.FORGE_SECRET_SCAN !== 'false',

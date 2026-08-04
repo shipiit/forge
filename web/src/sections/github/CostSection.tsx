@@ -18,12 +18,12 @@ export function CostSection() {
       Icon={Gauge}
       eyebrow="Economics"
       title="What a run actually costs"
-      lead="Forge reports its own spend on every comment and pull request it writes, and works hard to keep that number small."
+      lead="Forge tracks its own spend to the token and works hard to keep the number small. It does not publish it: what a team spends on review — and by inference how much code it ships — is nobody else's business, so the footer is off unless you switch it on."
     >
       <Cards items={LEVERS} />
       <div className="mt-6 max-w-2xl">
         <Code
-          label="the footer on every comment Forge writes"
+          label="the footer, when you switch it on with FORGE_SHOW_COST=1"
           lang="text"
           code={`🧮 128,400 in + 6,210 out tokens · 96,000 cached (saved ~$0.29) · ~$0.41 · model claude-sonnet-4-5`}
         />

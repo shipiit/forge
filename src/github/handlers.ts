@@ -305,7 +305,7 @@ async function withLock(key: string, log: (m: string) => void, fn: () => Promise
  * FORGE_SHOW_COST=0, hides it; the run is still recorded either way, so the
  * number is not lost, only unpublished.
  */
-export function costFooter(usage: Usage, model: string, show = true): string {
+export function costFooter(usage: Usage, model: string, show = false): string {
   if (!show) return '';
   const c = estimateCost(usage, model);
   if (c.inputTokens === 0 && c.outputTokens === 0) return '';

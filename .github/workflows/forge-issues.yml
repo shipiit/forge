@@ -155,8 +155,5 @@ jobs:
           FORGE_SPEND_CAP_RUN: '0.75'
           FORGE_MAX_RUNS_PER_HOUR: '10'
           FORGE_PROMPT_CACHE: '1'
-          # Do not print what a run cost under every comment on a public repo.
-          # The run is still recorded; the number is unpublished, not lost.
-          FORGE_SHOW_COST: '0'
           FORGE_AUTO_FIX: 'off'
           GITHUB_TOKEN: ${{ github.token }}
