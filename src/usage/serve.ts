@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { migrate } from './sqlite.js';
@@ -86,7 +87,10 @@ export async function startDashboard(
   const origin = opts.origin ?? process.env.FORGE_DASHBOARD_ORIGIN;
   const pruned = await pruneOnce(file);
   const { db, artifactDir } = openUsageDb(file);
-  const api: ApiOptions = { db, artifactDir, token, ...(origin ? { origin } : {}) };
+  // The built dashboard ships beside the compiled server, so a self-hosted
+  // deployment serves the page and its data from one origin.
+  const uiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const api: ApiOptions = { db, artifactDir, token, uiDir, ...(origin ? { origin } : {}) };
 
   const server = http.createServer((req, res) => {
     void serveUsage(api, req, res).then((handled) => {
@@ -155,7 +159,8 @@ export function mountDashboard(
     const router = getRouter('/usage');
     router.use((req, res, next) => {
       const origin = env.FORGE_DASHBOARD_ORIGIN?.trim();
-      void serveUsage({ db, artifactDir, token, mountPath: '/usage', ...(origin ? { origin } : {}) }, req, res).then((handled) => {
+      const uiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+      void serveUsage({ db, artifactDir, token, uiDir, mountPath: '/usage', ...(origin ? { origin } : {}) }, req, res).then((handled) => {
         if (!handled) next();
       });
     });

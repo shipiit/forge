@@ -452,8 +452,10 @@ export FORGE_USAGE_DB=.forge/usage.db
 #    land in `ps`, in shell history, and in the CI log of whoever tries it)
 npx forge dashboard:user add rahul
 
-# 3. Serve the API (always authenticated; prints a token if you have not set one)
+# 3. Serve the dashboard and its API (always authenticated)
 npx forge dashboard --db .forge/usage.db --port 4300
+#    → open http://localhost:4300 and sign in. The page is served by the agent,
+#      so there is no API URL to configure and no CORS origin to allow.
 
 # 3. Open the dashboard and point it at that API under "Connection"
 #    https://shipiit.github.io/forge/dashboard

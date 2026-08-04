@@ -84,13 +84,20 @@ forge dashboard:user remove rahul     # same
 
 ## 3. Sign in
 
-The dashboard mounts at **`/usage`** on the App server. It mounts as soon as
-*either* a token is set or one account exists — with neither it refuses to
-mount and says so in the log, because that host is public by definition.
+Open **`https://your-server/usage`** and sign in. That is the whole step.
 
-Open the dashboard → **Connection** → the form appears once the server reports
-that accounts exist. Username and password get you a session that expires after
-12 hours idle and can be revoked on its own.
+The agent serves the dashboard itself, from the same origin as its data, so
+there is no CORS origin to configure and no API base URL to type in. It mounts
+as soon as *either* a token is set or one account exists — with neither it
+refuses to mount and says so in the log, because that host is public by
+definition.
+
+Sessions expire after 12 hours idle and can be revoked on their own.
+
+> **Pointing a browser at somebody else's agent?** The dashboard page is also
+> published on our site, and that copy has to be told where your API is —
+> Connection → API base URL → `https://your-server/usage` — and your server has
+> to allow the origin with `FORGE_DASHBOARD_ORIGIN`. Self-hosting needs neither.
 
 ---
 

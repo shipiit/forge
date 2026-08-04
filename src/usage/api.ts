@@ -1,11 +1,15 @@
 import { promises as fs } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
-import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
-import { logout, userCount, verifySession } from './auth.js';
-import { handleLogin } from './apiAuth.js';
+import { logout, userCount } from './auth.js';
+import { handleLogin, identify, presented } from './apiAuth.js';
+
+// Re-exported so the module's public surface did not change when the auth
+// helpers moved out of this file.
+export { authorized, identify } from './apiAuth.js';
+import { hasUi, serveUi, uiRoot } from './static.js';
 import {
   breakdown,
   daily,
@@ -34,6 +38,13 @@ import { landing } from './landing.js';
  */
 
 export interface ApiOptions {
+  /**
+   * Directory holding the built dashboard, if it was bundled.
+   *
+   * When present the agent serves the page as well as the data, so a
+   * self-hosted deployment needs no CORS origin and no API base URL.
+   */
+  uiDir?: string;
   db: DatabaseSync;
   artifactDir: string;
   /**
@@ -89,52 +100,6 @@ function corsHeaders(origin?: string): Record<string, string> {
   };
 }
 
-/** Constant-time, so a wrong token leaks nothing about how wrong it was. */
-function tokenMatches(given: string, expected: string): boolean {
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-/** The credential on a request, from the header or — for links — the query. */
-function presented(req: IncomingMessage, url: URL): string {
-  const header = req.headers.authorization ?? '';
-  const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
-  // The query parameter exists so the page itself can be opened from a link;
-  // the fetches it makes then carry the header.
-  return bearer || url.searchParams.get('token') || '';
-}
-
-/**
- * Who, if anyone, is this request?
- *
- * Two credentials are accepted and they are not equivalent. The shared token
- * is for scripts and CI: it never expires, so it is deliberately not a person.
- * A session belongs to a named account and can be revoked on its own, which is
- * the whole reason accounts exist.
- */
-export function identify(
-  req: IncomingMessage,
-  url: URL,
-  token: string,
-  db?: DatabaseSync,
-): { as: 'token' } | { as: 'user'; username: string } | undefined {
-  const given = presented(req, url);
-  if (!given) return undefined;
-  if (token && tokenMatches(given, token)) return { as: 'token' };
-  if (db) {
-    const username = verifySession(db, given);
-    if (username) return { as: 'user', username };
-  }
-  return undefined;
-}
-
-export function authorized(req: IncomingMessage, url: URL, token: string, db?: DatabaseSync): boolean {
-  // Fail closed: with no shared token and no accounts, nothing is permission.
-  if (!token && !db) return false;
-  return identify(req, url, token, db) !== undefined;
-}
-
 /** Read the filter set out of the query string. */
 export function windowFrom(url: URL): Window & { limit?: number; before?: string; q?: string } {
   const s = (k: string) => url.searchParams.get(k) || undefined;
@@ -185,6 +150,24 @@ export async function serveUsage(opts: ApiOptions, req: IncomingMessage, res: Se
   if (route === '/api/auth') {
     json(res, 200, { accounts: userCount(opts.db) > 0 }, cors);
     return true;
+  }
+
+  // The dashboard itself, when it was bundled. Public in the same way any
+  // single-page app is: the bundle holds no data, and every request it then
+  // makes for data is authenticated on its own.
+  if (opts.uiDir && !route.startsWith('/api/')) {
+    const root = uiRoot(opts.uiDir);
+    if (await hasUi(root)) {
+      if (await serveUi(root, route, res, cors)) return true;
+      // A path that looks like a file and is not there is missing, not
+      // forbidden. Falling through to the credential check answered a stale
+      // bundle request with 401, which sends whoever is debugging it looking
+      // at authentication instead of at their deploy.
+      if (/\.[a-z0-9]{1,8}$/i.test(route)) {
+        json(res, 404, { error: 'not found' }, cors);
+        return true;
+      }
+    }
   }
 
   // The signpost is public, and has to be. Its entire job is to orient

@@ -1,6 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
-import { login } from './auth.js';
+import { timingSafeEqual } from 'node:crypto';
+import { login, verifySession } from './auth.js';
+
+/** Who a request turned out to be, if anyone. */
+export type Identity = { as: 'token' } | { as: 'user'; username: string };
 
 /**
  * Signing in, and making guessing expensive.
@@ -105,4 +109,50 @@ function recordFailure(username: string, now = Date.now()): void {
 
 function clearFailures(username: string): void {
   failures.delete(username.trim().toLowerCase());
+}
+
+/** Constant-time, so a wrong token leaks nothing about how wrong it was. */
+function tokenMatches(given: string, expected: string): boolean {
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** The credential on a request, from the header or — for links — the query. */
+export function presented(req: IncomingMessage, url: URL): string {
+  const header = req.headers.authorization ?? '';
+  const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
+  // The query parameter exists so the page itself can be opened from a link;
+  // the fetches it makes then carry the header.
+  return bearer || url.searchParams.get('token') || '';
+}
+
+/**
+ * Who, if anyone, is this request?
+ *
+ * Two credentials are accepted and they are not equivalent. The shared token
+ * is for scripts and CI: it never expires, so it is deliberately not a person.
+ * A session belongs to a named account and can be revoked on its own, which is
+ * the whole reason accounts exist.
+ */
+export function identify(
+  req: IncomingMessage,
+  url: URL,
+  token: string,
+  db?: DatabaseSync,
+): { as: 'token' } | { as: 'user'; username: string } | undefined {
+  const given = presented(req, url);
+  if (!given) return undefined;
+  if (token && tokenMatches(given, token)) return { as: 'token' };
+  if (db) {
+    const username = verifySession(db, given);
+    if (username) return { as: 'user', username };
+  }
+  return undefined;
+}
+
+export function authorized(req: IncomingMessage, url: URL, token: string, db?: DatabaseSync): boolean {
+  // Fail closed: with no shared token and no accounts, nothing is permission.
+  if (!token && !db) return false;
+  return identify(req, url, token, db) !== undefined;
 }

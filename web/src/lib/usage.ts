@@ -21,8 +21,21 @@ const read = (key: string): string => {
   }
 };
 
+/**
+ * Where the API is.
+ *
+ * When the agent serves this page itself, the API is right here — same origin,
+ * same path prefix — so there is nothing to configure and nothing to get
+ * wrong. A saved setting still wins, because somebody pointing a local page at
+ * a remote agent means it.
+ */
 export function apiBase(): string {
-  return read(API_KEY) || (import.meta.env.DEV ? DEV_PROXY : '');
+  const saved = read(API_KEY);
+  if (saved) return saved;
+  if (import.meta.env.DEV) return DEV_PROXY;
+  // Vite's base is '/usage/' when the build is the one the agent bundles.
+  const base = import.meta.env.BASE_URL || '/';
+  return base === '/' ? '' : base.replace(/\/+$/, '');
 }
 export function apiToken(): string {
   return read(TOKEN_KEY);
