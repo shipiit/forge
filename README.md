@@ -44,8 +44,8 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 | 🛠️ | **Fix an issue → open a PR** — investigates the repo, writes the fix on a branch, runs the tests, opens a PR that closes the issue | Label `agent-fix`, or comment `/fix` |
 | 🔍 | **Review a PR** — inline comments + summary verdict, quality **and** security lenses, **scoped strictly to the changed files** | Open a PR, or comment `/review` / `/review always` |
 | 🛡️ | **Security review** — flags SSRF, injection, secrets, authz… with **severity**, a **CWE**, and a **suggested-fix** block | Auto on PRs, or comment `/security` |
-| 🔎 | **Deterministic scanners** — secrets (provider shapes + entropy + context) and infrastructure (Dockerfile, compose, Kubernetes, Terraform, workflows), run before the model at no token cost and merged with its findings | Automatic on every review and audit |
-| 🔐 | **Secret & config scan** — every committed credential and misconfiguration, grouped by rule with every location, and a check run that can block the merge. **No model call: instant and free** | Automatic on each PR, or comment `/secrets` |
+| 🔎 | **Deterministic scanners** — secrets (provider shapes + entropy + context), infrastructure (Dockerfile, compose, Kubernetes, Terraform, workflows) and source code (injection, traversal, clear-text logging, deserialization), run before the model at no token cost and merged with its findings | Automatic on every review and audit |
+| 🔐 | **Security scan** — every committed credential, misconfiguration and code weakness, grouped by rule with every location, and a check run that can block the merge. **No model call: instant and free** | Automatic on each PR, or comment `/secrets` |
 | 🔬 | **Whole-repo audit** — maps entry points, follows untrusted input to dangerous sinks, one grouped report | Comment `/audit` |
 | 📜 | **Change-history document** — one entry per merged change, written **from that diff alone**; arrives as a PR | `history: true` in `agent.yml` |
 | ⏰ | **Routines** — a saved skill plus its triggers: cron, on-demand, or any repository event, each with filters | `routines:` in `agent.yml`, `/run <name>` |
@@ -90,6 +90,16 @@ always completes as `neutral` so it can't block a merge through branch protectio
 - **Infrastructure scanning** — the files that get the least review and decide the most: containers
   running as root, `:latest` bases, privileged pods, host mounts, buckets open to the world, `0.0.0.0/0`,
   actions pinned to a mutable tag, `pull_request_target`, and untrusted event text reaching a shell.
+- **Source-code scanning** — command injection, path traversal, clear-text logging of a credential,
+  exception exposure, open redirect, unsafe deserialization, binding every interface, and a workflow
+  that never declares its permissions. Every rule needs two things on the same line: something
+  attacker-controlled and something dangerous done with it — a rule that fires on the sink alone, on
+  every `exec` and every `readFile`, is a rule people switch off in a week.
+- **Three passes at not crying wolf** — taint is matched against the code on a line and not its prose,
+  so a log message ending *"using the workflow token"* is not a leaked token; comment-only lines are
+  skipped, because a comment describing a bug is not the bug; and findings in tests and fixtures drop
+  to low rather than vanishing, since a scanner's own suite has to contain what it detects — but a
+  credential pasted into a test is still a credential.
 - **Dismissal you can audit** — resolve the conversation to dismiss a finding on that PR, or write
   `// forge-ignore: secrets — reason` on the line to dismiss it everywhere. It covers that line only,
   never the file, so a marker written last year cannot hide what was added under it since.
@@ -408,6 +418,7 @@ trigger_label: agent-fix
 auto_fix: label                # label | opened | off
 auto_review: always            # always | requested | off
 secret_scan: true              # scan every PR for committed credentials (default true)
+code_scan: true                # source-code security rules alongside it (default true)
 test_command: "npm test"       # else auto-detected
 review_depth: standard         # light | standard | deep
 ignore_paths: ["dist/**", "*.lock"]
@@ -427,7 +438,7 @@ ignore_paths: ["dist/**", "*.lock"]
 ```
 issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
                                           │
-                  scanners ◀─────────────┤   (no model call: secrets, IaC)
+                  scanners ◀─────────────┤   (no model call: secrets, IaC, code)
                        agent loop ◀───────┘   (LLM + tools, provider-agnostic)
                        read · search · edit · multi_edit · glob · git_history · run_bash · run_tests
                                           │
@@ -448,11 +459,13 @@ issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
   network), `run_tests` (auto-detected).
 - **Agent loop** (`src/agent/loop.ts`) — chat → tool calls → results → repeat, with retries,
   iteration + token limits, and a repo-map for fast orientation.
-- **Scanners** (`src/scan`) — deterministic passes that run *before* the model and cost nothing: a
-  secrets scanner (provider shapes + Shannon entropy + file context) and an infrastructure scanner
-  (Dockerfile, compose, Kubernetes, Terraform, workflows). A model reads past the fourth key in a
-  config file; these do not, and they give the same answer twice. Their findings are merged and
-  deduplicated with the model's, so one weakness that both notice arrives as **one** comment.
+- **Scanners** (`src/scan`) — three deterministic passes that run *before* the model and cost nothing:
+  secrets (provider shapes + Shannon entropy + file context), infrastructure (Dockerfile, compose,
+  Kubernetes, Terraform, workflows) and source code (taint reaching a dangerous call on the same
+  line). A model reads past the fourth key in a config file; these do not, and they give the same
+  answer twice. Their findings are merged and deduplicated with the model's, so one weakness that
+  both notice arrives as **one** comment. Either scan can be switched off with `secret_scan` /
+  `code_scan`, or with the `secret-scan` / `code-scan` inputs on the Action.
 - **GitHub layer** (`src/github`) — vision image extraction, workspace clone/branch/commit/push,
   PR composer, diff-aware security review composer; wired to webhooks in `src/app.ts`.
 - **Dismissal** — resolving a review conversation dismisses that finding for the pull request;
