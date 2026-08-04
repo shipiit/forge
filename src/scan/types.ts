@@ -70,3 +70,20 @@ export function dedupe(findings: ReviewFinding[]): ReviewFinding[] {
   }
   return [...best.values()];
 }
+
+/**
+ * Tests, fixtures and mocks.
+ *
+ * A test suite has to contain the thing it tests: the scanner's own cases are
+ * a command injection, a path traversal and a key, written on purpose. They
+ * belong in the scan report at low severity — a credential pasted into a test
+ * is still a credential — but not as inline review comments, where they are
+ * eight nits on a pull request that introduced none.
+ */
+export const TEST_PATH =
+  /(?:^|\/)(?:tests?|__tests__|spec|fixtures?|__mocks__)\/|\.(?:test|spec)\.[jt]sx?$|_test\.(?:py|go|rb)$|(?:^|\/)test_[^/]+\.py$/i;
+
+/** Is this finding pointing at a test fixture rather than at shipped code? */
+export function inTestFile(f: { file: string }): boolean {
+  return TEST_PATH.test(f.file);
+}

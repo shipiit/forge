@@ -3,6 +3,7 @@ import { parseRoutines, type Routine } from './routines.js';
 import { parseCap } from './util/budget.js';
 import type { FindingIssueMode } from './github/findingIssues.js';
 import type { ReviewFinding } from './github/review.js';
+import type { BlockLevel } from './scan/report.js';
 
 /** Per-repository configuration, read from `.github/agent.yml` (all optional). */
 export interface ForgeConfig {
@@ -53,6 +54,8 @@ export interface ForgeConfig {
   secretScan: boolean;
   /** Run the source-code security rules alongside the credential scan. */
   codeScan: boolean;
+  /** Lowest severity that fails the scan's check run. 'none' never blocks. */
+  scanBlockOn: BlockLevel;
   /** Turn findings into issues: off, one rollup issue, or one issue each. */
   findingsToIssues: FindingIssueMode;
   /** Findings below this severity never become issues. */
@@ -90,6 +93,7 @@ export function defaultConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig
     // being missed is unbounded, and the scan is free.
     secretScan: env.FORGE_SECRET_SCAN !== '0' && env.FORGE_SECRET_SCAN !== 'false',
     codeScan: env.FORGE_CODE_SCAN !== '0' && env.FORGE_CODE_SCAN !== 'false',
+    scanBlockOn: (env.FORGE_SCAN_BLOCK_ON as BlockLevel) || 'high',
     findingsToIssues: (env.FORGE_FINDINGS_TO_ISSUES as FindingIssueMode) || 'off',
     findingsMinSeverity: (env.FORGE_FINDINGS_MIN_SEVERITY as ReviewFinding['severity']) || 'high',
     findingsMaxIssues: Number(env.FORGE_FINDINGS_MAX_ISSUES ?? 10),
@@ -139,6 +143,11 @@ export function mergeConfig(raw: unknown, base: ForgeConfig = defaultConfig()): 
     showCost: typeof r.show_cost === 'boolean' ? r.show_cost : base.showCost,
     secretScan: typeof r.secret_scan === 'boolean' ? r.secret_scan : base.secretScan,
     codeScan: typeof r.code_scan === 'boolean' ? r.code_scan : base.codeScan,
+    scanBlockOn: enumOr(
+      r.scan_block_on,
+      ['critical', 'high', 'medium', 'low', 'info', 'none'] as const,
+      base.scanBlockOn,
+    ),
     findingsToIssues: enumOr(r.findings_to_issues, ['off', 'rollup', 'per_finding'] as const, base.findingsToIssues),
     findingsMinSeverity: enumOr(
       r.findings_min_severity,

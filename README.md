@@ -337,13 +337,16 @@ on:
   issue_comment: { types: [created] }
   pull_request: { types: [opened, synchronize, review_requested] }
   pull_request_review_comment: { types: [created] }
-permissions: { contents: write, pull-requests: write, issues: write, checks: read, statuses: read, actions: write }
+permissions: { contents: write, pull-requests: write, issues: write, checks: write, statuses: read, actions: write }
 jobs:
   forge:
     runs-on: ubuntu-latest
     steps:
       - uses: shipiit/forge@v2
-        with: { provider: vertex }
+        with:
+          provider: vertex
+          secret-scan: '1'   # committed credentials — on by default
+          code-scan: '1'     # source-code security rules — on by default
         env:
           LLM_PROVIDER: vertex
           VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT }}
@@ -352,6 +355,41 @@ jobs:
 
 That's it — label an issue `agent-fix`, comment `/review` on a PR, or `@shipit-forge` anything, and
 it runs in **your** Actions with **your** key and compute. No server to host, nothing to register.
+
+### 🛡️ Turning the scan into a merge gate
+
+The two scans need no credential and no model call, so they run on **every** pull request even with
+review switched off. Three things make them a gate rather than a comment:
+
+1. **`checks: write`** in `permissions`. The scan publishes a check run; with `checks: read` it still
+   comments, but the check run fails to be created and nothing tells you. This is the single most
+   common reason a gate "does not work".
+2. **Settings → Branches → Branch protection rule → Require status checks to pass**, and tick
+   **`ShipIT Forge — security scan`**. It appears in that list once the scan has run at least once.
+3. Nothing else. A finding of **critical** or **high** fails the check; anything lower is reported
+   and passes, so the gate stops the things worth stopping and stays out of the way otherwise.
+
+Want a stricter gate — **nothing outstanding merges** — set `scan-block-on: low` on the Action (or
+`scan_block_on: low` in `.github/agent.yml`). Then every finding has to be fixed or dismissed with a
+`// forge-ignore` marker before the check passes. `none` turns the gate off and leaves the report.
+The comment always says which threshold is in force, so nobody has to guess why something merged.
+
+Findings in **test files never become review comments.** A suite has to contain what it detects — the
+scanner's own cases are a command injection, a path traversal and a key, all written on purpose — and
+a pull request that introduced no weakness should not arrive carrying eight nits about its own
+fixtures. They still appear in the scan comment at low severity, because a credential pasted into a
+test is still a credential and quietly dropping it is how one stays there.
+
+What you get on each pull request is one comment, grouped by rule, with every file and line — and it
+is **rewritten in place** on each push rather than posted again. To dismiss a finding, resolve the
+conversation (that pull request only), or write `// forge-ignore: secrets — reason` on the line to
+dismiss it everywhere. The marker covers that line and never the file, so one written last year
+cannot hide what was added under it since.
+
+Tighter permissions: drop the workflow-level block entirely and give each job its own. Forge flagged
+workflow-wide `checks: write` on its own pull request as a supply-chain risk and it was right — the
+job that publishes a check run is the only one that needs it. This repository's own
+[`.github/workflows/forge.yml`](./.github/workflows/forge.yml) is set up that way.
 
 > **Action vs hosted App:** the **Action** = per-org keys, zero infra, runs in their CI. The
 > **App** (above) = one server you host and pay for, one-click install for others. Same engine.
@@ -419,6 +457,7 @@ auto_fix: label                # label | opened | off
 auto_review: always            # always | requested | off
 secret_scan: true              # scan every PR for committed credentials (default true)
 code_scan: true                # source-code security rules alongside it (default true)
+scan_block_on: high            # critical | high | medium | low | none — what fails the check run
 test_command: "npm test"       # else auto-detected
 review_depth: standard         # light | standard | deep
 ignore_paths: ["dist/**", "*.lock"]

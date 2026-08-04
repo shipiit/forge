@@ -68,6 +68,7 @@ async function deps(
     findingsMaxIssues: config.findingsMaxIssues,
     selfReview: true,
     scanners: scannersFor(config),
+    scanBlockOn: config.scanBlockOn,
   };
 }
 

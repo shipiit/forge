@@ -90,6 +90,10 @@ async function main(): Promise<void> {
   // repository's own setting, which is on.
   if (offSwitch(actionInput('secret-scan'))) config.secretScan = false;
   if (offSwitch(actionInput('code-scan'))) config.codeScan = false;
+  const blockOn = actionInput('scan-block-on');
+  if (blockOn && ['critical', 'high', 'medium', 'low', 'info', 'none'].includes(blockOn)) {
+    config.scanBlockOn = blockOn as typeof config.scanBlockOn;
+  }
   if (inputs.maxNits !== undefined) config.maxNits = inputs.maxNits;
 
   const routeOpts: RouteOpts = {
@@ -156,6 +160,7 @@ async function main(): Promise<void> {
     findingsMaxIssues: config.findingsMaxIssues,
     selfReview: true,
     scanners: scannersFor(config),
+    scanBlockOn: config.scanBlockOn,
   };
 
   // A scan with no route is still work: say so, rather than naming a route

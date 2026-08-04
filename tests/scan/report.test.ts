@@ -77,3 +77,54 @@ describe('the report', () => {
     expect(renderScanReport([f()], opts)).toContain('forge-ignore: secrets');
   });
 });
+
+describe('what stops a merge is a setting', () => {
+  const f = (severity: string) =>
+    ({ file: 'a.ts', startLine: 1, endLine: 1, lens: 'security', severity, category: 'CWE-1', title: 'T', body: 'b' } as never);
+
+  it('blocks on high and above by default', () => {
+    expect(blocking([f('critical'), f('high'), f('medium'), f('low')])).toHaveLength(2);
+  });
+
+  it('can be told nothing outstanding may merge', () => {
+    // The repository that wants every finding resolved or dismissed first.
+    expect(blocking([f('critical'), f('high'), f('medium'), f('low')], 'low')).toHaveLength(4);
+  });
+
+  it('can be a report with no gate at all', () => {
+    expect(blocking([f('critical')], 'none')).toHaveLength(0);
+  });
+
+  it('says which threshold is in force, so nobody has to guess', () => {
+    const strict = renderScanReport([f('medium')], {
+      displayName: 'Forge',
+      scope: 'this pull request',
+      filesScanned: 1,
+      blockAt: 'low',
+    });
+    expect(strict).toContain('Blocking at **low**');
+    expect(strict).toContain('resolved or dismissed');
+    expect(renderScanReport([f('medium')], {
+      displayName: 'Forge',
+      scope: 'this pull request',
+      filesScanned: 1,
+      blockAt: 'none',
+    })).toContain('runs the scan as a report');
+  });
+});
+
+describe('saying what was looked for', () => {
+  it('lists the coverage of the scanners that ran, on a clean report too', () => {
+    const clean = renderScanReport([], {
+      displayName: 'Forge',
+      scope: 'this pull request',
+      filesScanned: 9,
+      scanners: ['secrets', 'code'],
+    });
+    expect(clean).toContain('What this scan looked for');
+    expect(clean).toContain('Committed credentials');
+    expect(clean).toContain('Source code');
+    // Not claiming a pass that did not run.
+    expect(clean).not.toContain('Infrastructure and workflows');
+  });
+});

@@ -74,8 +74,8 @@ import {
 } from './review.js';
 import { parseSarif } from './sarif.js';
 import { redactSecrets } from '../util/resilience.js';
-import { collectFiles, mergeFindings, runScanners, type Scanner } from '../scan/index.js';
-import { blocking, renderScanReport } from '../scan/report.js';
+import { collectFiles, inTestFile, mergeFindings, runScanners, SCANNERS, type Scanner } from '../scan/index.js';
+import { blocking, renderScanReport, type BlockLevel } from '../scan/report.js';
 import { fetchDependabotFindings } from './dependabot.js';
 import { isSafeRef, realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
@@ -101,6 +101,8 @@ export interface HandlerDeps {
   selfReview?: boolean;
   /** Which deterministic scanners to run. Defaults to all of them. */
   scanners?: Scanner[];
+  /** Lowest severity that fails the scan's check run. Defaults to high. */
+  scanBlockOn?: BlockLevel;
   /** Optional explicit test command override (from .github/agent.yml). */
   testCommand?: string;
   /** Workspace operations; defaults to real git. Overridden in tests. */
@@ -798,8 +800,20 @@ async function doPrReview(
     // findings that were free; and the model is told what was already found,
     // so it spends its turns judging whether those are reachable rather than
     // rediscovering a key it would have read past anyway.
-    const scanned = await runScanners({ cwd: ws.dir, only: new Set(parseDiffValidLines(diff).keys()) }, deps.scanners);
+    const all = await runScanners({ cwd: ws.dir, only: new Set(parseDiffValidLines(diff).keys()) }, deps.scanners);
+
+    // A finding in a test file does not become an inline review comment.
+    //
+    // A suite has to contain what it detects — the scanner's own cases are a
+    // command injection, a traversal and a key, all written deliberately — and
+    // a pull request that introduced no weakness should not arrive carrying
+    // eight nits about its own fixtures. They are still reported, at low
+    // severity, in the scan comment: a credential pasted into a test is still
+    // a credential, and quietly dropping it is how one stays there.
+    const scanned = all.filter((f) => !inTestFile(f));
+    const inTests = all.length - scanned.length;
     if (scanned.length) log(`scanners: ${scanned.length} finding(s) before the model ran`);
+    if (inTests) log(`scanners: ${inTests} finding(s) in test files, reported but not commented on`);
 
     const result = await runAgent({
       client,
@@ -1085,6 +1099,8 @@ async function doScan(
       filesScanned: files.length,
       repoUrl: `https://github.com/${args.owner}/${args.repo}`,
       ref: args.ref,
+      scanners: (deps.scanners ?? SCANNERS).map((sc) => sc.name),
+      blockAt: deps.scanBlockOn ?? 'high',
     });
 
     // One comment per pull request, rewritten in place.
@@ -1116,7 +1132,7 @@ async function doScan(
 
     // A check run is what actually stops a merge, once it is required. Neutral
     // rather than failing when nothing blocks, so a clean scan never nags.
-    const stop = blocking(findings);
+    const stop = blocking(findings, deps.scanBlockOn ?? 'high');
     if (args.pullNumber && octokit.rest.checks?.create) {
       try {
         const pr = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });

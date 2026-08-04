@@ -72,16 +72,15 @@ on:
   issue_comment:
     types: [created]
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  # write, not read: the scan publishes a check run, and a check run is what
-  # turns a finding into a merge gate once you mark it required. With read it
-  # would fail quietly and the gate would simply not exist.
-  checks: write
-  statuses: read
-  actions: write
+# Nothing at the workflow level. Every job declares what it needs, so the
+# gate — which decides whether an untrusted actor gets a run at all — cannot
+# write anything, and a job added later starts from no permissions rather
+# than inheriting write on the repository.
+#
+# Forge flagged this on its own pull request, and it was right: workflow-wide
+# `checks: write` on every pull_request event is a broader grant than the one
+# job that publishes a check run needs.
+permissions: {}
 
 concurrency:
   group: forge-${{ github.event.pull_request.number || github.event.issue.number }}
@@ -136,6 +135,16 @@ jobs:
           fi
 
   review:
+    permissions:
+      contents: write # clone, and push a fix branch
+      pull-requests: write # post the review and its inline comments
+      issues: write # comment on the issue a fix closes
+      # The scan publishes a check run, and a check run is what turns a
+      # finding into a merge gate once you mark it required. With read it
+      # fails quietly and the gate simply does not exist.
+      checks: write
+      statuses: read
+      actions: write # read failed-job logs for the CI auto-fix
     needs: gate
     if: needs.gate.outputs.allowed == 'true'
     runs-on: ubuntu-latest

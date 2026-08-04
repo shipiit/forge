@@ -1,5 +1,5 @@
 import type { ReviewFinding } from '../github/review.js';
-import type { ScanFile, Scanner } from './types.js';
+import { TEST_PATH, type ScanFile, type Scanner } from './types.js';
 
 /**
  * Source-code rules, the deterministic half of a security review.
@@ -49,16 +49,6 @@ const PY = /\.py$/;
 const ANY = /\.(?:js|jsx|ts|tsx|mjs|cjs|py|rb|go|java|php)$/;
 const WORKFLOW = /\.github\/workflows\/[^/]+\.ya?ml$/;
 
-/**
- * Test and fixture files, where vulnerable-looking code is usually the point.
- *
- * A scanner's own test suite has to contain the thing it detects, and so does
- * every regression test anybody writes against it. Reported at full severity
- * these drown the real findings — so they are downgraded rather than dropped,
- * because a credential pasted into a test is still a credential, and a fixture
- * is sometimes just production code that was moved and never renamed.
- */
-const TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|fixtures?|__mocks__)\/|\.(?:test|spec)\.[jt]sx?$/i;
 
 /**
  * The line with its prose taken out, keeping only what is really code.

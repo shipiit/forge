@@ -114,3 +114,18 @@ describe('the code scan toggle', () => {
     expect(c.secretScan).toBe(true);
   });
 });
+
+describe('what the scan blocks on', () => {
+  it('defaults to high — real things stop a merge, arguments do not', () => {
+    expect(defaultConfig({}).scanBlockOn).toBe('high');
+  });
+
+  it('takes low, for a repository that wants nothing outstanding', () => {
+    expect(mergeConfig({ scan_block_on: 'low' }, defaultConfig({})).scanBlockOn).toBe('low');
+    expect(defaultConfig({ FORGE_SCAN_BLOCK_ON: 'none' } as NodeJS.ProcessEnv).scanBlockOn).toBe('none');
+  });
+
+  it('ignores a value that is not a severity rather than blocking on nonsense', () => {
+    expect(mergeConfig({ scan_block_on: 'urgent' }, defaultConfig({})).scanBlockOn).toBe('high');
+  });
+});

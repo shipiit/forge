@@ -8,7 +8,7 @@ import { codeScanner } from './code.js';
 import { applySuppressions } from './suppress.js';
 import { dedupe, type ScanContext, type Scanner } from './types.js';
 
-export { dedupe, findingKey, type Scanner, type ScanContext } from './types.js';
+export { dedupe, findingKey, inTestFile, TEST_PATH, type Scanner, type ScanContext } from './types.js';
 export { secretsScanner, entropy, looksRandom } from './secrets.js';
 export { iacScanner } from './iac.js';
 export { codeScanner } from './code.js';

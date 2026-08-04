@@ -17,9 +17,18 @@ permissions:
   contents: write        # edit code, push fix branches
   issues: write          # read issues, post comments
   pull-requests: write   # open PRs, post reviews + inline comments
-  checks: read           # read CI check results
+  checks: write          # publish the security-scan check run (see below)
   statuses: read         # read commit statuses
   actions: write         # read logs + re-run failed workflows (CI auto-fix)
+  #
+  # `checks: write`, not read. The security scan publishes a check run, and a
+  # check run is what turns a finding into a merge gate once you mark it
+  # required in Settings → Branches. With `read` the scan still comments, but
+  # the gate silently fails to be created and nothing tells you.
+  #
+  # Tighter setup: delete this block and put a `permissions:` under each job
+  # instead, so a job added later starts from nothing rather than inheriting
+  # write on the repository. That is what this repository's own workflow does.
   # NOTE: GITHUB_TOKEN cannot push changes to .github/workflows/** by design.
   # If a fix must edit a workflow file, run the hosted App (APP_ID/PRIVATE_KEY below),
   # whose App permission `workflows: write` allows it.
@@ -31,6 +40,41 @@ jobs:
       - uses: shipiit/forge@v2
         with:
           provider: anthropic
+
+          # --- Security scanning -------------------------------------------
+          # Both are ON by default; they are written out so it is visible that
+          # they run, and obvious where to turn one off ('0' disables).
+          #
+          # They cost NO model call, so they run on every pull request no
+          # matter what the review cadence is — even with auto-review off.
+          #
+          #   secret-scan  committed credentials: twelve provider shapes,
+          #                Shannon entropy for generic assignments, plus file
+          #                context so `your-api-key-here` is not a finding
+          #   code-scan    the source itself: command injection, path
+          #                traversal, credentials written to logs, exception
+          #                exposure, open redirect, unsafe deserialization,
+          #                binding every interface, workflows with no
+          #                permissions block
+          #
+          # Findings arrive as one comment, grouped by rule, with every file
+          # and line. It is rewritten in place on each push rather than
+          # posted again. To dismiss one, resolve the conversation (this PR
+          # only) or write `// forge-ignore: secrets — reason` on the line.
+          secret-scan: '1'
+          code-scan: '1'
+          #
+          # What fails the check run: critical | high | medium | low | none.
+          # Default 'high' — the findings that are nearly always real stop a
+          # merge, and a mutable action pin is an argument for another day.
+          #
+          # Set 'low' if nothing outstanding may merge: every finding then has
+          # to be fixed, or dismissed with a `// forge-ignore` marker, before
+          # the check passes. Set 'none' to report without ever blocking.
+          #
+          # The gate only exists once you tick "ShipIT Forge — security scan"
+          # under Settings → Branches → Require status checks to pass.
+          scan-block-on: high
         env:
           # Pick ONE provider and set its key as a repo/org secret.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
