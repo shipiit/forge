@@ -16,6 +16,7 @@ import { CiSection } from '../sections/github/CiSection';
 import { MentionsSection } from '../sections/github/MentionsSection';
 import { HelpSection } from '../sections/github/HelpSection';
 import { ScannersSection } from '../sections/github/ScannersSection';
+import { ArchitectureSection } from '../sections/github/ArchitectureSection';
 import { SkillsSection } from '../sections/github/SkillsSection';
 import { ConfigSection } from '../sections/github/ConfigSection';
 import { CommandsSection } from '../sections/github/CommandsSection';
@@ -26,6 +27,7 @@ import { CostSection } from '../sections/github/CostSection';
 import { FaqSection } from '../sections/github/FaqSection';
 
 const TOC: Toc = [
+  ['architecture', 'Architecture'],
   ['quickstart', 'Quick start'],
   ['install', 'Install as an App'],
   ['action', 'GitHub Action'],
@@ -59,6 +61,7 @@ export function GitHubGuide() {
       subtitle="and how to set it up."
       lead="One place for all of it: try it locally in two minutes, generate your workflow file, install it across an organization, and configure exactly what it does. Every capability below lists what starts it, what it produces, and a worked example."
     >
+      <ArchitectureSection />
       <QuickstartSection />
       <InstallSection />
       <ActionSection />

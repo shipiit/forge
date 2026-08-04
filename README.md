@@ -33,6 +33,10 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 
 ---
 
+<img src="docs/img/architecture.png" alt="ShipIT Forge architecture: a GitHub event is cloned into a sandbox, deterministic scanners run before the model, the agent loop reasons and calls sandboxed tools, tests verify, and the findings are merged and deduplicated into one pull-request review" width="100%" />
+
+---
+
 ## ✨ What it does
 
 | | Capability | How you trigger it |
