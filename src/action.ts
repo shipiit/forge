@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Octokit } from '@octokit/rest';
 import { createAppAuth } from '@octokit/auth-app';
-import { createLLMClient } from './providers/index.js';
+import { createLLMClient, createLLMClientOrStub } from './providers/index.js';
 import type { ProviderId } from './providers/types.js';
 import { defaultConfig } from './config.js';
 import { routeEvent, type RouteOpts } from './github/router.js';
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
 
   const deps: HandlerDeps = {
     octokit,
-    client: createLLMClient({ provider, model: config.model }),
+    client: createLLMClientOrStub({ provider, model: config.model }, log),
     token: effectiveToken, // used to clone the repo over HTTPS
     log,
     testCommand: config.testCommand,

@@ -1,5 +1,5 @@
 import type { Probot, Context } from "probot";
-import { createLLMClient } from "./providers/index.js";
+import { createLLMClient, createLLMClientOrStub } from "./providers/index.js";
 import type { ProviderId } from "./providers/types.js";
 import {
   handleIssueFix,
@@ -52,7 +52,7 @@ async function deps(
   };
   return {
     octokit: context.octokit as unknown as OctokitLike,
-    client: createLLMClient({ provider: provider(), model: config.model }),
+    client: createLLMClientOrStub({ provider: provider(), model: config.model }, (m) => context.log.info(m)),
     token: auth.token,
     log: (msg: string) => context.log.info(redactSecrets(msg)),
     testCommand: config.testCommand,

@@ -356,6 +356,32 @@ jobs:
 That's it — label an issue `agent-fix`, comment `/review` on a PR, or `@shipit-forge` anything, and
 it runs in **your** Actions with **your** key and compute. No server to host, nothing to register.
 
+### 🏢 What happens when you install it on an organisation
+
+Nothing to configure per repository. Install the App (or add the workflow) and from that moment:
+
+| Event | What runs | Needs a model key? |
+|---|---|---|
+| Pull request opened | Security scan, then the review | Scan **no**, review yes |
+| New commits pushed | Both again, on the new head | Scan **no**, review yes |
+| Issue labelled `agent-fix` | The agent fixes it and opens a PR | Yes |
+| `/review`, `/security`, `/secrets`, `@shipit-forge …` | That command | `/secrets` **no**, rest yes |
+
+The defaults are `auto_review: always`, `review_behavior: every_push`, `auto_fix: label`, and both
+scans on — so every pull request in the organisation is reviewed and scanned without anybody opting
+in. Any repository can turn any of it off in its own `.github/agent.yml`; the organisation-wide
+default is **on**, not enforced.
+
+Two honest caveats:
+
+- **The App needs a provider key on the server you host it on.** Installing the App on an
+  organisation does not give it a model — whoever runs the server configures that once, and every
+  installed repository then uses it. With the Action instead, each repository uses its own key from
+  its own secrets.
+- **The scans need no key at all.** They make no model call, so a repository with no provider
+  configured still gets the full security scan and its check run — the review is what stops, and it
+  says so rather than failing the run.
+
 ### 🛡️ Turning the scan into a merge gate
 
 The two scans need no credential and no model call, so they run on **every** pull request even with
