@@ -40,6 +40,7 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 | 🛠️ | **Fix an issue → open a PR** — investigates the repo, writes the fix on a branch, runs the tests, opens a PR that closes the issue | Label `agent-fix`, or comment `/fix` |
 | 🔍 | **Review a PR** — inline comments + summary verdict, quality **and** security lenses, **scoped strictly to the changed files** | Open a PR, or comment `/review` / `/review always` |
 | 🛡️ | **Security review** — flags SSRF, injection, secrets, authz… with **severity**, a **CWE**, and a **suggested-fix** block | Auto on PRs, or comment `/security` |
+| 🔎 | **Deterministic scanners** — secrets (provider shapes + entropy + context) and infrastructure (Dockerfile, compose, Kubernetes, Terraform, workflows), run before the model at no token cost and merged with its findings | Automatic on every review and audit |
 | 🔬 | **Whole-repo audit** — maps entry points, follows untrusted input to dangerous sinks, one grouped report | Comment `/audit` |
 | 📜 | **Change-history document** — one entry per merged change, written **from that diff alone**; arrives as a PR | `history: true` in `agent.yml` |
 | ⏰ | **Routines** — a saved skill plus its triggers: cron, on-demand, or any repository event, each with filters | `routines:` in `agent.yml`, `/run <name>` |
@@ -76,6 +77,17 @@ always completes as `neutral` so it can't block a merge through branch protectio
 - **Deterministic per-edit checks** — every write is scanned for risky patterns (dynamic execution, unsafe
   deserialization, DOM injection, hardcoded credentials, weak crypto, workflow edits) with **no model call
   and no token cost**. Add your own rules in `.forge/security-patterns.json`.
+- **Secret scanning that does not cry wolf** — twelve provider shapes (GitHub, AWS, Anthropic, OpenAI,
+  Google, Slack, Stripe, npm, JWT, PEM, database URLs), Shannon entropy for generic assignments, and file
+  context. `your-api-key-here` is not a finding; a real key in a README is, at lower severity — because
+  people do paste real keys into documentation, and staying quiet there is quiet exactly where the
+  mistake is easiest to make.
+- **Infrastructure scanning** — the files that get the least review and decide the most: containers
+  running as root, `:latest` bases, privileged pods, host mounts, buckets open to the world, `0.0.0.0/0`,
+  actions pinned to a mutable tag, `pull_request_target`, and untrusted event text reaching a shell.
+- **Dismissal you can audit** — resolve the conversation to dismiss a finding on that PR, or write
+  `// forge-ignore: secrets — reason` on the line to dismiss it everywhere. It covers that line only,
+  never the file, so a marker written last year cannot hide what was added under it since.
 - **Sandboxed tools** — path-jailed file access, a command denylist, process-group timeouts, and output caps.
 - **Secret redaction** on every log path.
 - **Live Dependabot alerts** and **SARIF** (CodeQL, Semgrep) merged into the same triaged report.
@@ -409,10 +421,13 @@ ignore_paths: ["dist/**", "*.lock"]
 ```
 issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
                                           │
+                  scanners ◀─────────────┤   (no model call: secrets, IaC)
                        agent loop ◀───────┘   (LLM + tools, provider-agnostic)
                        read · search · edit · multi_edit · glob · git_history · run_bash · run_tests
                                           │
-                       verify (tests) ────┘
+                       verify (tests) ────┤
+                                          │
+                       merge + dedupe ────┘   (one comment per problem)
                                           │
                  ┌────────────────────────┼────────────────────────┐
                  ▼                         ▼                        ▼
@@ -427,8 +442,17 @@ issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
   network), `run_tests` (auto-detected).
 - **Agent loop** (`src/agent/loop.ts`) — chat → tool calls → results → repeat, with retries,
   iteration + token limits, and a repo-map for fast orientation.
+- **Scanners** (`src/scan`) — deterministic passes that run *before* the model and cost nothing: a
+  secrets scanner (provider shapes + Shannon entropy + file context) and an infrastructure scanner
+  (Dockerfile, compose, Kubernetes, Terraform, workflows). A model reads past the fourth key in a
+  config file; these do not, and they give the same answer twice. Their findings are merged and
+  deduplicated with the model's, so one weakness that both notice arrives as **one** comment.
 - **GitHub layer** (`src/github`) — vision image extraction, workspace clone/branch/commit/push,
   PR composer, diff-aware security review composer; wired to webhooks in `src/app.ts`.
+- **Dismissal** — resolving a review conversation dismisses that finding for the pull request;
+  `// forge-ignore: secrets — reason` on the line dismisses it everywhere. The marker is deliberately
+  in the code rather than in a database: it arrives through review, and the next reader can see both
+  the dismissal and the reason for it.
 
 ---
 
