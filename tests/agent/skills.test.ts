@@ -222,11 +222,34 @@ describe('the how-to skill', () => {
     expect(skill!.tools).not.toContain('run_bash');
   });
 
-  it('tells the model not to invent flags and paths', () => {
+  it('tells the model not to instruct on anything it has not read', () => {
     // The failure mode for a how-to answer is a confident instruction to set a
     // config key that does not exist.
     const skill = BUILT_IN_SKILLS.find((s) => s.name === 'how-to')!;
-    expect(skill.prompt).toMatch(/never invent/i);
+    expect(skill.prompt).toMatch(/have not seen in this repository/i);
     expect(skill.prompt).toMatch(/it does not exist/i);
+  });
+});
+
+describe('how-to must verify before it instructs', () => {
+  const prompt = () => BUILT_IN_SKILLS.find((s) => s.name === 'how-to')!.prompt;
+
+  it('requires having seen the thing, not assumed it', () => {
+    // A real /help run invented `npm run serve-usage`, `FORGE_USAGE_URL` and a
+    // POST /api/usage endpoint — none of which exist — after a single search.
+    expect(prompt()).toMatch(/have not seen in this repository/i);
+    expect(prompt()).toMatch(/package\.json/);
+  });
+
+  it('says an empty search means the feature is absent', () => {
+    // The question that produced the bad answer was about a feature the repo
+    // does not have. "Not supported yet" was the correct answer.
+    expect(prompt()).toMatch(/it does not exist/i);
+    // Wrapped prose: the words can fall either side of a line break.
+    expect(prompt()).toMatch(/not\s+supported/i);
+  });
+
+  it('asks for the defining file, so the reader can check it', () => {
+    expect(prompt()).toMatch(/so the reader can check you/i);
   });
 });

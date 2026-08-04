@@ -49,11 +49,33 @@ export interface ReviewPayload {
   comments: ReviewComment[];
 }
 
-/** Render one finding as the body of an inline review comment. */
+/** The first sentence, for the line somebody reads in the diff. */
+function lede(body: string, max = 220): string {
+  const first = body.trim().split(/(?<=[.!?])\s+/)[0] ?? body.trim();
+  const one = first.replace(/\s+/g, ' ');
+  return one.length > max ? `${one.slice(0, max - 1).trimEnd()}…` : one;
+}
+
+/**
+ * Render one finding as the body of an inline review comment.
+ *
+ * Title first, severity beside it, one sentence of why — that is what somebody
+ * scanning a diff has room for. Everything else is folded: the full reasoning
+ * and the suggested change are one click away, and a reviewer with six comments
+ * on screen can still see the code between them.
+ */
 export function renderFindingBody(f: ReviewFinding): string {
   const lensTag = f.lens === 'security' ? '🛡️ Security' : '🔧 Quality';
-  let out = `${SEVERITY_BADGE[f.severity]} · ${lensTag} · \`${f.category}\`\n\n**${f.title}**\n\n${f.body}`;
+  const rest = f.body.trim().slice(lede(f.body).length).trim();
+
+  let out = `**${f.title}** — ${SEVERITY_BADGE[f.severity]} · ${lensTag} · \`${f.category}\`\n\n${lede(f.body)}`;
+
+  if (rest) {
+    out += `\n\n<details><summary>Why this matters</summary>\n\n${rest}\n\n</details>`;
+  }
   if (f.suggestion !== undefined) {
+    // Kept out of the collapsed block: GitHub only offers "Commit suggestion"
+    // on a suggestion it can see.
     out += `\n\n\`\`\`suggestion\n${f.suggestion}\n\`\`\``;
   }
   // Identity for re-review: lets a later run skip this finding instead of
