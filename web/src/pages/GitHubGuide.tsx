@@ -15,6 +15,7 @@ import { RoutinesSection } from '../sections/github/RoutinesSection';
 import { CiSection } from '../sections/github/CiSection';
 import { MentionsSection } from '../sections/github/MentionsSection';
 import { HelpSection } from '../sections/github/HelpSection';
+import { ScannersSection } from '../sections/github/ScannersSection';
 import { SkillsSection } from '../sections/github/SkillsSection';
 import { ConfigSection } from '../sections/github/ConfigSection';
 import { CommandsSection } from '../sections/github/CommandsSection';
@@ -32,6 +33,7 @@ const TOC: Toc = [
   ['fix', 'Fix an issue'],
   ['review', 'Review a PR'],
   ['security', 'Security'],
+  ['scanners', 'Scanners'],
   ['audit', 'Whole-repo audit'],
   ['history', 'Change history'],
   ['routines', 'Routines'],
@@ -64,6 +66,7 @@ export function GitHubGuide() {
       <FixSection />
       <ReviewSection />
       <SecuritySection />
+      <ScannersSection />
       <AuditSection />
       <HistorySection />
       <RoutinesSection />
