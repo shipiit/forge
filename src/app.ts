@@ -246,6 +246,20 @@ export default function app(probot: Probot, options: { getRouter?: (path?: strin
       );
       return;
     }
+    const help = body.match(/^\/(?:help|how|how-to)\b[ \t]*([\s\S]*)$/i);
+    if (help) {
+      await dispatch(context, config, { flow: 'mention', ...ref, issueNumber: issue.number }, (d) =>
+        handleMention(d, {
+          ...base,
+          issueNumber: issue.number,
+          question: (help[1] ?? '').trim() || 'What is this project and how do I use it?',
+          skill: 'how-to',
+          issueTitle: issue.title,
+          issueBody: issue.body,
+        }),
+      );
+      return;
+    }
     if (/^\/audit\b/i.test(body)) {
       // Full-repository security audit (works on an issue or a PR thread).
       await dispatch(

@@ -211,3 +211,22 @@ describe('the review prompt keeps severity and lens honest', () => {
     expect(reviewSystemPrompt()).toMatch(/same block, same indentation/i);
   });
 });
+
+describe('the how-to skill', () => {
+  it('ships as a built-in, so /help works with nothing committed', () => {
+    const skill = BUILT_IN_SKILLS.find((s) => s.name === 'how-to');
+    expect(skill).toBeDefined();
+    expect(skill!.tools).toContain('search');
+    // It answers questions; it must not be able to change anything.
+    expect(skill!.tools).not.toContain('write_file');
+    expect(skill!.tools).not.toContain('run_bash');
+  });
+
+  it('tells the model not to invent flags and paths', () => {
+    // The failure mode for a how-to answer is a confident instruction to set a
+    // config key that does not exist.
+    const skill = BUILT_IN_SKILLS.find((s) => s.name === 'how-to')!;
+    expect(skill.prompt).toMatch(/never invent/i);
+    expect(skill.prompt).toMatch(/it does not exist/i);
+  });
+});

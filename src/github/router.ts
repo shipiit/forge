@@ -38,6 +38,8 @@ export type Route =
       kind: 'mention';
       issueNumber: number;
       question: string;
+      /** A skill the command selected, rather than one the comment named. */
+      skill?: string;
       /** The thread's own text — the agent has no tool for fetching it. */
       issueTitle?: string;
       issueBody?: string | null;
@@ -121,6 +123,21 @@ export function routeEvent(eventName: string, payload: any, opts: RouteOpts): Ro
 
       if (/^\/fix\b/i.test(body) && !isPr) {
         return { kind: 'fix', ...bits, issueNumber: issue.number, issueTitle: issue.title, issueBody: issue.body ?? null };
+      }
+      // "/help how do I add a provider?" — a question about the code, answered
+      // from the code. Routed here rather than left to the mention path so it
+      // works without knowing that a skill called how-to exists.
+      const help = body.match(/^\/(?:help|how|how-to)\b[ \t]*([\s\S]*)$/i);
+      if (help) {
+        return {
+          kind: 'mention',
+          ...bits,
+          issueNumber: issue.number,
+          question: (help[1] ?? '').trim() || 'What is this project and how do I use it?',
+          skill: 'how-to',
+          issueTitle: issue.title ?? '',
+          issueBody: issue.body ?? null,
+        };
       }
       if (/^\/audit\b/i.test(body)) {
         return { kind: 'audit', ...bits, issueNumber: issue.number, ref: bits.defaultBranch };
