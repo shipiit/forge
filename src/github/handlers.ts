@@ -913,6 +913,8 @@ export function handleMention(
     issueNumber: number;
     question: string;
     defaultBranch: string;
+    /** A skill chosen by the command, e.g. /help selecting how-to. */
+    skill?: string;
     /** The thread's own text. Without it the agent is answering blind. */
     issueTitle?: string;
     issueBody?: string | null;
@@ -929,6 +931,8 @@ async function doMention(
     issueNumber: number;
     question: string;
     defaultBranch: string;
+    /** A skill chosen by the command, e.g. /help selecting how-to. */
+    skill?: string;
     /** The thread's own text. Without it the agent is answering blind. */
     issueTitle?: string;
     issueBody?: string | null;
@@ -944,7 +948,10 @@ async function doMention(
     const invocation = parseSkillInvocation(args.question);
     const skills = await skillsFor(deps, ws.dir);
     // A workflow-selected skill applies when the comment didn't name one.
-    const skill = invocation ? skills.get(invocation.name) : deps.skillName ? skills.get(deps.skillName) : undefined;
+    // A command that picked a skill (/help) wins over the workflow default,
+    // and an explicit /skill-name in the comment wins over both.
+    const wanted = invocation?.name ?? args.skill ?? deps.skillName;
+    const skill = wanted ? skills.get(wanted.toLowerCase()) : undefined;
     if (invocation && !skill) {
       await octokit.rest.issues.createComment({
         owner: args.owner,

@@ -43,11 +43,12 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 | 🔬 | **Whole-repo audit** — maps entry points, follows untrusted input to dangerous sinks, one grouped report | Comment `/audit` |
 | 📜 | **Change-history document** — one entry per merged change, written **from that diff alone**; arrives as a PR | `history: true` in `agent.yml` |
 | ⏰ | **Routines** — a saved skill plus its triggers: cron, on-demand, or any repository event, each with filters | `routines:` in `agent.yml`, `/run <name>` |
-| 🧩 | **Skills** — 7 built-in prompt packs with enforced tool allowlists; override from your repo or the workflow | `/code-review`, `/triage`, … |
+| 🧩 | **Skills** — 8 built-in prompt packs with enforced tool allowlists; override from your repo or the workflow | `/code-review`, `/triage`, … |
 | 🔁 | **Auto-fix failing CI** — reads the logs, corrects the code, re-runs the suite, pushes a `ci-fix` commit | Automatic on `forge/*` branches |
 | 📝 | **Release notes** — generated from the commits in the release | On `release.published` |
 | 👋 | **Invite as a reviewer** — request `@shipit-forge` on any PR and it reviews on demand | Add it as a PR reviewer |
 | 💬 | **Answer @mentions** — explains code on issues; on a PR it can **push a follow-up commit** to the branch | Comment `@shipit-forge <ask>` |
+| 🧭 | **Answer "how do I…?"** — reads the code and replies with numbered steps, real paths and commands, how to check it worked, and what to watch out for | Comment `/help <question>` |
 | 🖼️ | **Reads screenshots** — pulls images out of issue/PR bodies and feeds them to vision models | Automatic |
 
 **It never merges and never approves.** Every change is a pull request you control, and the review check run
@@ -268,6 +269,7 @@ the permissions/events from [`app.yml`](./app.yml).
 PR, and watch it work. Once it behaves, widen to all repos and/or make it public.
 
 **4. Invite & test it** — in any repo of that org:
+- ask **`/help how do I …?`** in any issue or PR → it reads the code and answers in steps;
 - open an issue and add the label **`agent-fix`** (or comment **`/fix`**) → Forge opens a fix PR;
 - open a PR → Forge auto-reviews it; or **request `@shipit-forge` as a reviewer** on an existing PR;
 - comment **`/review`**, **`/security`**, or **`@shipit-forge <ask>`** anywhere.
