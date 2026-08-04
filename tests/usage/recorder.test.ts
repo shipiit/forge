@@ -176,7 +176,7 @@ describe('artifacts', () => {
   it('redacts secrets before they reach disk', async () => {
     // A transcript contains file contents, and file contents contain keys.
     const id = await rec.startRun(meta());
-    await rec.putArtifact(id, 'transcript', 'key sk-ant-abcdefghijklmnopqrstuvwxyz012345');
+    await rec.putArtifact(id, 'transcript', 'key sk-ant-abcdefghijklmnopqrstuvwxyz012345'); // forge-ignore: secrets // forge-ignore: secrets
     const a = rows('SELECT path FROM artifacts WHERE run_id=?', id)[0];
     const text = gunzipSync(await fs.readFile(path.join(dir, 'artifacts', a.path))).toString();
     expect(text).not.toContain('sk-ant-abcdefghijklmnopqrstuvwxyz012345');
