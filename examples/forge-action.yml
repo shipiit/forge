@@ -19,6 +19,11 @@ permissions:
   contents: write        # push fix branches
   pull-requests: write   # open PRs + reviews
   issues: write          # comment on issues
+  checks: write          # publish the security-scan check run
+  # `checks: write`, not read. The scan publishes a check run, and that check
+  # run is what becomes a merge gate once you tick it under Settings →
+  # Branches. With `read` the scan still comments and the gate silently is
+  # never created.
 
 jobs:
   forge:
@@ -28,6 +33,12 @@ jobs:
         with:
           provider: vertex            # vertex | bedrock | openai | anthropic
           # vertex-credentials-json: ${{ secrets.VERTEX_SA_JSON }}
+
+          # Security scanning. Both on by default, no model call, no cost —
+          # they run on every pull request whatever the review cadence is.
+          secret-scan: '1'            # committed credentials
+          code-scan: '1'              # injection, traversal, logging, deserialization
+          scan-block-on: high         # critical|high|medium|low|none fails the check
         env:
           LLM_PROVIDER: vertex
           # --- Vertex AI Gemini ---

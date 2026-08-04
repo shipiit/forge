@@ -1223,6 +1223,11 @@ async function doAudit(
       onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
     deps.run?.add(result);
+    // An audit keeps its test-file findings, where a pull-request review drops
+    // them. The asymmetry is deliberate: a review comments on a diff somebody
+    // is about to merge, and nits about its own fixtures are noise there. An
+    // audit is somebody asking what is in the repository — and a key committed
+    // to a test file is one of the things they are asking about.
     const findings = mergeFindings(parseFindings(result.finalText), scannedRepo);
     deps.run?.findings(findings);
     // Merge live Dependabot alerts (current CVEs from GitHub's Advisory Database).

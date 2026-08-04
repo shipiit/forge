@@ -128,3 +128,30 @@ describe('saying what was looked for', () => {
     expect(clean).not.toContain('Infrastructure and workflows');
   });
 });
+
+describe('a fixture never holds the gate shut', () => {
+  const at = (file: string, severity: string) =>
+    ({ file, startLine: 1, endLine: 1, lens: 'security', severity, category: 'CWE-1', title: 'T', body: 'b' } as never);
+
+  it('does not block on a test file even at the strictest threshold', () => {
+    // "Nothing outstanding merges" must not mean "your own test suite blocks
+    // you forever" — that is how a scanner gets switched off.
+    const findings = [at('tests/scan/code.test.ts', 'low'), at('src/api.ts', 'low')];
+    expect(blocking(findings, 'low').map((f) => f.file)).toEqual(['src/api.ts']);
+  });
+
+  it('does not block on one even if a rule called it critical', () => {
+    expect(blocking([at('tests/a.test.ts', 'critical')], 'high')).toHaveLength(0);
+  });
+
+  it('still reports it, because a key in a test is still a key', () => {
+    const body = renderScanReport([at('tests/a.test.ts', 'low')], {
+      displayName: 'Forge',
+      scope: 'this pull request',
+      filesScanned: 1,
+      blockAt: 'low',
+    });
+    expect(body).toContain('tests/a.test.ts');
+    expect(body).toContain('none of them blocking');
+  });
+});
