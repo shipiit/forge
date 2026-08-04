@@ -154,3 +154,52 @@ describe('the cost footer', () => {
     expect(costFooter({ inputTokens: 100, outputTokens: 20 }, 'gemini-2.5-flash')).toContain('🧮');
   });
 });
+
+describe('the shape of an inline comment', () => {
+  const finding = (over: Record<string, unknown> = {}) =>
+    ({
+      file: 'a.ts',
+      startLine: 3,
+      endLine: 3,
+      lens: 'security',
+      severity: 'critical',
+      category: 'CWE-78',
+      title: 'Command injection via a tag name',
+      body: 'A tag name reaches a shell unescaped. Anyone who can push a tag can run code on the runner, with the token in the environment.',
+      ...over,
+    }) as never;
+
+  it('leads with the title and the severity, on one line', () => {
+    // What someone scanning a diff has room for. The old shape opened with
+    // badges and buried the title under them.
+    const first = renderFindingBody(finding()).split('\n')[0]!;
+    expect(first).toContain('**Command injection via a tag name**');
+    expect(first).toContain('Critical');
+  });
+
+  it('shows one sentence, and folds the rest away', () => {
+    const body = renderFindingBody(finding());
+    expect(body).toContain('A tag name reaches a shell unescaped.');
+    expect(body).toContain('<details><summary>Why this matters</summary>');
+    // Six of these on one screen should still leave the code visible.
+    expect(body.indexOf('Anyone who can push a tag')).toBeGreaterThan(body.indexOf('<details>'));
+  });
+
+  it('leaves a one-sentence finding uncollapsed', () => {
+    const body = renderFindingBody(finding({ body: 'Short and complete.' }));
+    expect(body).toContain('Short and complete.');
+    expect(body).not.toContain('<details>');
+  });
+
+  it('keeps the suggestion outside the fold, where GitHub can offer it', () => {
+    // Inside <details>, "Commit suggestion" is not rendered until expanded.
+    const body = renderFindingBody(finding({ suggestion: 'const x = 1;' }));
+    expect(body).toContain('```suggestion\nconst x = 1;\n```');
+    const details = body.lastIndexOf('</details>');
+    expect(body.indexOf('```suggestion')).toBeGreaterThan(details);
+  });
+
+  it('still carries the fingerprint, so a re-review can find it', () => {
+    expect(renderFindingBody(finding())).toMatch(/<!-- forge-f: [0-9a-f]+ -->/);
+  });
+});
