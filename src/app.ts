@@ -1,4 +1,5 @@
 import type { Probot, Context } from "probot";
+import type { ServerResponse } from "node:http";
 import { createLLMClient, createLLMClientOrStub } from "./providers/index.js";
 import type { ProviderId } from "./providers/types.js";
 import {
@@ -129,6 +130,20 @@ function actorOf(context: Context): string | undefined {
 export default function app(probot: Probot, options: { getRouter?: (path?: string) => RouterLike } = {}): void {
   // The usage dashboard, on the server that is already running. Gated on
   // FORGE_DASHBOARD_TOKEN and mounted only when recording is on.
+  // A health check that answers 200. The webhook path only accepts POSTs and
+  // "/" is a 404, so a platform probing either marks the service unhealthy and
+  // restarts it in a loop — which looks exactly like a crash and is not one.
+  // Deliberately says nothing: it is reachable by anyone who can reach the
+  // webhook, which is the whole internet.
+  try {
+    options.getRouter?.('/')?.get?.('/health', (_req, res: ServerResponse) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+    });
+  } catch {
+    /* an older router shape is not a reason to fail startup */
+  }
+
   mountDashboard(options.getRouter, process.env, (msg) => probot.log.info(msg));
 
   // --- Analyze a new issue (default): post a detailed diagnosis comment, no PR. ---

@@ -7,14 +7,30 @@ services:
     name: shipit-forge
     runtime: docker
     plan: starter
-    healthCheckPath: /
+    # `/` is a 404 on a Probot server and the webhook path only takes POSTs, so
+    # probing either restart-loops the service and makes a healthy deploy look
+    # like a crash.
+    healthCheckPath: /health
+    # Accounts and recorded runs live in this file, and artifacts are written
+    # beside it. Without a disk both are wiped on every deploy, which surfaces
+    # later as "it signed me out" rather than as a storage problem.
+    disk:
+      name: forge-usage
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: LLM_PROVIDER
         value: vertex
       - key: VERTEX_LOCATION
         value: us-central1
       - key: VERTEX_MODEL
-        value: gemini-2.5-pro
+        # flash is roughly 4x cheaper per token than pro, in both directions.
+        value: gemini-2.5-flash
+      # Turns on the usage dashboard, served by the agent itself at /usage.
+      # Then create an account: Render shell →
+      #   node dist/cli.js dashboard:user add <name>
+      - key: FORGE_USAGE_DB
+        value: /data/usage.db
       # --- set these in the Render dashboard (do not commit secrets) ---
       - key: APP_ID
         sync: false

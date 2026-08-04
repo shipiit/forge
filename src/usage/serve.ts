@@ -125,6 +125,8 @@ export async function startDashboard(
 /** Minimal shape of the router Probot hands an app; avoids an express import. */
 export interface RouterLike {
   use(handler: (req: IncomingMessage, res: ServerResponse, next: () => void) => void): void;
+  /** Present on the Express router Probot hands out; optional so a fake need not have it. */
+  get?(path: string, handler: (req: IncomingMessage, res: ServerResponse) => void): void;
 }
 
 /**
