@@ -232,3 +232,41 @@ describe('telling people how to dismiss it', () => {
     expect(body.indexOf('Resolve this conversation')).toBeGreaterThan(body.indexOf('A key is in the source.'));
   });
 });
+
+describe('findings on lines the pull request did not touch', () => {
+  const f = (file: string, line: number) => ({
+    file,
+    startLine: line,
+    endLine: line,
+    lens: 'security' as const,
+    severity: 'medium' as const,
+    category: 'CWE-494',
+    title: 'Action pinned to a mutable ref',
+    body: 'A tag can be moved. Whoever controls it controls what runs with your token.\n\nPin the action to the commit SHA instead, so what ran yesterday is what runs today.',
+  });
+
+  it('gives them the body an inline comment would have had', () => {
+    // GitHub refuses an inline comment outside the diff, so the summary is the
+    // only place these can live — and one line naming a file is the one form
+    // of finding nobody can act on.
+    const payload = buildReviewPayload([f('.github/workflows/ci.yml', 17)], {
+      validLines: new Map([['src/other.ts', new Set([1])]]),
+      repoUrl: 'https://github.com/o/r',
+      ref: 'main',
+    });
+    expect(payload.comments).toHaveLength(0);
+    expect(payload.body).toContain('Additional findings (outside the diff)');
+    expect(payload.body).toContain('Whoever controls it controls what runs');
+    expect(payload.body).toContain('Pin the action to the commit SHA');
+    expect(payload.body).toContain('https://github.com/o/r/blob/main/.github/workflows/ci.yml#L17');
+  });
+
+  it('collapses each one so ten do not bury what is in the diff', () => {
+    const payload = buildReviewPayload([f('a.yml', 1), f('b.yml', 2)], {
+      validLines: new Map(),
+    });
+    // Each finding also nests a "Why this matters" block, so count the outer
+    // summaries — the ones carrying a file:line.
+    expect(payload.body.match(/<summary>[^<]*Action pinned/g) ?? []).toHaveLength(2);
+  });
+});

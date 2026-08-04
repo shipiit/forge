@@ -266,6 +266,9 @@ export function buildReviewPayload(
     validLines?: Map<string, Set<number>>;
     /** Nits withheld by the cap, mentioned as a count instead of posted. */
     droppedNits?: number;
+    /** For deep links on findings that cannot be commented on inline. */
+    repoUrl?: string;
+    ref?: string;
   } = {},
 ): ReviewPayload {
   const displayName = opts.displayName ?? 'ShipIT Forge';
@@ -292,11 +295,32 @@ export function buildReviewPayload(
     body += `\n\n_Plus ${opts.droppedNits} similar minor item(s), withheld to keep this review actionable._`;
   }
   if (summaryOnly.length > 0) {
-    body +=
-      `\n\n#### Additional findings (outside the diff)\n` +
-      summaryOnly.map((f) => `- \`${f.file}:${f.endLine}\` — ${SEVERITY_BADGE[f.severity]} ${f.title}`).join('\n');
+    body += `\n\n#### Additional findings (outside the diff)\n\n${outOfDiff(summaryOnly, opts.repoUrl, opts.ref)}`;
   }
   return { event: chooseEvent(filtered), body, comments };
+}
+
+/**
+ * Findings on lines this pull request did not touch.
+ *
+ * GitHub will not accept an inline comment outside the diff, so these have
+ * nowhere to live but the summary — and a bare line naming a file is the one
+ * form of finding nobody can act on. Reported at one line each they read as
+ * noise; given the same body an inline comment would have had, they read as
+ * the review they are. Each is collapsed, so ten of them do not bury the
+ * findings that are in the diff, and each links to the exact line.
+ */
+function outOfDiff(findings: ReviewFinding[], repoUrl?: string, ref?: string): string {
+  return findings
+    .map((f) => {
+      const where =
+        repoUrl && ref
+          ? `[\`${f.file}:${f.endLine}\`](${repoUrl}/blob/${ref}/${f.file}#L${f.endLine})`
+          : `\`${f.file}:${f.endLine}\``;
+      const summary = `${SEVERITY_BADGE[f.severity]} ${f.title} — ${where}`;
+      return `<details><summary>${summary}</summary>\n\n${renderFindingBody(f)}\n\n</details>`;
+    })
+    .join('\n');
 }
 
 /**

@@ -876,6 +876,10 @@ async function doPrReview(
       securityOnly: args.securityOnly,
       validLines,
       droppedNits: dropped,
+      // A finding outside the diff cannot be an inline comment, so it needs a
+      // link to the line it is about.
+      repoUrl: `https://github.com/${args.owner}/${args.repo}`,
+      ref: prRes.data.head.ref,
     });
     await octokit.rest.pulls.createReview({
       owner: args.owner,
