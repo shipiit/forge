@@ -12,6 +12,7 @@ import {
   handleHistory,
   handleRelease,
   handleRoutine,
+  handleScan,
   type HandlerDeps,
 } from "./github/handlers.js";
 import type { OctokitLike } from "./github/pr.js";
@@ -173,9 +174,27 @@ export default function app(probot: Probot, options: { getRouter?: (path?: strin
     ["pull_request.opened", "pull_request.synchronize"],
     async (context) => {
       const config = await loadConfig(context);
-      if (config.autoReview !== "always") return;
       const { repository, pull_request } = context.payload;
       const base = { owner: repository.owner.login, repo: repository.name };
+
+      // The credential scan runs whatever the review cadence is: it costs
+      // nothing, and a key committed to a branch is already public to anyone
+      // who can clone it.
+      if (config.secretScan) {
+        await dispatch(
+          context,
+          config,
+          { flow: 'audit', ...base, prNumber: pull_request.number },
+          (d) =>
+            handleScan(d, {
+              ...base,
+              issueNumber: pull_request.number,
+              pullNumber: pull_request.number,
+              ref: pull_request.head.ref,
+            }),
+        );
+      }
+      if (config.autoReview !== "always") return;
       await dispatch(
         context,
         config,
@@ -256,6 +275,17 @@ export default function app(probot: Probot, options: { getRouter?: (path?: strin
           skill: 'how-to',
           issueTitle: issue.title,
           issueBody: issue.body,
+        }),
+      );
+      return;
+    }
+    if (/^\/(?:secrets?|secret-scan|scan)\b/i.test(body)) {
+      await dispatch(context, config, { flow: 'audit', ...ref, issueNumber: issue.number }, (d) =>
+        handleScan(d, {
+          ...ref,
+          issueNumber: issue.number,
+          ref: base.defaultBranch,
+          ...(isPr ? { pullNumber: issue.number } : {}),
         }),
       );
       return;

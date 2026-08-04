@@ -135,3 +135,37 @@ describe('/help', () => {
     expect('issueBody' in r && r.issueBody).toBe('How does caching work?');
   });
 });
+
+describe('/secrets', () => {
+  const comment = (body: string, isPr = false) =>
+    routeEvent(
+      'issue_comment',
+      {
+        action: 'created',
+        comment: { body },
+        issue: { number: 12, title: 'x', body: 'y', ...(isPr ? { pull_request: {} } : {}) },
+        repository: { owner: { login: 'o' }, name: 'r', default_branch: 'main' },
+      } as never,
+      { mentionHandle: '@shipit-forge', autoFix: 'label', autoReview: 'always', reviewBehavior: 'comment', filters: {}, historyEnabled: false } as never,
+    );
+
+  it('runs on any of the spellings people try', () => {
+    for (const c of ['/secrets', '/secret', '/secret-scan', '/scan']) {
+      expect(comment(c).kind, c).toBe('scan');
+    }
+  });
+
+  it('works addressed to the agent', () => {
+    expect(comment('@shipit-forge /secrets').kind).toBe('scan');
+  });
+
+  it('knows it is on a pull request, so it can post a check run', () => {
+    const r = comment('/secrets', true);
+    expect('pullNumber' in r && r.pullNumber).toBe(12);
+  });
+
+  it('carries no pull number on a plain issue', () => {
+    // No pull request means no head sha, so there is no check run to publish.
+    expect('pullNumber' in comment('/secrets')).toBe(false);
+  });
+});

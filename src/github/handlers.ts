@@ -74,7 +74,8 @@ import {
 } from './review.js';
 import { parseSarif } from './sarif.js';
 import { redactSecrets } from '../util/resilience.js';
-import { mergeFindings, runScanners } from '../scan/index.js';
+import { collectFiles, mergeFindings, runScanners } from '../scan/index.js';
+import { blocking, renderScanReport } from '../scan/report.js';
 import { fetchDependabotFindings } from './dependabot.js';
 import { isSafeRef, realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
@@ -1048,6 +1049,78 @@ async function doMention(
 }
 
 /** Full-repository security audit (read-only) → one grouped report comment. */
+/**
+ * Scan for committed credentials and misconfiguration, and report.
+ *
+ * No model call at any point, which is the feature: it is instant, it is free,
+ * and it gives the same answer twice. Runs on demand with `/secrets`, and
+ * before a merge when the repository asks for it.
+ */
+export function handleScan(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; issueNumber: number; ref: string; pullNumber?: number },
+): Promise<void> {
+  return withLock(`scan:${args.owner}/${args.repo}#${args.issueNumber}`, deps.log, () => doScan(deps, args));
+}
+
+async function doScan(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; issueNumber: number; ref: string; pullNumber?: number },
+): Promise<void> {
+  const { octokit, token, log } = deps;
+  const wsOps = deps.workspace ?? realWorkspace;
+  const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: args.ref }, token);
+
+  try {
+    const files = await collectFiles(ws.dir);
+    const findings = await runScanners({ cwd: ws.dir });
+    deps.run?.findings(findings);
+    log(`scan: ${findings.length} finding(s) across ${files.length} file(s)`);
+
+    const body = renderScanReport(findings, {
+      displayName: DISPLAY,
+      scope: args.pullNumber ? `this pull request's branch` : 'the repository',
+      filesScanned: files.length,
+      repoUrl: `https://github.com/${args.owner}/${args.repo}`,
+      ref: args.ref,
+    });
+
+    const posted = await octokit.rest.issues.createComment({
+      owner: args.owner,
+      repo: args.repo,
+      issue_number: args.issueNumber,
+      body,
+    });
+    if (posted.data.html_url) deps.run?.output('comment', { url: posted.data.html_url, title: 'secret scan' });
+
+    // A check run is what actually stops a merge, once it is required. Neutral
+    // rather than failing when nothing blocks, so a clean scan never nags.
+    const stop = blocking(findings);
+    if (args.pullNumber && octokit.rest.checks?.create) {
+      try {
+        const pr = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
+        await octokit.rest.checks.create({
+          owner: args.owner,
+          repo: args.repo,
+          head_sha: pr.data.head.sha,
+          name: `${DISPLAY} — secret scan`,
+          status: 'completed',
+          conclusion: stop.length ? 'failure' : 'success',
+          output: {
+            title: stop.length ? `${stop.length} finding(s) to resolve before merging` : 'No committed credentials found',
+            summary: body.slice(0, 60_000),
+          },
+        });
+      } catch (err) {
+        // A check run needs a permission the workflow may not have been given.
+        log(`scan: could not publish a check run (${err instanceof Error ? err.message : 'unknown'})`);
+      }
+    }
+  } finally {
+    await ws.cleanup();
+  }
+}
+
 export function handleAudit(
   deps: HandlerDeps,
   args: { owner: string; repo: string; issueNumber: number; ref: string; date?: string },

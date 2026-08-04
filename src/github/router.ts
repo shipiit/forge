@@ -45,6 +45,7 @@ export type Route =
       issueBody?: string | null;
     } & RepoBits)
   | ({ kind: 'audit'; issueNumber: number; ref: string } & RepoBits)
+  | ({ kind: 'scan'; issueNumber: number; ref: string; pullNumber?: number } & RepoBits)
   | ({ kind: 'history'; pullNumber?: number; title: string; ref: string } & RepoBits)
   | ({ kind: 'release'; tag: string; releaseId: number } & RepoBits)
   | ({ kind: 'routine'; routine: string; args: string; issueNumber?: number } & RepoBits)
@@ -137,6 +138,16 @@ export function routeEvent(eventName: string, payload: any, opts: RouteOpts): Ro
           skill: 'how-to',
           issueTitle: issue.title ?? '',
           issueBody: issue.body ?? null,
+        };
+      }
+      // A deterministic scan: no model call, so it is instant and free.
+      if (/^\/(?:secrets?|secret-scan|scan)\b/i.test(body)) {
+        return {
+          kind: 'scan',
+          ...bits,
+          issueNumber: issue.number,
+          ref: bits.defaultBranch,
+          ...(isPr ? { pullNumber: issue.number } : {}),
         };
       }
       if (/^\/audit\b/i.test(body)) {

@@ -89,3 +89,14 @@ describe('publishing what a run cost', () => {
     expect(mergeConfig({ show_cost: false }, { FORGE_SHOW_COST: '1' } as NodeJS.ProcessEnv).showCost).toBe(false);
   });
 });
+
+describe('scanning for credentials before a merge', () => {
+  it('is on by default — the cost of missing one is unbounded and the scan is free', () => {
+    expect(defaultConfig({} as NodeJS.ProcessEnv).secretScan).toBe(true);
+  });
+
+  it('can be switched off by env or per repository', () => {
+    expect(defaultConfig({ FORGE_SECRET_SCAN: '0' } as NodeJS.ProcessEnv).secretScan).toBe(false);
+    expect(mergeConfig({ secret_scan: false }, {} as NodeJS.ProcessEnv).secretScan).toBe(false);
+  });
+});

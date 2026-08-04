@@ -23,6 +23,15 @@ export function ScannersSection() {
         <div>
           <Triggers rows={SCANS} />
 
+          <h3 className="mt-8 text-sm font-semibold text-text">On demand, or before every merge</h3>
+          <p className="mt-3 text-sm leading-relaxed text-muted">
+            Comment <code className="text-[rgb(var(--syn-keyword))]">/secrets</code> for a report grouped by rule
+            with every location, or leave{' '}
+            <code className="text-[rgb(var(--syn-keyword))]">secret_scan: true</code> on and it runs on every pull
+            request and publishes a check run — which blocks the merge once you make it required. It needs no
+            model call, so it is instant and costs nothing.
+          </p>
+
           <h3 className="mt-8 text-sm font-semibold text-text">Not crying wolf is the hard part</h3>
           <p className="mt-3 text-sm leading-relaxed text-muted">
             A regex-only secret scanner is mostly false positives, and a scanner people stop reading is worse

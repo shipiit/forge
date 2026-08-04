@@ -45,6 +45,7 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 | 🔍 | **Review a PR** — inline comments + summary verdict, quality **and** security lenses, **scoped strictly to the changed files** | Open a PR, or comment `/review` / `/review always` |
 | 🛡️ | **Security review** — flags SSRF, injection, secrets, authz… with **severity**, a **CWE**, and a **suggested-fix** block | Auto on PRs, or comment `/security` |
 | 🔎 | **Deterministic scanners** — secrets (provider shapes + entropy + context) and infrastructure (Dockerfile, compose, Kubernetes, Terraform, workflows), run before the model at no token cost and merged with its findings | Automatic on every review and audit |
+| 🔐 | **Secret & config scan** — every committed credential and misconfiguration, grouped by rule with every location, and a check run that can block the merge. **No model call: instant and free** | Automatic on each PR, or comment `/secrets` |
 | 🔬 | **Whole-repo audit** — maps entry points, follows untrusted input to dangerous sinks, one grouped report | Comment `/audit` |
 | 📜 | **Change-history document** — one entry per merged change, written **from that diff alone**; arrives as a PR | `history: true` in `agent.yml` |
 | ⏰ | **Routines** — a saved skill plus its triggers: cron, on-demand, or any repository event, each with filters | `routines:` in `agent.yml`, `/run <name>` |
@@ -406,6 +407,7 @@ model: gemini-2.5-pro          # provider-specific model id
 trigger_label: agent-fix
 auto_fix: label                # label | opened | off
 auto_review: always            # always | requested | off
+secret_scan: true              # scan every PR for committed credentials (default true)
 test_command: "npm test"       # else auto-detected
 review_depth: standard         # light | standard | deep
 ignore_paths: ["dist/**", "*.lock"]

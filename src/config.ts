@@ -49,6 +49,8 @@ export interface ForgeConfig {
   maxRunsPerHour: number;
   /** Print the token/spend footer under the agent's comments. */
   showCost: boolean;
+  /** Scan for committed credentials on every pull request. */
+  secretScan: boolean;
   /** Turn findings into issues: off, one rollup issue, or one issue each. */
   findingsToIssues: FindingIssueMode;
   /** Findings below this severity never become issues. */
@@ -82,6 +84,9 @@ export function defaultConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig
     spendCapPerRunUsd: parseCap(env.FORGE_SPEND_CAP_RUN),
     maxRunsPerHour: Number(env.FORGE_MAX_RUNS_PER_HOUR ?? 0),
     showCost: env.FORGE_SHOW_COST !== '0' && env.FORGE_SHOW_COST !== 'false',
+    // On by default: a committed credential is the one finding whose cost of
+    // being missed is unbounded, and the scan is free.
+    secretScan: env.FORGE_SECRET_SCAN !== '0' && env.FORGE_SECRET_SCAN !== 'false',
     findingsToIssues: (env.FORGE_FINDINGS_TO_ISSUES as FindingIssueMode) || 'off',
     findingsMinSeverity: (env.FORGE_FINDINGS_MIN_SEVERITY as ReviewFinding['severity']) || 'high',
     findingsMaxIssues: Number(env.FORGE_FINDINGS_MAX_ISSUES ?? 10),
@@ -129,6 +134,7 @@ export function mergeConfig(raw: unknown, base: ForgeConfig = defaultConfig()): 
         : base.spendCapPerRunUsd,
     maxRunsPerHour: intOr(r.max_runs_per_hour, base.maxRunsPerHour),
     showCost: typeof r.show_cost === 'boolean' ? r.show_cost : base.showCost,
+    secretScan: typeof r.secret_scan === 'boolean' ? r.secret_scan : base.secretScan,
     findingsToIssues: enumOr(r.findings_to_issues, ['off', 'rollup', 'per_finding'] as const, base.findingsToIssues),
     findingsMinSeverity: enumOr(
       r.findings_min_severity,

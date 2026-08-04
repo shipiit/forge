@@ -16,6 +16,7 @@ import {
   handleMention,
   handlePrFollowup,
   handleAudit,
+  handleScan,
   handleHistory,
   handleRelease,
   handleRoutine,
@@ -171,6 +172,9 @@ async function main(): Promise<void> {
       break;
     case 'audit':
       await handleAudit(deps, route);
+      break;
+    case 'scan':
+      await handleScan(deps, route);
       break;
     case 'history':
       await handleHistory(deps, {
