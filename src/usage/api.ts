@@ -158,7 +158,7 @@ export async function serveUsage(opts: ApiOptions, req: IncomingMessage, res: Se
   if (opts.uiDir && !route.startsWith('/api/')) {
     const root = uiRoot(opts.uiDir);
     if (await hasUi(root)) {
-      if (await serveUi(root, route, res, cors)) return true;
+      if (await serveUi(root, route, res, cors, opts.mountPath ?? prefix)) return true;
       // A path that looks like a file and is not there is missing, not
       // forbidden. Falling through to the credential check answered a stale
       // bundle request with 401, which sends whoever is debugging it looking

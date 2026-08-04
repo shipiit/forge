@@ -7,7 +7,7 @@ import { IncomingMessage, type ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
 import { migrate } from '../../src/usage/sqlite.js';
 import { serveUsage } from '../../src/usage/api.js';
-import { resolveAsset, hasUi, uiRoot } from '../../src/usage/static.js';
+import { resolveAsset, hasUi, uiRoot, stampBase } from '../../src/usage/static.js';
 
 /**
  * The agent serving its own dashboard.
@@ -25,7 +25,7 @@ let db: DatabaseSync;
 beforeAll(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'forge-ui-'));
   await fs.mkdir(path.join(dir, 'ui', 'assets'), { recursive: true });
-  await fs.writeFile(path.join(dir, 'ui', 'index.html'), '<!doctype html><title>app shell</title>');
+  await fs.writeFile(path.join(dir, 'ui', 'dashboard.html'), '<!doctype html><title>app shell</title>');
   await fs.writeFile(path.join(dir, 'ui', 'assets', 'app.js'), 'console.log(1)');
   // A file outside the UI root, to prove it cannot be reached.
   await fs.writeFile(path.join(dir, 'secret.txt'), 'MUST NOT BE SERVED');
@@ -69,7 +69,7 @@ describe('finding a file inside the UI', () => {
 
   it('finds what is actually there', async () => {
     const root = uiRoot(dir);
-    expect(await resolveAsset(root, 'index.html')).toBeTruthy();
+    expect(await resolveAsset(root, 'dashboard.html')).toBeTruthy();
     expect(await resolveAsset(root, 'assets/app.js')).toBeTruthy();
     expect(await hasUi(root)).toBe(true);
   });
@@ -111,5 +111,29 @@ describe('serving the dashboard', () => {
     // then asks for is not.
     expect((await get('/api/summary')).status).toBe(401);
     expect((await get('/api/runs')).status).toBe(401);
+  });
+});
+
+describe('stamping the mount path into the shell', () => {
+  const shell = `<script>window.__FORGE_BASE__ = '/__FORGE_BASE__/';</script>
+<script src="/__FORGE_BASE__/assets/dashboard-abc.js"></script>`;
+
+  it('rewrites both the asset paths and the value the app reads', () => {
+    const at = stampBase(shell, '/usage');
+    expect(at).toContain("window.__FORGE_BASE__ = '/usage/'");
+    expect(at).toContain('src="/usage/assets/dashboard-abc.js"');
+    expect(at).not.toContain('__FORGE_BASE__/');
+  });
+
+  it('works at the root, where there is no prefix at all', () => {
+    const at = stampBase(shell, '');
+    expect(at).toContain("window.__FORGE_BASE__ = '/'");
+    expect(at).toContain('src="/assets/dashboard-abc.js"');
+  });
+
+  it('does not damage the property name on the left-hand side', () => {
+    // A replacement that is not slash-delimited turns this into `window. =`,
+    // which is a syntax error and a blank page.
+    expect(stampBase(shell, '/usage')).toContain('window.__FORGE_BASE__ =');
   });
 });

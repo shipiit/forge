@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Usage — ShipIT Forge</title>
+<!-- Nobody should index somebody's private run log. -->
+<meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#070709" />
+<link rel="icon" type="image/png" href="/__FORGE_BASE__/logo.png" />
+<link rel="apple-touch-icon" href="/__FORGE_BASE__/logo.png" />
+<script>
+  // Replaced by the agent when it serves this file, so the same bundle works
+  // whether it is mounted at / or at /usage. Left as-is it means "root".
+  // Slash-delimited so the replacement cannot also rewrite the property name
+  // on the left-hand side, which would produce `window. = ...`.
+  window.__FORGE_BASE__ = '/__FORGE_BASE__/';
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/src/dashboard.tsx"></script>
+</body>
+</html>

@@ -33,9 +33,13 @@ export function apiBase(): string {
   const saved = read(API_KEY);
   if (saved) return saved;
   if (import.meta.env.DEV) return DEV_PROXY;
-  // Vite's base is '/usage/' when the build is the one the agent bundles.
+  // The agent stamps its real mount path into the shell it serves. Reading
+  // import.meta.env.BASE_URL instead would return the build-time placeholder,
+  // and every request would go to a path that does not exist.
+  const stamped = (window as unknown as { __FORGE_BASE__?: string }).__FORGE_BASE__;
+  if (stamped && !stamped.includes('__FORGE_BASE__')) return stamped.replace(/\/+$/, '');
   const base = import.meta.env.BASE_URL || '/';
-  return base === '/' ? '' : base.replace(/\/+$/, '');
+  return base === '/' || base.includes('__FORGE_BASE__') ? '' : base.replace(/\/+$/, '');
 }
 export function apiToken(): string {
   return read(TOKEN_KEY);
@@ -51,8 +55,44 @@ export function saveConnection(base: string, token: string): void {
 
 const USER_KEY = 'forge.usage.user';
 
+/**
+ * A file the agent serves beside the bundle — the logo, say.
+ *
+ * Same stamped mount path the API uses, because they are served by the same
+ * process from the same place.
+ */
+export function assetUrl(file: string): string {
+  const stamped = (window as unknown as { __FORGE_BASE__?: string }).__FORGE_BASE__;
+  const base = stamped && !stamped.includes('__FORGE_BASE__') ? stamped.replace(/\/+$/, '') : '';
+  return `${base}/${file.replace(/^\/+/, '')}`;
+}
+
 export function signedInAs(): string {
   return read(USER_KEY);
+}
+
+/**
+ * Is this browser signed in, and does this deployment use accounts?
+ *
+ * One call, before anything else loads: it decides whether to show the
+ * dashboard or the front door. `signedIn` covers the shared token too — a
+ * script's credential is not a person, but it does grant a look.
+ */
+export async function authState(base = apiBase()): Promise<{ accounts: boolean; signedIn: boolean }> {
+  const token = apiToken();
+  const [auth, me] = await Promise.all([
+    fetch(`${base}/api/auth`).then(
+      (r) => (r.ok ? (r.json() as Promise<{ accounts?: boolean }>) : { accounts: false }),
+      () => ({ accounts: false }),
+    ),
+    token
+      ? fetch(`${base}/api/me`, { headers: { authorization: `Bearer ${token}` } }).then(
+          (r) => r.ok,
+          () => false,
+        )
+      : Promise.resolve(false),
+  ]);
+  return { accounts: Boolean(auth.accounts), signedIn: me };
 }
 
 /** Whether this deployment has accounts, so a form is worth showing. */

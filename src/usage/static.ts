@@ -36,6 +36,21 @@ export function uiRoot(fromDir: string): string {
   return path.join(fromDir, 'ui');
 }
 
+/** The app shell. Named for the build that produces it, not index.html. */
+const SHELL = 'dashboard.html';
+
+/**
+ * Stamp the mount path into the shell.
+ *
+ * The agent does not know at build time whether it will be served at `/` by
+ * `forge dashboard` or at `/usage` on a hosted App, and a bundle built for one
+ * 404s every asset on the other — which renders as a blank white page with no
+ * clue in it. So the build emits a placeholder and the server fills it in.
+ */
+export function stampBase(html: string, prefix: string): string {
+  return html.split('/__FORGE_BASE__/').join(`${prefix.replace(/\/+$/, '')}/`);
+}
+
 /**
  * Resolve a request path to a file inside the root, or undefined.
  *
@@ -70,11 +85,12 @@ export async function serveUi(
   requestPath: string,
   res: ServerResponse,
   extraHeaders: Record<string, string> = {},
+  prefix = '',
 ): Promise<boolean> {
   const file = await resolveAsset(root, requestPath);
   const looksLikeAFile = /\.[a-z0-9]{1,8}$/i.test(requestPath.split('?')[0] ?? '');
 
-  const target = file ?? (looksLikeAFile ? undefined : await resolveAsset(root, 'index.html'));
+  const target = file ?? (looksLikeAFile ? undefined : await resolveAsset(root, SHELL));
   if (!target) return false;
 
   let body: Buffer;
@@ -85,6 +101,7 @@ export async function serveUi(
   }
 
   const ext = path.extname(target).toLowerCase();
+  if (ext === '.html') body = Buffer.from(stampBase(body.toString('utf8'), prefix));
   // The shell is never cached: it names the hashed bundles, so a stale copy
   // points at files that no longer exist after a deploy. Everything else is
   // content-hashed by the build and can be kept for a year.
@@ -100,5 +117,5 @@ export async function serveUi(
 
 /** Is a built UI actually present? */
 export async function hasUi(root: string): Promise<boolean> {
-  return (await resolveAsset(root, 'index.html')) !== undefined;
+  return (await resolveAsset(root, SHELL)) !== undefined;
 }

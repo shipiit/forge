@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { Sidebar, Topbar } from './Shell';
 import { Connect } from './Connect';
+import { SignIn } from './SignIn';
 import { useTheme } from './hooks';
-import { DEFAULT_FILTERS, filterParams, useUsage, type Facets, type Filters } from '../../lib/usage';
+import { authState, DEFAULT_FILTERS, filterParams, useUsage, type Facets, type Filters } from '../../lib/usage';
 
 /**
  * The frame every dashboard page sits in.
@@ -23,6 +24,15 @@ export interface DashboardContext {
 }
 
 export function DashboardLayout({ children }: { children: (ctx: DashboardContext) => React.ReactNode }) {
+  // Asked once, before anything else loads. A dashboard that renders its
+  // frame, fires a dozen queries and then shows twelve "unauthorized" boxes
+  // has told somebody they are signed out in the least useful way available.
+  const [gate, setGate] = useState<{ accounts: boolean; signedIn: boolean } | null>(null);
+  const check = useCallback(() => {
+    void authState().then(setGate, () => setGate({ accounts: false, signedIn: false }));
+  }, []);
+  useEffect(check, [check]);
+
   const [search, setSearch] = useSearchParams();
   const [connecting, setConnecting] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -75,6 +85,17 @@ export function DashboardLayout({ children }: { children: (ctx: DashboardContext
     setLoading,
     setNote,
   };
+
+  // Nothing until the gate has answered — a flash of the dashboard followed by
+  // a login screen is worse than a moment of nothing.
+  if (gate === null) return <div className="min-h-screen bg-canvas" />;
+
+  // Accounts exist and this browser has none: the front door, not the frame.
+  // Where a deployment uses only the shared token there are no accounts to
+  // sign in to, so the connection dialog remains the way in.
+  if (gate.accounts && !gate.signedIn) {
+    return <SignIn onSignedIn={check} />;
+  }
 
   return (
     <div className="min-h-screen">

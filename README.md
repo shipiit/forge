@@ -444,22 +444,23 @@ Deploying it on a server? **[`deploy/DASHBOARD.md`](./deploy/DASHBOARD.md)** is 
 persistent-disk requirement, and how to create the first account from inside a container.
 
 ```bash
-# 1. Record into a local database
+# 1. Record. Off until this is set — point it at a persistent disk on a server.
 export FORGE_USAGE_DB=.forge/usage.db
 
-# 2. Create an account for each person who should see it
-#    (the password is asked for — never passed as an argument, where it would
-#    land in `ps`, in shell history, and in the CI log of whoever tries it)
+# 2. One account per person who should see it. The password is asked for at
+#    the terminal, never passed as an argument — an argument is visible in
+#    `ps`, lands in shell history, and gets copied into a CI log.
 npx forge dashboard:user add rahul
 
-# 3. Serve the dashboard and its API (always authenticated)
+# 3. Serve it.
 npx forge dashboard --db .forge/usage.db --port 4300
-#    → open http://localhost:4300 and sign in. The page is served by the agent,
-#      so there is no API URL to configure and no CORS origin to allow.
-
-# 3. Open the dashboard and point it at that API under "Connection"
-#    https://shipiit.github.io/forge/dashboard
 ```
+
+Open **http://localhost:4300** and sign in. That is the whole setup.
+
+**The agent serves the dashboard, not just its data** — the page and the API share an origin, so there
+is no API URL to type in and no CORS origin to allow. On a server it is the same three steps; the
+address is `https://your-server/usage`.
 
 What it answers:
 
@@ -475,18 +476,19 @@ Opening a run shows each turn's latency, tokens and **cache reads** (so you can 
 tool calls with their arguments, the findings, the commit or PR it produced, and the transcript rendered as
 a conversation rather than a wall of JSON.
 
-**Everything is token-gated.** There is no unauthenticated mode: the standalone server generates a token
-when you have not configured one and prints it with the URL, and it binds to loopback unless you say
-otherwise. To mount it on a hosted App's existing webhook server instead:
+**There is no unauthenticated mode.** Nothing is readable without a credential, and the standalone
+server binds to loopback unless you say otherwise. Mounted on a hosted App's webhook server it needs
+one of the two credentials to exist at all — with neither, it refuses to mount and says so in the log,
+because that host is public by definition:
 
 ```bash
-FORGE_USAGE_DB=/data/usage.db
-FORGE_DASHBOARD_TOKEN=<a long random string>   # without it, nothing is mounted at all
-FORGE_DASHBOARD_ORIGIN=https://your-site       # only if the dashboard is served elsewhere
+FORGE_USAGE_DB=/data/usage.db                  # a persistent disk
+# then either `forge dashboard:user add <name>`, or:
+# FORGE_DASHBOARD_TOKEN=<a long random string>
 ```
 
-It appears at `/usage` on the same host. Retention runs at startup: transcripts are kept 14 days, diffs and
-tool calls 90, and the run/turn/finding history — the trend data, and the small part — forever.
+Retention runs at startup: transcripts are kept 14 days, diffs and tool calls 90, and the
+run/turn/finding history — the trend data, and the small part — forever.
 
 **Storage**: metadata in SQLite, payloads gzipped to disk beside it. Roughly 20 KB per run, so a thousand
 runs a month is about 20 MB a year.

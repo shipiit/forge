@@ -1,3 +1,4 @@
+import { assetUrl } from '../../lib/usage';
 import { useEffect, useRef } from 'react';
 import { Link, NavLink, useSearchParams } from 'react-router-dom';
 import type { Facets, Filters } from '../../lib/usage';
@@ -65,7 +66,7 @@ export function Sidebar({ active, open, onClose, onSettings, theme, onTheme }: {
       }`}
     >
       <Link to="/" className="flex items-center gap-2.5 px-2.5 pb-5 text-[15.5px] font-semibold">
-        <span className="grid h-7 w-7 place-items-center rounded-[9px] bg-gradient-to-br from-forge1 to-forge2 text-white">◆</span>
+        <img src={assetUrl('logo.png')} alt="" width={28} height={28} className="h-7 w-7 rounded-[9px]" />
         Forge
       </Link>
 
@@ -108,11 +109,16 @@ export function Sidebar({ active, open, onClose, onSettings, theme, onTheme }: {
             aria-checked={theme === 'dark'}
             aria-label="Toggle dark mode"
             onClick={onTheme}
-            className={`relative h-[21px] w-[38px] rounded-full border border-line/[0.08] transition-colors duration-150 ${theme === 'dark' ? 'bg-accent/40' : 'bg-line/[0.07]'}`}
+            className={`relative h-[22px] w-[40px] shrink-0 rounded-full border border-line/[0.08] transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+              theme === 'dark' ? 'bg-accent/40' : 'bg-line/[0.07]'
+            }`}
           >
+            {/* `left` is required: without it the knob is positioned from its
+                static origin, and the translate then pushes it past the right
+                edge of the track instead of to it. */}
             <span
-              className={`absolute top-[2px] h-[15px] w-[15px] rounded-full transition-transform duration-150 ${
-                theme === 'dark' ? 'translate-x-[19px] bg-accent' : 'translate-x-[2px] bg-muted'
+              className={`absolute left-[2px] top-[2px] h-4 w-4 rounded-full transition-transform duration-150 ${
+                theme === 'dark' ? 'translate-x-[18px] bg-accent' : 'translate-x-0 bg-muted'
               }`}
             />
           </button>

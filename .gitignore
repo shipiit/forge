@@ -18,3 +18,4 @@ coverage/
 # Internal planning docs — not published
 docs/FEATURES.md
 docs/USAGE-DASHBOARD.md
+web/dist-dashboard/
