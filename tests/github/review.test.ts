@@ -258,7 +258,11 @@ describe('findings on lines the pull request did not touch', () => {
     expect(payload.body).toContain('Additional findings (outside the diff)');
     expect(payload.body).toContain('Whoever controls it controls what runs');
     expect(payload.body).toContain('Pin the action to the commit SHA');
-    expect(payload.body).toContain('https://github.com/o/r/blob/main/.github/workflows/ci.yml#L17');
+    // HTML, not markdown: GitHub does not parse markdown inside a <summary>,
+    // so the badge and the link have to be tags or they render as source.
+    expect(payload.body).toContain('<a href="https://github.com/o/r/blob/main/.github/workflows/ci.yml#L17">');
+    expect(payload.body).toContain('🟡 <strong>Medium</strong>');
+    expect(payload.body).not.toMatch(/<summary>[^<]*\*\*/);
   });
 
   it('collapses each one so ten do not bury what is in the diff', () => {
@@ -267,6 +271,32 @@ describe('findings on lines the pull request did not touch', () => {
     });
     // Each finding also nests a "Why this matters" block, so count the outer
     // summaries — the ones carrying a file:line.
-    expect(payload.body.match(/<summary>[^<]*Action pinned/g) ?? []).toHaveLength(2);
+    expect(payload.body.match(/<summary>.*?Action pinned/g) ?? []).toHaveLength(2);
+  });
+});
+
+describe('a title cannot break out of the summary tag', () => {
+  it('escapes markup a model put in a finding title', () => {
+    const payload = buildReviewPayload(
+      [
+        {
+          file: 'a.ts',
+          startLine: 1,
+          endLine: 1,
+          lens: 'security',
+          severity: 'high',
+          category: 'CWE-79',
+          title: '</summary><img src=x onerror=alert(1)>',
+          body: 'b',
+        } as never,
+      ],
+      { validLines: new Map() },
+    );
+    // The summary is raw HTML we build, so a title that closes the tag would
+    // break the block open. Inside the details body it stays markdown, which
+    // GitHub sanitises on render.
+    const summary = payload.body.match(/<summary>.*?<\/summary>/)![0];
+    expect(summary).toContain('&lt;/summary&gt;&lt;img');
+    expect(summary.match(/<\/summary>/g)).toHaveLength(1);
   });
 });

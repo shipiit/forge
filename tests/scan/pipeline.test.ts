@@ -104,3 +104,42 @@ describe('a test fixture is not a review comment', () => {
     }
   });
 });
+
+describe('the same problem, described twice', () => {
+  const at = (line: number, title: string, body: string, severity = 'medium') =>
+    ({
+      file: '.github/workflows/ci.yml',
+      startLine: line,
+      endLine: line,
+      lens: 'security',
+      severity,
+      category: 'CWE-494',
+      title,
+      body,
+    }) as never;
+
+  it('merges a model and a scanner that chose different words', () => {
+    // This shipped: "Action pinned to a mutable reference" from the model and
+    // "Action pinned to a mutable ref" from the scanner, same file, same line,
+    // posted as two findings.
+    const merged = mergeFindings(
+      [at(17, 'Action pinned to a mutable reference', 'A tag can be moved, and whoever owns it decides what runs.')],
+      [at(17, 'Action pinned to a mutable ref', 'Pin it.')],
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.body).toContain('whoever owns it decides');
+  });
+
+  it('merges when the two disagree by a line or two', () => {
+    expect(mergeFindings([at(17, 'A', 'aaa')], [at(19, 'B', 'bb')])).toHaveLength(1);
+  });
+
+  it('keeps two genuinely separate instances of the same rule', () => {
+    expect(mergeFindings([at(17, 'A', 'aaa')], [at(180, 'A', 'aaa')])).toHaveLength(2);
+  });
+
+  it('keeps the more severe of the two', () => {
+    const merged = mergeFindings([at(17, 'A', 'aaa', 'medium')], [at(17, 'A', 'aaa', 'critical')]);
+    expect(merged[0]!.severity).toBe('critical');
+  });
+});

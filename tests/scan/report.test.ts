@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderScanReport, blocking, renderReviewAck } from '../../src/scan/report.js';
+import { renderScanReport, blocking, renderReviewAck, renderReviewDone } from '../../src/scan/report.js';
 
 const f = (over: Record<string, unknown> = {}) =>
   ({
@@ -121,7 +121,7 @@ describe('saying what was looked for', () => {
       filesScanned: 9,
       scanners: ['secrets', 'code'],
     });
-    expect(clean).toContain('What this scan looked for');
+    expect(clean).toContain('What was scanned');
     expect(clean).toContain('Committed credentials');
     expect(clean).toContain('Source code');
     // Not claiming a pass that did not run.
@@ -183,5 +183,47 @@ describe('the note posted when a review starts', () => {
     const ack = renderReviewAck('ShipIT Forge', []);
     expect(ack).toContain('is reviewing this pull request');
     expect(ack).not.toContain('|');
+  });
+});
+
+describe('the comment the review leaves behind', () => {
+  it('says what was looked for, which is the only thing that makes zero mean anything', () => {
+    const done = renderReviewDone({
+      displayName: 'ShipIT Forge',
+      verdict: '💬 commented (no blocking issues)',
+      total: 0,
+      security: 0,
+      scanners: ['secrets', 'iac', 'code'],
+    });
+    expect(done).toContain('**No findings.**');
+    expect(done).toContain('What was scanned');
+    expect(done).toContain('Committed credentials');
+  });
+
+  it('credits the passes that cannot have an off day', () => {
+    const done = renderReviewDone({
+      displayName: 'ShipIT Forge',
+      verdict: '💬 commented (no blocking issues)',
+      total: 4,
+      security: 4,
+      scanners: ['secrets', 'code'],
+      fromScanners: 2,
+      inTestFiles: 6,
+    });
+    expect(done).toContain('**4 findings** (4 security)');
+    expect(done).toContain('2 of these came from the deterministic passes');
+    expect(done).toContain('6 findings were in test files');
+    expect(done).not.toContain('Infrastructure');
+  });
+
+  it('says nothing about test files when there were none', () => {
+    const done = renderReviewDone({
+      displayName: 'ShipIT Forge',
+      verdict: '💬 commented',
+      total: 1,
+      security: 1,
+      scanners: ['secrets'],
+    });
+    expect(done).not.toContain('test files');
   });
 });

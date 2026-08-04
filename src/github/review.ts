@@ -64,11 +64,18 @@ function lede(body: string, max = 220): string {
  * and the suggested change are one click away, and a reviewer with six comments
  * on screen can still see the code between them.
  */
-export function renderFindingBody(f: ReviewFinding): string {
+export function renderFindingBody(f: ReviewFinding, opts: { inline?: boolean } = {}): string {
+  const inline = opts.inline ?? true;
   const lensTag = f.lens === 'security' ? '🛡️ Security' : '🔧 Quality';
   const rest = f.body.trim().slice(lede(f.body).length).trim();
 
-  let out = `**${f.title}** — ${SEVERITY_BADGE[f.severity]} · ${lensTag} · \`${f.category}\`\n\n${lede(f.body)}`;
+  // Outside the diff the title is already the summary of the block this sits
+  // in, so repeating it is just noise; the severity line is still worth
+  // having because the collapsed summary is all most people read.
+  const heading = inline
+    ? `**${f.title}** — ${SEVERITY_BADGE[f.severity]} · ${lensTag} · \`${f.category}\``
+    : `${SEVERITY_BADGE[f.severity]} · ${lensTag} · \`${f.category}\``;
+  let out = `${heading}\n\n${lede(f.body)}`;
 
   if (rest) {
     out += `\n\n<details><summary>Why this matters</summary>\n\n${rest}\n\n</details>`;
@@ -81,7 +88,13 @@ export function renderFindingBody(f: ReviewFinding): string {
   // How to make it go away, said once, quietly. Both mechanisms already
   // existed and neither was discoverable: people were left with a comment and
   // no way to disagree with it except to argue in a reply.
-  out += `\n\n<sub>Resolve this conversation to dismiss it, or add \`// forge-ignore: ${f.lens}\` on that line to dismiss it everywhere.</sub>`;
+  //
+  // Outside the diff there is no conversation to resolve — GitHub would not
+  // accept an inline comment there — so offering that is telling somebody to
+  // click something that does not exist.
+  out += inline
+    ? `\n\n<sub>Resolve this conversation to dismiss it, or add \`// forge-ignore: ${f.lens}\` on that line to dismiss it everywhere.</sub>`
+    : `\n\n<sub>To dismiss this, add \`// forge-ignore: ${f.lens} — reason\` on that line.</sub>`;
 
   // Identity for re-review: lets a later run skip this finding instead of
   // posting it again, and resolve the thread once it is fixed.
@@ -313,14 +326,32 @@ export function buildReviewPayload(
 function outOfDiff(findings: ReviewFinding[], repoUrl?: string, ref?: string): string {
   return findings
     .map((f) => {
+      // HTML, not markdown. GitHub does not parse markdown inside a <summary>,
+      // so `**Medium**` and a `[text](url)` link render as their own source —
+      // which is what shipped, and it looked broken because it was.
+      const at = `${f.file}:${f.endLine}`;
       const where =
         repoUrl && ref
-          ? `[\`${f.file}:${f.endLine}\`](${repoUrl}/blob/${ref}/${f.file}#L${f.endLine})`
-          : `\`${f.file}:${f.endLine}\``;
-      const summary = `${SEVERITY_BADGE[f.severity]} ${f.title} — ${where}`;
-      return `<details><summary>${summary}</summary>\n\n${renderFindingBody(f)}\n\n</details>`;
+          ? `<a href="${repoUrl}/blob/${ref}/${f.file}#L${f.endLine}"><code>${at}</code></a>`
+          : `<code>${at}</code>`;
+      const summary = `${HTML_BADGE[f.severity]} · ${escapeHtml(f.title)} — ${where}`;
+      return `<details><summary>${summary}</summary>\n\n${renderFindingBody(f, { inline: false })}\n\n</details>`;
     })
     .join('\n');
+}
+
+/** The same badges, in HTML, for the places markdown is not parsed. */
+const HTML_BADGE: Record<ReviewFinding['severity'], string> = {
+  critical: '🔴 <strong>Critical</strong>',
+  high: '🟠 <strong>High</strong>',
+  medium: '🟡 <strong>Medium</strong>',
+  low: '🔵 <strong>Low</strong>',
+  info: '⚪ <strong>Info</strong>',
+};
+
+/** A finding title comes from a model; it must not be able to close the tag. */
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**

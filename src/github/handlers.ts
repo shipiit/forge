@@ -75,7 +75,7 @@ import {
 import { parseSarif } from './sarif.js';
 import { redactSecrets } from '../util/resilience.js';
 import { collectFiles, inTestFile, mergeFindings, runScanners, SCANNERS, type Scanner } from '../scan/index.js';
-import { blocking, renderReviewAck, renderScanReport, type BlockLevel } from '../scan/report.js';
+import { blocking, renderReviewAck, renderReviewDone, renderScanReport, type BlockLevel } from '../scan/report.js';
 import { fetchDependabotFindings } from './dependabot.js';
 import { isSafeRef, realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
@@ -904,8 +904,15 @@ async function doPrReview(
         withBudgetNotice(
           result,
           client.model,
-          `### 🔍 ${DISPLAY} reviewed this PR — ${verdict}\n\n${findings.length} finding(s) (${sec} security). See the review above for inline details and suggested fixes.` +
-            renderSkipped(plan),
+          renderReviewDone({
+            displayName: DISPLAY,
+            verdict,
+            total: findings.length,
+            security: sec,
+            scanners: (deps.scanners ?? SCANNERS).map((sc) => sc.name),
+            fromScanners: scanned.length,
+            inTestFiles: inTests,
+          }) + renderSkipped(plan),
         ) + costFooter(result.usage, client.model, deps.showCost),
     });
   } finally {
