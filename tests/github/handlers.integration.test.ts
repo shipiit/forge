@@ -191,6 +191,80 @@ describe('handlePrReview (integration)', () => {
     expect(review.comments[0]).toMatchObject({ path: 'app.py', line: 11 });
     expect(review.body).toMatch(/outside the diff/); // out-of-diff finding moved to summary
   });
+
+  it('finds a secret even when the model reports nothing', async () => {
+    // The whole point of scanning before the model: this review would have
+    // been "no blocking issues" on the model's word alone.
+    // forge-ignore: secrets — the fixture is the point: the scanner must match it
+    const ws = fakeWorkspace({ 'config.py': 'x\n'.repeat(9) + 'GITHUB_TOKEN = "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"\n' });
+    cleanups.push(ws.cleanup);
+    const diff = ['--- a/config.py', '+++ b/config.py', '@@ -9,1 +9,2 @@', ' ctx', '+GITHUB_TOKEN = "ghp_..."'].join('\n');
+    const { octokit, calls } = fakeOctokit({ diff });
+
+    const deps: HandlerDeps = {
+      octokit,
+      client: new FakeLLMClient([{ text: '[]', toolCalls: [], usage, stopReason: 'end' }]),
+      token: 't',
+      log: () => {},
+      workspace: ws.port,
+    };
+
+    await handlePrReview(deps, { owner: 'o', repo: 'r', pullNumber: 5 });
+
+    expect(calls.reviews).toHaveLength(1);
+    const review = calls.reviews[0];
+    expect(review.event).toBe('REQUEST_CHANGES');
+    expect(JSON.stringify(review)).toContain('GitHub personal access token');
+  });
+
+  it('hands the scan results to the model before it starts', async () => {
+    // Ordering is the claim; this is the evidence. The model must be able to
+    // see what was already found, so it judges reachability instead of
+    // rediscovering it.
+    // forge-ignore: secrets — the fixture is the point: the scanner must match it
+    const ws = fakeWorkspace({ 'config.py': 'x\n'.repeat(9) + 'GITHUB_TOKEN = "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"\n' });
+    cleanups.push(ws.cleanup);
+    const diff = ['--- a/config.py', '+++ b/config.py', '@@ -9,1 +9,2 @@', ' ctx', '+GITHUB_TOKEN = "ghp_..."'].join('\n');
+    const { octokit } = fakeOctokit({ diff });
+
+    const client = new FakeLLMClient([{ text: '[]', toolCalls: [], usage, stopReason: 'end' }]);
+    const seen: string[] = [];
+    const original = client.chat.bind(client);
+    client.chat = async (req) => {
+      seen.push(JSON.stringify(req.messages));
+      return original(req);
+    };
+
+    await handlePrReview(
+      { octokit, client, token: 't', log: () => {}, workspace: ws.port } as HandlerDeps,
+      { owner: 'o', repo: 'r', pullNumber: 5 },
+    );
+
+    expect(seen[0]).toContain('deterministic scan');
+    expect(seen[0]).toContain('GitHub personal access token');
+    expect(seen[0]).toContain('Do not repeat them');
+  });
+
+  it('reports the scanner finding when the model never answers at all', async () => {
+    // A run that dies on the first call — provider outage, spend cap — used to
+    // lose everything. The free pass happened before it, so it survives.
+    // forge-ignore: secrets — fixture
+    const ws = fakeWorkspace({ 'config.py': 'GITHUB_TOKEN = "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"\n' });
+    cleanups.push(ws.cleanup);
+    const diff = ['--- a/config.py', '+++ b/config.py', '@@ -1,0 +1,1 @@', '+GITHUB_TOKEN = "ghp_..."'].join('\n');
+    const { octokit, calls } = fakeOctokit({ diff });
+
+    const deps: HandlerDeps = {
+      octokit,
+      client: new FakeLLMClient([{ text: 'not json at all', toolCalls: [], usage, stopReason: 'end' }]),
+      token: 't',
+      log: () => {},
+      workspace: ws.port,
+    };
+    await handlePrReview(deps, { owner: 'o', repo: 'r', pullNumber: 5 });
+
+    expect(JSON.stringify(calls.reviews[0])).toContain('GitHub personal access token');
+  });
 });
 
 describe('release notes and a hostile tag name', () => {
