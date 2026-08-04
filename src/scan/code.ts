@@ -27,6 +27,17 @@ interface Rule {
   needs?: RegExp;
   /** Suppresses the rule when it matches — the mitigation. */
   unless?: RegExp;
+  /** Lines the mitigation may appear on, counted from the match. Default 1. */
+  unlessWindow?: number;
+  /**
+   * Severity when nothing on the line is visibly attacker-controlled.
+   *
+   * For the rules where the call is dangerous on its own merits, this is what
+   * keeps them from blocking a merge on a line that may be perfectly safe —
+   * a project unpickling its own cache is not a vulnerability, and being told
+   * it is on every push is how a scanner gets switched off.
+   */
+  untaintedSeverity?: ReviewFinding['severity'];
   severity: ReviewFinding['severity'];
   category: string;
   title: string;
@@ -56,14 +67,23 @@ const TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|fixtures?|__mocks__)\/|\.(?:
  * logs nothing sensitive at all. Matching taint against the whole line makes
  * every log message that *mentions* a credential look like one that leaks it,
  * and that single false positive is enough for somebody to stop reading the
- * report. String literals are dropped; interpolations are kept, because
+ * report. String contents are dropped; interpolations are kept, because
  * `f"password={password}"` is a real leak hiding inside a string.
+ *
+ * The quotes themselves stay, and a literal with no whitespace in it is kept
+ * whole. That line is what separates a name from a sentence: `'CMD'` and
+ * `'HOME'` are variable names a rule needs to read — one is taint, the other
+ * is explicitly not — while `'… using the workflow token.'` is prose about a
+ * credential rather than a credential. Dropping every literal switched off
+ * every Python rule that reads `os.environ.get('NAME')`, silently.
  */
 function codeOnly(line: string): string {
   return line.replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, (literal) => {
     const inner = literal.slice(1, -1);
+    // A name, not a sentence: keep it, the rules are looking at it.
+    if (inner.length <= 64 && !/\s/.test(inner)) return literal;
     const interpolations = [...inner.matchAll(/\$?\{([^{}]*)\}/g)].map((m) => m[1]);
-    return ` ${interpolations.join(' ')} `;
+    return `${literal[0]}${interpolations.join(' ')}${literal[0]}`;
   });
 }
 
@@ -154,7 +174,11 @@ const RULES: Rule[] = [
     applies: PY,
     match: /\b(?:pickle|cPickle|dill)\.loads?\s*\(|\byaml\.load\s*\(/,
     unless: /SafeLoader|safe_load|Loader\s*=\s*yaml\.CSafeLoader/,
+    // `yaml.load(\n  text, Loader=yaml.SafeLoader)` is normal formatting, and
+    // the mitigation lands on the following line.
+    unlessWindow: 3,
     severity: 'critical',
+    untaintedSeverity: 'medium',
     category: 'CWE-502',
     title: 'Deserialization of untrusted data',
     body:
@@ -214,23 +238,32 @@ export const codeScanner: Scanner = {
       lines.forEach((line, i) => {
         if (line.length > 500 || COMMENT.test(line)) return;
         if (!rule.match.test(line)) return;
-        if (rule.needs && !rule.needs.test(codeOnly(line))) return;
-        if (rule.unless?.test(line)) return;
-        out.push(finding(rule, file.path, i + 1, isTest));
+        const code = codeOnly(line);
+        if (rule.needs && !rule.needs.test(code)) return;
+        if (rule.unless?.test(lines.slice(i, i + (rule.unlessWindow ?? 1)).join('\n'))) return;
+        const severity =
+          rule.untaintedSeverity && !TAINT.test(code) ? rule.untaintedSeverity : rule.severity;
+        out.push(finding(rule, file.path, i + 1, isTest, severity));
       });
     }
     return out;
   },
 };
 
-function finding(rule: Rule, file: string, line: number, isTest = false): ReviewFinding {
+function finding(
+  rule: Rule,
+  file: string,
+  line: number,
+  isTest = false,
+  severity: ReviewFinding['severity'] = rule.severity,
+): ReviewFinding {
   return {
     file,
     startLine: line,
     endLine: line,
     lens: 'security',
     // Never blocking from a test file, but never silent either.
-    severity: isTest ? 'low' : rule.severity,
+    severity: isTest ? 'low' : severity,
     category: rule.category,
     title: rule.title,
     body: isTest

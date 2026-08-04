@@ -76,7 +76,10 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  checks: read
+  # write, not read: the scan publishes a check run, and a check run is what
+  # turns a finding into a merge gate once you mark it required. With read it
+  # would fail quietly and the gate would simply not exist.
+  checks: write
   statuses: read
   actions: write
 

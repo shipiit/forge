@@ -1087,13 +1087,32 @@ async function doScan(
       ref: args.ref,
     });
 
-    const posted = await octokit.rest.issues.createComment({
-      owner: args.owner,
-      repo: args.repo,
-      issue_number: args.issueNumber,
-      body,
-    });
-    if (posted.data.html_url) deps.run?.output('comment', { url: posted.data.html_url, title: 'secret scan' });
+    // One comment per pull request, rewritten in place.
+    //
+    // The scan runs on every push, and a scanner that leaves a fresh report
+    // under every push is one people collapse and stop reading by the third
+    // one. The marker is how the next run finds what this one wrote; editing
+    // also means the report always describes the current head rather than
+    // being surrounded by four stale versions of itself.
+    const marked = `${body}\n\n<!-- forge-scan -->`;
+    const existing = await findScanComment(octokit, args);
+    const posted = existing
+      ? await octokit.rest.issues.updateComment({
+          owner: args.owner,
+          repo: args.repo,
+          comment_id: existing,
+          body: marked,
+        })
+      : await octokit.rest.issues.createComment({
+          owner: args.owner,
+          repo: args.repo,
+          issue_number: args.issueNumber,
+          body: marked,
+        });
+    // updateComment is typed loosely on the narrow Octokit surface the tests
+    // stub, so the URL is read defensively rather than asserted.
+    const url = (posted as { data?: { html_url?: string } } | undefined)?.data?.html_url;
+    if (url) deps.run?.output('comment', { url, title: 'security scan' });
 
     // A check run is what actually stops a merge, once it is required. Neutral
     // rather than failing when nothing blocks, so a clean scan never nags.
@@ -1105,11 +1124,13 @@ async function doScan(
           owner: args.owner,
           repo: args.repo,
           head_sha: pr.data.head.sha,
-          name: `${DISPLAY} — secret scan`,
+          name: `${DISPLAY} — security scan`,
           status: 'completed',
           conclusion: stop.length ? 'failure' : 'success',
           output: {
-            title: stop.length ? `${stop.length} finding(s) to resolve before merging` : 'No committed credentials found',
+            title: stop.length
+              ? `${stop.length} finding(s) to resolve before merging`
+              : 'No credentials, misconfiguration or code findings',
             summary: body.slice(0, 60_000),
           },
         });
@@ -1120,6 +1141,32 @@ async function doScan(
     }
   } finally {
     await ws.cleanup();
+  }
+}
+
+/**
+ * The comment a previous scan left on this pull request, if there is one.
+ *
+ * Never throws: not being able to list comments is a reason to post a new one,
+ * not a reason to lose the report.
+ */
+async function findScanComment(
+  octokit: HandlerDeps['octokit'],
+  args: { owner: string; repo: string; issueNumber: number },
+): Promise<number | undefined> {
+  try {
+    const res = await octokit.rest.issues.listComments({
+      owner: args.owner,
+      repo: args.repo,
+      issue_number: args.issueNumber,
+      per_page: 100,
+    });
+    const mine = (res.data as Array<{ id?: number; body?: string }>).filter((c) =>
+      c.body?.includes('<!-- forge-scan -->'),
+    );
+    return mine.length ? mine[mine.length - 1]!.id : undefined;
+  } catch {
+    return undefined;
   }
 }
 

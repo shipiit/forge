@@ -156,3 +156,31 @@ describe('comments describe code, they are not code', () => {
     );
   });
 });
+
+describe('taint that lives inside a string literal', () => {
+  it('still sees an environment variable read', () => {
+    // Dropping the quotes along with the contents switched every Python rule
+    // that depends on os.environ.get off, silently, and nothing caught it.
+    const found = scan('src/run.py', 'os.system(os.environ.get("CMD"))');
+    expect(found[0]!.category).toBe('CWE-78');
+  });
+
+  it('does not treat a well-known variable as attacker-controlled', () => {
+    expect(scan('src/run.py', 'os.system(os.environ.get("HOME"))')).toHaveLength(0);
+  });
+});
+
+describe('a dangerous call that nobody is visibly feeding', () => {
+  it('reports unpickling, but not at a severity that blocks a merge', () => {
+    const found = scan('src/cache.py', 'data = pickle.loads(open("cache").read())');
+    expect(found[0]!.severity).toBe('medium');
+  });
+
+  it('escalates when the request is what reaches it', () => {
+    expect(scan('src/api.py', 'data = pickle.loads(flask.request.json)')[0]!.severity).toBe('critical');
+  });
+
+  it('accepts a mitigation wrapped onto the next line', () => {
+    expect(scan('src/c.py', 'cfg = yaml.load(\n    text, Loader=yaml.SafeLoader)')).toHaveLength(0);
+  });
+});
