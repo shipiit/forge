@@ -87,7 +87,7 @@ export function Landing() {
               { I: MessageSquare, t: 'Answer @mentions', trig: '@shipit-forge …', d: 'Explains code on issues, and on a PR can push a follow-up commit to the branch. Reads screenshots embedded in issues and PRs via vision.' },
               { I: History, t: 'Document every change', trig: 'On merge · on push', d: 'Writes one history entry per merged change — from that diff alone — recording what changed, why, the areas touched, and the risk. Arrives as a PR.' },
               { I: CalendarClock, t: 'Run saved routines', trig: 'Cron · /run · events', d: 'A saved skill plus its triggers. Nightly digests, weekly docs-drift sweeps, or anything fired on a repository event — with filters.' },
-              { I: Blocks, t: 'Skills you control', trig: '/code-review · 7 built-in', d: 'Named prompt packs with enforced tool allowlists. Override any built-in from your repo, or define one inline in the workflow.' },
+              { I: Blocks, t: 'Skills you control', trig: '/code-review · 8 built-in', d: 'Named prompt packs with enforced tool allowlists. Override any built-in from your repo, or define one inline in the workflow.' },
             ].map((e, i) => (
               <motion.div key={e.t} {...rise} transition={{ ...rise.transition, delay: (i % 3) * 0.07 }} className="bg-[rgb(11_11_14)] p-7">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5"><e.I size={18} /></span>

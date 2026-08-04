@@ -9,6 +9,7 @@ const COMMANDS: [string, string][] = [
   ['/review always', 'Reviews now and on every later push to this PR.'],
   ['/security', 'Security-only review of the current PR.'],
   ['/audit', 'Full-repository security scan, plus live Dependabot CVEs.'],
+  ['/help <question>', 'Reads the code and answers in numbered steps — paths, commands, how to check it worked.'],
   ['/run <routine>', 'Start a saved routine on demand.'],
   ['/code-review · /triage · /document', 'Run a named skill instead of a free-form answer.'],
   ['@shipit-forge <ask>', 'Answer in the thread, or push a follow-up commit on a PR.'],

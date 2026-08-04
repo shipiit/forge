@@ -11,6 +11,7 @@ const BUILT_INS: [string, string][] = [
   ['/document', 'Write or update docs for code that changed.'],
   ['/security-audit', 'Source-to-sink vulnerability hunt with CWEs.'],
   ['/triage', 'Diagnose without touching any code.'],
+  ['/how-to', 'Answer "how do I…?" from the code, as steps. Reached by /help.'],
   ['+ your own', 'Commit a file, or define one inline in the workflow.'],
 ];
 
@@ -21,7 +22,7 @@ export function SkillsSection() {
       Icon={Blocks}
       eyebrow="Skills"
       title="Named prompt packs your team controls"
-      lead="A skill bundles instructions with a tool allowlist, so a request behaves the same way every time. Forge ships seven; your repository can override any of them, or add its own."
+      lead="A skill bundles instructions with a tool allowlist, so a request behaves the same way every time. Forge ships eight; your repository can override any of them, or add its own."
     >
       <div className="grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-2 lg:grid-cols-4">
         {BUILT_INS.map(([name, d]) => (
