@@ -25,8 +25,13 @@ export function landing(base: string): string {
 </style></head>
 <body><main>
   <h1><span class="dot"></span>Usage API is running</h1>
-  <p>The dashboard is a page on the ShipIT Forge site. Open <code>/dashboard</code> there and point it at
-     <code>${base}</code> under <b>Connection</b>.</p>
+  <p>This is the API, not the dashboard — there is nothing to sign in to on this page.</p>
+  <p><b>To see your runs:</b> open the dashboard at
+     <a href="https://shipiit.github.io/forge/dashboard" style="color:#a78bfa">shipiit.github.io/forge/dashboard</a>,
+     open <b>Connection</b>, and set the API base URL to:</p>
+  <p><code>${base}</code></p>
+  <p>Then sign in with your account. No account yet? On the machine holding the database, run
+     <code>forge dashboard:user add &lt;name&gt;</code>.</p>
   <p>Endpoints on this server:</p>
   <ul>
     <li><code>/api/summary</code> — totals for a window</li>

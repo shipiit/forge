@@ -94,12 +94,19 @@ afterEach(async () => {
 });
 
 describe('the access gate', () => {
-  it('refuses every route without the token', async () => {
+  it('refuses every data route without the token', async () => {
     await seed();
-    for (const route of ['/', '/api/summary', '/api/runs', '/api/facets']) {
+    for (const route of ['/api/summary', '/api/runs', '/api/facets']) {
       const res = await call(route, 'secret', {});
       expect(res.status, route).toBe(401);
     }
+  });
+
+  it('but not the signpost, which exists for people who have no token', async () => {
+    await seed();
+    // Answering "unauthorized" to somebody asking what this server is tells
+    // them nothing and reads as broken.
+    expect((await call('/', 'secret', {})).status).toBe(200);
   });
 
   it('accepts the token as a header or, for the page link, a query parameter', async () => {

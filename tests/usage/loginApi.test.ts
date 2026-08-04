@@ -185,3 +185,44 @@ describe('reaching the API from a page on another origin', () => {
     expect(headers['access-control-allow-headers']).toContain('content-type');
   });
 });
+
+describe('the page somebody lands on with no credential', () => {
+  it('tells them where to go instead of refusing them', async () => {
+    // Its whole job is to orient a person who has no credential yet. Behind
+    // the auth check it answered them with {"error":"unauthorized"}, which
+    // tells them nothing and reads as broken.
+    // Read directly: the shared helper parses JSON, and this route is HTML.
+    const req = new IncomingMessage(new Socket());
+    req.method = 'GET';
+    req.url = '/';
+    let status = 0;
+    const r = {
+      writeHead(s: number) {
+        status = s;
+        return this;
+      },
+      end() {},
+    } as unknown as ServerResponse;
+    await serveUsage({ db, artifactDir: '/tmp', token: TOKEN }, req, r);
+    expect(status).toBe(200);
+  });
+
+  it('carries no data — only instructions', async () => {
+    const req = new IncomingMessage(new Socket());
+    req.method = 'GET';
+    req.url = '/';
+    let body = '';
+    const r = {
+      writeHead() {
+        return this;
+      },
+      end(b?: string) {
+        body = b ?? '';
+      },
+    } as unknown as ServerResponse;
+    await serveUsage({ db, artifactDir: '/tmp', token: TOKEN }, req, r);
+    expect(body).toContain('dashboard:user add');
+    expect(body).not.toContain(TOKEN);
+    expect(body).not.toContain('alice');
+  });
+});

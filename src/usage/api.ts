@@ -187,6 +187,24 @@ export async function serveUsage(opts: ApiOptions, req: IncomingMessage, res: Se
     return true;
   }
 
+  // The signpost is public, and has to be. Its entire job is to orient
+  // somebody who has *no* credential — a person who opens the API port in a
+  // browser. Behind the auth check it answered that person with
+  // `{"error":"unauthorized"}`, which tells them nothing and looks broken.
+  // It contains no data: a heading, the endpoint names, and where the
+  // dashboard lives.
+  if (route === '/' || route === '/index.html') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...cors });
+    // The Host header is attacker-controlled; it is escaped before it is
+    // echoed into the HTML. The scheme comes from the proxy that terminated
+    // TLS, because this process only ever sees plain HTTP behind one — and a
+    // link that says http:// to somebody on https:// is a link that fails.
+    const proto = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim() || 'http';
+    const host = req.headers.host ? `${escapeHtml(proto)}://${escapeHtml(req.headers.host)}` : '';
+    res.end(landing(`${host}${opts.mountPath ?? prefix}`));
+    return true;
+  }
+
   const who = identify(req, url, opts.token, opts.db);
   if (!who) {
     json(res, 401, { error: 'unauthorized' }, cors);
@@ -206,12 +224,6 @@ export async function serveUsage(opts: ApiOptions, req: IncomingMessage, res: Se
   const db = opts.db;
 
   try {
-    if (route === '/' || route === '/index.html') {
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...cors });
-      // The Host header is attacker-controlled; it is echoed into HTML here.
-      res.end(landing(`${req.headers.host ? `http://${escapeHtml(req.headers.host)}` : ''}${opts.mountPath ?? prefix}`));
-      return true;
-    }
     if (route === '/api/summary') return json(res, 200, summary(db, w, now()), cors), true;
     if (route === '/api/daily') return json(res, 200, daily(db, w, now()), cors), true;
     if (route === '/api/tools') return json(res, 200, toolStats(db, w, now()), cors), true;
