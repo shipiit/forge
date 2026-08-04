@@ -203,3 +203,32 @@ describe('the shape of an inline comment', () => {
     expect(renderFindingBody(finding())).toMatch(/<!-- forge-f: [0-9a-f]+ -->/);
   });
 });
+
+describe('telling people how to dismiss it', () => {
+  const f = {
+    file: 'a.ts',
+    startLine: 3,
+    endLine: 3,
+    lens: 'security',
+    severity: 'high',
+    category: 'CWE-798',
+    title: 'Key committed',
+    body: 'A key is in the source.',
+  } as never;
+
+  it('offers both routes, because neither was discoverable', () => {
+    // Resolving already dismissed a finding and nobody was told; the code
+    // marker dismisses it everywhere. A comment with no way to disagree with
+    // it leaves people arguing in a reply.
+    const body = renderFindingBody(f);
+    expect(body).toContain('Resolve this conversation to dismiss it');
+    expect(body).toContain('forge-ignore: security');
+  });
+
+  it('keeps it quiet, and after the substance', () => {
+    const body = renderFindingBody(f);
+    expect(body).toContain('<sub>');
+    // It must come after the substance, not before it.
+    expect(body.indexOf('Resolve this conversation')).toBeGreaterThan(body.indexOf('A key is in the source.'));
+  });
+});
