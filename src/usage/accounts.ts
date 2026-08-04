@@ -87,7 +87,7 @@ export function renderAccounts(file: string): string {
   const { db } = openUsageDb(file);
   const users = listUsers(db);
   if (users.length === 0) {
-    return 'No accounts yet. Create one with `forge dashboard user add <name>`.';
+    return 'No accounts yet. Create one with `forge dashboard:user add <name>`.';
   }
   const when = (ms?: number) => (ms ? new Date(ms).toISOString().slice(0, 16).replace('T', ' ') : 'never');
   const width = Math.max(...users.map((u) => u.username.length), 8);

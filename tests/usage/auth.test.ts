@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
+import { tmpdir } from 'node:os';
+import { rmSync } from 'node:fs';
 import { migrate } from '../../src/usage/sqlite.js';
 import {
   createUser,
@@ -151,5 +153,17 @@ describe('sessions end', () => {
     const start = 1_000_000;
     await login(db, 'alice', PASSWORD, start);
     expect(pruneSessions(db, start + 2 * SESSION_TTL_MS)).toBe(1);
+  });
+});
+
+describe('the hint people are asked to paste', () => {
+  it('names the command that actually exists', async () => {
+    // `forge dashboard user add` is not a command — `dashboard:user` is. A
+    // hint that fails when pasted is worse than no hint.
+    const { renderAccounts } = await import('../../src/usage/accounts.js');
+    const tmp = `${tmpdir()}/forge-hint-${process.pid}.db`;
+    expect(renderAccounts(tmp)).toContain('forge dashboard:user add');
+    rmSync(tmp, { force: true });
+    rmSync(`${tmp}-artifacts`, { recursive: true, force: true });
   });
 });

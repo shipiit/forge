@@ -148,7 +148,7 @@ export function mountDashboard(
     if (!token && userCount(db) === 0) {
       log(
         'usage dashboard not mounted: set FORGE_DASHBOARD_TOKEN, or create an account with ' +
-          '`forge dashboard user add <name>`',
+          '`forge dashboard:user add <name>`',
       );
       return false;
     }
