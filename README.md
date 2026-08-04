@@ -399,7 +399,18 @@ job that publishes a check run is the only one that needs it. This repository's 
 Where the money goes, which tool is slow, and why a particular run cost what it did.
 
 **Recording is opt-in and off by default** — it stores repository names, actor logins and error strings,
-which is not something to switch on for somebody without asking. Set `FORGE_USAGE_DB` (a path) or
+which is not something to switch on for somebody without asking. Nothing is readable without a
+credential, and there are two kinds because they are for two different things:
+
+| | For | Expires | Revocable alone |
+|---|---|---|---|
+| **Account** — `forge dashboard:user add <name>` | People | Yes, 12h idle | Yes |
+| **Shared token** — `FORGE_DASHBOARD_TOKEN` | Scripts, CI | No | No |
+
+A password is stored only as an scrypt hash with its own salt, and a session token only as its
+SHA-256 — a copy of the database cannot be replayed as a login. Changing a password or deleting an
+account signs out every session it had. Guessing is throttled per username, so one person being
+attacked cannot lock out everybody else. Set `FORGE_USAGE_DB` (a path) or
 `FORGE_USAGE=1` on whichever surface runs the agent — the App, the Action, or the CLI — and runs start
 landing in it.
 
@@ -407,7 +418,12 @@ landing in it.
 # 1. Record into a local database
 export FORGE_USAGE_DB=.forge/usage.db
 
-# 2. Serve the API (always authenticated; prints a token if you have not set one)
+# 2. Create an account for each person who should see it
+#    (the password is asked for — never passed as an argument, where it would
+#    land in `ps`, in shell history, and in the CI log of whoever tries it)
+npx forge dashboard:user add rahul
+
+# 3. Serve the API (always authenticated; prints a token if you have not set one)
 npx forge dashboard --db .forge/usage.db --port 4300
 
 # 3. Open the dashboard and point it at that API under "Connection"

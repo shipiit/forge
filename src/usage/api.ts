@@ -4,6 +4,8 @@ import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
+import { logout, userCount, verifySession } from './auth.js';
+import { handleLogin } from './apiAuth.js';
 import {
   breakdown,
   daily,
@@ -89,15 +91,43 @@ function tokenMatches(given: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function authorized(req: IncomingMessage, url: URL, token: string): boolean {
-  // Fail closed: an empty token is a misconfiguration, not permission.
-  if (!token) return false;
+/** The credential on a request, from the header or — for links — the query. */
+function presented(req: IncomingMessage, url: URL): string {
   const header = req.headers.authorization ?? '';
   const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
   // The query parameter exists so the page itself can be opened from a link;
   // the fetches it makes then carry the header.
-  const given = bearer || url.searchParams.get('token') || '';
-  return Boolean(given) && tokenMatches(given, token);
+  return bearer || url.searchParams.get('token') || '';
+}
+
+/**
+ * Who, if anyone, is this request?
+ *
+ * Two credentials are accepted and they are not equivalent. The shared token
+ * is for scripts and CI: it never expires, so it is deliberately not a person.
+ * A session belongs to a named account and can be revoked on its own, which is
+ * the whole reason accounts exist.
+ */
+export function identify(
+  req: IncomingMessage,
+  url: URL,
+  token: string,
+  db?: DatabaseSync,
+): { as: 'token' } | { as: 'user'; username: string } | undefined {
+  const given = presented(req, url);
+  if (!given) return undefined;
+  if (token && tokenMatches(given, token)) return { as: 'token' };
+  if (db) {
+    const username = verifySession(db, given);
+    if (username) return { as: 'user', username };
+  }
+  return undefined;
+}
+
+export function authorized(req: IncomingMessage, url: URL, token: string, db?: DatabaseSync): boolean {
+  // Fail closed: with no shared token and no accounts, nothing is permission.
+  if (!token && !db) return false;
+  return identify(req, url, token, db) !== undefined;
 }
 
 /** Read the filter set out of the query string. */
@@ -140,8 +170,30 @@ export async function serveUsage(opts: ApiOptions, req: IncomingMessage, res: Se
     res.end();
     return true;
   }
-  if (!authorized(req, url, opts.token)) {
+  // Signing in is the one route that cannot require being signed in.
+  if (route === '/api/login' && req.method === 'POST') {
+    return handleLogin(opts, req, res, cors);
+  }
+  // Whether a login form is worth showing: a deployment with no accounts is
+  // token-only, and offering a form nobody can use is worse than not offering
+  // one. Public on purpose — it is a boolean about configuration, not data.
+  if (route === '/api/auth') {
+    json(res, 200, { accounts: userCount(opts.db) > 0 }, cors);
+    return true;
+  }
+
+  const who = identify(req, url, opts.token, opts.db);
+  if (!who) {
     json(res, 401, { error: 'unauthorized' }, cors);
+    return true;
+  }
+  if (route === '/api/logout' && req.method === 'POST') {
+    logout(opts.db, presented(req, url));
+    json(res, 200, { ok: true }, cors);
+    return true;
+  }
+  if (route === '/api/me') {
+    json(res, 200, who.as === 'user' ? { username: who.username } : { username: null, token: true }, cors);
     return true;
   }
 
