@@ -4,11 +4,13 @@ import { execa } from 'execa';
 import type { ReviewFinding } from '../github/review.js';
 import { secretsScanner } from './secrets.js';
 import { iacScanner } from './iac.js';
+import { applySuppressions } from './suppress.js';
 import { dedupe, type ScanContext, type Scanner } from './types.js';
 
 export { dedupe, findingKey, type Scanner, type ScanContext } from './types.js';
 export { secretsScanner, entropy, looksRandom } from './secrets.js';
 export { iacScanner } from './iac.js';
+export { applySuppressions, parseSuppressions, type Suppression } from './suppress.js';
 
 /**
  * The deterministic half of a review.
@@ -96,7 +98,8 @@ export async function runScanners(ctx: ScanContext, scanners: Scanner[] = SCANNE
 
     for (const scanner of applicable) {
       try {
-        findings.push(...scanner.scan({ path: rel, text }, ctx));
+        // The file gets to dismiss its own findings, in writing, on the line.
+        findings.push(...applySuppressions(scanner.scan({ path: rel, text }, ctx), text, scanner.name));
       } catch {
         /* one scanner, one file — not the whole review */
       }

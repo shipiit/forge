@@ -49,6 +49,14 @@ export interface RunAgentOptions {
   security?: SecurityScannerLike;
   /** Optional callback for progress logging (tool calls, iterations). */
   onEvent?: (event: AgentEvent) => void;
+  /**
+   * Names of tools that count as having done the work.
+   *
+   * On a flow that is supposed to change something, a run that ends having
+   * called none of them has not finished — it has stopped. Set this and the
+   * loop nudges once before accepting that ending.
+   */
+  actionTools?: string[];
 }
 
 export type AgentEvent =
@@ -79,7 +87,7 @@ export type AgentEvent =
  * tool_result turn are both recorded so providers can round-trip correctly.
  */
 export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
-  const { client, system, initialContent, tools, limits, cwd, security, onEvent } = opts;
+  const { client, system, initialContent, tools, limits, cwd, security, onEvent, actionTools } = opts;
   const byName = indexTools(tools);
   const toolSpecs = tools.map((t) => t.spec);
   const ctx: ToolContext = { cwd, supportsVision: client.supportsVision, ...(security ? { security } : {}) };
@@ -89,6 +97,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   let finalText = '';
   const capUsd = limits.maxSpendUsd ?? NO_CAP;
   let nudged = false; // ensure the model actually writes a final answer if it ends empty
+  let actedNudged = false;
+  const acted = new Set<string>();
 
   for (let n = 1; n <= limits.maxIterations; n++) {
     onEvent?.({ type: 'iteration', n });
@@ -149,6 +159,28 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         });
         continue;
       }
+
+      // A model that ends by describing its next step has not finished, it has
+      // stopped: "I'll search for where run_tests is consumed" is an intention,
+      // and the loop was reading it as an answer because it came with no tool
+      // call attached. On a flow whose job is to change something, say so once.
+      const didWork = actionTools?.some((t) => acted.has(t)) ?? true;
+      if (!didWork && !actedNudged) {
+        actedNudged = true;
+        messages.push({
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text:
+                'You have not changed anything yet — you described what you would do rather than doing it. ' +
+                'Carry out the next step now using the tools. If, having looked, no change is needed, say so ' +
+                'plainly and give the reason; do not restate a plan.',
+            },
+          ],
+        });
+        continue;
+      }
       return { finalText, iterations: n, stoppedBy: 'end', messages, usage };
     }
 
@@ -164,6 +196,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       const toolStartedAt = Date.now();
       try {
         const parts = await tool.run(call.args, ctx);
+        acted.add(call.name);
         const normalized = normalizeToolResult(call.id, parts);
         resultParts.push(...normalized);
         onEvent?.({

@@ -21,13 +21,14 @@ describe('entropy', () => {
 
 describe('provider tokens', () => {
   it('finds the ones with an unmistakable shape', () => {
+    // forge-ignore: secrets — token-shaped fixtures; the scanner is meant to match them
     const cases: Array<[string, string]> = [
-      ['ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8', 'GitHub'],
-      ['AKIAQ7RZ4N2XKD9WPLMV', 'AWS'],
-      ['sk-ant-api03-R7kQ2mZ9xL4vN1wYt3BcP6sJ8dF5gH0aE2rT4uI7oK', 'Anthropic'],
-      ['AIzaBc3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9', 'Google'],
-      ['xoxb-123456789012-abcdefghijkl', 'Slack'],
-      ['postgres://admin:hunter2@db.internal:5432/app', 'connection string'],
+      ['ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8', 'GitHub'], // forge-ignore: secrets
+      ['AKIAQ7RZ4N2XKD9WPLMV', 'AWS'], // forge-ignore: secrets
+      ['sk-ant-api03-R7kQ2mZ9xL4vN1wYt3BcP6sJ8dF5gH0aE2rT4uI7oK', 'Anthropic'], // forge-ignore: secrets
+      ['AIzaBc3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9', 'Google'], // forge-ignore: secrets
+      ['xoxb-123456789012-abcdefghijkl', 'Slack'], // forge-ignore: secrets
+      ['postgres://admin:hunter2@db.internal:5432/app', 'connection string'], // forge-ignore: secrets
     ];
     for (const [secret, label] of cases) {
       const found = scan('src/config.ts', `const k = "${secret}";`);
@@ -38,7 +39,7 @@ describe('provider tokens', () => {
 
   it('never prints the secret back in full', () => {
     // A finding is a public comment on a public pull request.
-    const secret = 'ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8';
+    const secret = 'ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'; // forge-ignore: secrets
     const body = scan('src/a.ts', `const t = "${secret}";`)[0]!.body;
     expect(body).not.toContain(secret);
     expect(body).toContain('…');
@@ -54,7 +55,7 @@ describe('not shouting about things that are not secrets', () => {
   it('downgrades a provider token in docs rather than dropping it', () => {
     // People do paste real keys into a README. Staying silent there is silent
     // exactly where the mistake is easiest to make.
-    const found = scan('README.md', 'ANTHROPIC_API_KEY=sk-ant-api03-R7kQ2mZ9xL4vN1wYt3BcP6sJ8dF5gH0a');
+    const found = scan('README.md', 'ANTHROPIC_API_KEY=sk-ant-api03-R7kQ2mZ9xL4vN1wYt3BcP6sJ8dF5gH0a'); // forge-ignore: secrets
     expect(found).toHaveLength(1);
     expect(found[0]!.severity).toBe('medium');
     expect(found[0]!.body).toContain('may be an example');
@@ -63,7 +64,7 @@ describe('not shouting about things that are not secrets', () => {
   it('does not report a generic assignment in documentation at all', () => {
     // Without a provider shape there is nothing to distinguish it from prose.
     expect(scan('.env.example', 'API_KEY=abc123def456ghi789')).toHaveLength(0);
-    expect(scan('docs/setup.md', 'const token = "kR8pQ2mZ7xL4vN1wYt3Bc";')).toHaveLength(0);
+    expect(scan('docs/setup.md', 'const token = "kR8pQ2mZ7xL4vN1wYt3Bc";')).toHaveLength(0); // forge-ignore: secrets
   });
 
   it('skips lockfiles, which are full of high-entropy hashes', () => {
@@ -98,6 +99,7 @@ describe('the placeholder test reads the token, not the prose', () => {
   it('still reports a real key on a line that happens to say "your"', () => {
     // Found end-to-end, not by a unit test: "Set KEY=sk-ant-… in your shell"
     // was dropped because the sentence contained "your".
+    // forge-ignore: secrets — fixture
     const found = scan('docs/setup.md', 'Set ANTHROPIC_API_KEY=sk-ant-api03-R7kQ2mZ9xL4vN1wYt3BcP6sJ8dF5gH0a in your shell.');
     expect(found).toHaveLength(1);
     expect(found[0]!.severity).toBe('medium');

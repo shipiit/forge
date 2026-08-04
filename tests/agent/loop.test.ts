@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runAgent } from '../../src/agent/loop.js';
-import { editToolset } from '../../src/agent/tools/registry.js';
+import { editToolset, reviewToolset } from '../../src/agent/tools/registry.js';
 import { FakeLLMClient } from '../../src/providers/fake.js';
 import type { ChatResult } from '../../src/providers/types.js';
 
@@ -96,5 +96,72 @@ describe('runAgent', () => {
     const secondReq = client.requests[1];
     const errPart = secondReq.messages.at(-1)?.content[0] as { isError?: boolean };
     expect(errPart.isError).toBe(true);
+  });
+});
+
+describe('a flow that must change something', () => {
+  it('nudges once when the run ends having only talked about it', async () => {
+    // A real run ended with "I'll start by searching for calls to run_tests" —
+    // an intention, with no tool call attached, which the loop read as an
+    // answer and reported as "no change made".
+    const client = new FakeLLMClient([
+      { text: "I'll search for where run_tests is consumed.", toolCalls: [], usage, stopReason: 'end' },
+      {
+        text: '',
+        toolCalls: [{ id: '1', name: 'write_file', args: { path: 'a.txt', content: 'fixed' } }],
+        usage,
+        stopReason: 'tool_use',
+      },
+      { text: 'Fixed it.', toolCalls: [], usage, stopReason: 'end' },
+    ]);
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'forge-act-'));
+    const result = await runAgent({
+      client,
+      system: 'fix it',
+      initialContent: [{ type: 'text', text: 'go' }],
+      tools: editToolset(),
+      limits: { maxIterations: 6, maxOutputTokens: 1000 },
+      cwd: dir,
+      actionTools: ['write_file', 'edit_file'],
+    });
+    expect(result.finalText).toBe('Fixed it.');
+    expect(await fs.readFile(path.join(dir, 'a.txt'), 'utf8')).toBe('fixed');
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it('nudges only once, so a run cannot loop on it', async () => {
+    const client = new FakeLLMClient([
+      { text: 'I will look into it.', toolCalls: [], usage, stopReason: 'end' },
+      { text: 'No change is needed: the behaviour is already correct.', toolCalls: [], usage, stopReason: 'end' },
+    ]);
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'forge-act2-'));
+    const result = await runAgent({
+      client,
+      system: 'fix it',
+      initialContent: [{ type: 'text', text: 'go' }],
+      tools: editToolset(),
+      limits: { maxIterations: 6, maxOutputTokens: 1000 },
+      cwd: dir,
+      actionTools: ['write_file'],
+    });
+    expect(result.finalText).toContain('No change is needed');
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it('leaves a read-only flow alone', async () => {
+    // A review answers in prose; ending without an edit is the correct ending.
+    const client = new FakeLLMClient([{ text: '[]', toolCalls: [], usage, stopReason: 'end' }]);
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'forge-act3-'));
+    const result = await runAgent({
+      client,
+      system: 'review',
+      initialContent: [{ type: 'text', text: 'go' }],
+      tools: reviewToolset(),
+      limits: { maxIterations: 3, maxOutputTokens: 1000 },
+      cwd: dir,
+    });
+    expect(result.finalText).toBe('[]');
+    expect(result.iterations).toBe(1);
+    await fs.rm(dir, { recursive: true, force: true });
   });
 });

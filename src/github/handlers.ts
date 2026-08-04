@@ -593,6 +593,9 @@ async function doIssueFix(
       limits: fixLimits,
       cwd: ws.dir,
       security: await createWorkspaceScanner(ws.dir),
+      // The flows whose job is to change something: ending without having
+      // used one of these is a stop, not a finish.
+      actionTools: ['write_file', 'edit_file', 'multi_edit', 'apply_patch'],
       onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
     deps.run?.add(result);
