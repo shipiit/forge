@@ -22,6 +22,10 @@
 #   VERTEX_LOCATION  region, e.g. us-central1
 #   VERTEX_MODEL     e.g. gemini-2.5-pro, or gemini-2.5-flash for cheaper runs
 #
+# Security scanning needs no credential at all. The secret and code scans are
+# deterministic — no model call, no cost — and run on every pull request even
+# if the review itself is switched off.
+#
 # Optional, and worth adding — without them every review is posted by
 # "github-actions[bot]" rather than by your app:
 #
@@ -180,6 +184,12 @@ jobs:
           skill: deep-review
           max-turns: '30'
           max-nits: '5'
+          # Both scans are on by default; they are written out here so it is
+          # visible in the workflow that they run, and obvious where to turn
+          # one off. They cost no model call, so they run on every pull
+          # request regardless of the review cadence below.
+          secret-scan: '1'
+          code-scan: '1'
         env:
           LLM_PROVIDER: vertex
           VERTEX_PROJECT: ${{ secrets.VERTEX_PROJECT }}

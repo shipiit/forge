@@ -51,6 +51,8 @@ export interface ForgeConfig {
   showCost: boolean;
   /** Scan for committed credentials on every pull request. */
   secretScan: boolean;
+  /** Run the source-code security rules alongside the credential scan. */
+  codeScan: boolean;
   /** Turn findings into issues: off, one rollup issue, or one issue each. */
   findingsToIssues: FindingIssueMode;
   /** Findings below this severity never become issues. */
@@ -87,6 +89,7 @@ export function defaultConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig
     // On by default: a committed credential is the one finding whose cost of
     // being missed is unbounded, and the scan is free.
     secretScan: env.FORGE_SECRET_SCAN !== '0' && env.FORGE_SECRET_SCAN !== 'false',
+    codeScan: env.FORGE_CODE_SCAN !== '0' && env.FORGE_CODE_SCAN !== 'false',
     findingsToIssues: (env.FORGE_FINDINGS_TO_ISSUES as FindingIssueMode) || 'off',
     findingsMinSeverity: (env.FORGE_FINDINGS_MIN_SEVERITY as ReviewFinding['severity']) || 'high',
     findingsMaxIssues: Number(env.FORGE_FINDINGS_MAX_ISSUES ?? 10),
@@ -135,6 +138,7 @@ export function mergeConfig(raw: unknown, base: ForgeConfig = defaultConfig()): 
     maxRunsPerHour: intOr(r.max_runs_per_hour, base.maxRunsPerHour),
     showCost: typeof r.show_cost === 'boolean' ? r.show_cost : base.showCost,
     secretScan: typeof r.secret_scan === 'boolean' ? r.secret_scan : base.secretScan,
+    codeScan: typeof r.code_scan === 'boolean' ? r.code_scan : base.codeScan,
     findingsToIssues: enumOr(r.findings_to_issues, ['off', 'rollup', 'per_finding'] as const, base.findingsToIssues),
     findingsMinSeverity: enumOr(
       r.findings_min_severity,

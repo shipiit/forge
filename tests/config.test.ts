@@ -100,3 +100,17 @@ describe('scanning for credentials before a merge', () => {
     expect(mergeConfig({ secret_scan: false }, {} as NodeJS.ProcessEnv).secretScan).toBe(false);
   });
 });
+
+describe('the code scan toggle', () => {
+  it('is on unless somebody turns it off', () => {
+    expect(defaultConfig({}).codeScan).toBe(true);
+    expect(defaultConfig({ FORGE_CODE_SCAN: '0' } as NodeJS.ProcessEnv).codeScan).toBe(false);
+    expect(defaultConfig({ FORGE_CODE_SCAN: 'false' } as NodeJS.ProcessEnv).codeScan).toBe(false);
+  });
+
+  it('can be switched off in the repository config, independently of secrets', () => {
+    const c = mergeConfig({ code_scan: false }, defaultConfig({}));
+    expect(c.codeScan).toBe(false);
+    expect(c.secretScan).toBe(true);
+  });
+});

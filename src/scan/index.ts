@@ -4,12 +4,14 @@ import { execa } from 'execa';
 import type { ReviewFinding } from '../github/review.js';
 import { secretsScanner } from './secrets.js';
 import { iacScanner } from './iac.js';
+import { codeScanner } from './code.js';
 import { applySuppressions } from './suppress.js';
 import { dedupe, type ScanContext, type Scanner } from './types.js';
 
 export { dedupe, findingKey, type Scanner, type ScanContext } from './types.js';
 export { secretsScanner, entropy, looksRandom } from './secrets.js';
 export { iacScanner } from './iac.js';
+export { codeScanner } from './code.js';
 export { applySuppressions, parseSuppressions, type Suppression } from './suppress.js';
 
 /**
@@ -19,7 +21,21 @@ export { applySuppressions, parseSuppressions, type Suppression } from './suppre
  * and are deduplicated with them, so one weakness that three sources notice
  * arrives as one comment rather than three.
  */
-export const SCANNERS: Scanner[] = [secretsScanner, iacScanner];
+export const SCANNERS: Scanner[] = [secretsScanner, iacScanner, codeScanner];
+
+/**
+ * The scanners a repository has switched on.
+ *
+ * Both default to on. They are separable because they answer different
+ * questions — one is "is there a key in here", which every repository wants,
+ * and the other is "is this code dangerous", which a repository already paying
+ * for CodeQL may not want twice.
+ */
+export function scannersFor(opts: { secretScan: boolean; codeScan: boolean }): Scanner[] {
+  return SCANNERS.filter((s) =>
+    s.name === 'code' ? opts.codeScan : s.name === 'secrets' ? opts.secretScan : opts.secretScan || opts.codeScan,
+  );
+}
 
 /** Directories never worth walking: not ours, or not source. */
 const SKIP_DIR = /^(?:node_modules|\.git|dist|build|coverage|vendor|\.next|target|__pycache__)$/;

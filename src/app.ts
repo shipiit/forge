@@ -15,6 +15,7 @@ import {
   handleScan,
   type HandlerDeps,
 } from "./github/handlers.js";
+import { scannersFor } from "./scan/index.js";
 import type { OctokitLike } from "./github/pr.js";
 import { redactSecrets } from "./util/resilience.js";
 import { mergeConfig, defaultConfig, type ForgeConfig } from "./config.js";
@@ -66,6 +67,7 @@ async function deps(
     findingsMinSeverity: config.findingsMinSeverity,
     findingsMaxIssues: config.findingsMaxIssues,
     selfReview: true,
+    scanners: scannersFor(config),
   };
 }
 
@@ -180,7 +182,7 @@ export default function app(probot: Probot, options: { getRouter?: (path?: strin
       // The credential scan runs whatever the review cadence is: it costs
       // nothing, and a key committed to a branch is already public to anyone
       // who can clone it.
-      if (config.secretScan) {
+      if (config.secretScan || config.codeScan) {
         await dispatch(
           context,
           config,

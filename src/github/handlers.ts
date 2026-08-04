@@ -74,7 +74,7 @@ import {
 } from './review.js';
 import { parseSarif } from './sarif.js';
 import { redactSecrets } from '../util/resilience.js';
-import { collectFiles, mergeFindings, runScanners } from '../scan/index.js';
+import { collectFiles, mergeFindings, runScanners, type Scanner } from '../scan/index.js';
 import { blocking, renderScanReport } from '../scan/report.js';
 import { fetchDependabotFindings } from './dependabot.js';
 import { isSafeRef, realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
@@ -99,6 +99,8 @@ export interface HandlerDeps {
   log: (msg: string) => void;
   /** Run a self-review pass over the fix diff before opening the PR (default true). */
   selfReview?: boolean;
+  /** Which deterministic scanners to run. Defaults to all of them. */
+  scanners?: Scanner[];
   /** Optional explicit test command override (from .github/agent.yml). */
   testCommand?: string;
   /** Workspace operations; defaults to real git. Overridden in tests. */
@@ -796,7 +798,7 @@ async function doPrReview(
     // findings that were free; and the model is told what was already found,
     // so it spends its turns judging whether those are reachable rather than
     // rediscovering a key it would have read past anyway.
-    const scanned = await runScanners({ cwd: ws.dir, only: new Set(parseDiffValidLines(diff).keys()) });
+    const scanned = await runScanners({ cwd: ws.dir, only: new Set(parseDiffValidLines(diff).keys()) }, deps.scanners);
     if (scanned.length) log(`scanners: ${scanned.length} finding(s) before the model ran`);
 
     const result = await runAgent({
@@ -1073,7 +1075,7 @@ async function doScan(
 
   try {
     const files = await collectFiles(ws.dir);
-    const findings = await runScanners({ cwd: ws.dir });
+    const findings = await runScanners({ cwd: ws.dir }, deps.scanners);
     deps.run?.findings(findings);
     log(`scan: ${findings.length} finding(s) across ${files.length} file(s)`);
 
@@ -1145,7 +1147,7 @@ async function doAudit(
     const repoMap = await buildRepoMap(ws.dir, { maxEntries: 800 });
     // Same order as a review: the free pass first, and the model is told what
     // it already found so it spends its turns on reachability instead.
-    const scannedRepo = await runScanners({ cwd: ws.dir });
+    const scannedRepo = await runScanners({ cwd: ws.dir }, deps.scanners);
     if (scannedRepo.length) log(`scanners: ${scannedRepo.length} finding(s) before the model ran`);
 
     const result = await runAgent({
