@@ -300,3 +300,55 @@ describe('a title cannot break out of the summary tag', () => {
     expect(summary.match(/<\/summary>/g)).toHaveLength(1);
   });
 });
+
+describe('a suggestion that would replace the wrong line', () => {
+  const finding = (suggestion: string) => ({
+    file: 'examples/forge.yml',
+    startLine: 30,
+    endLine: 30,
+    lens: 'security' as const,
+    severity: 'medium' as const,
+    category: 'CWE-494',
+    title: 'Action pinned to a mutable ref',
+    body: 'A tag can be moved.',
+    suggestion,
+  });
+
+  const onComment = new Map([['examples/forge.yml', new Map([[30, '  # write on the repository.']])]]);
+
+  it('is not offered as a commit when it would turn a comment into code', () => {
+    // This shipped: a suggestion anchored on a comment line, offering to
+    // replace the explanation with `- uses: actions/checkout@<sha>`. GitHub
+    // puts a "Commit suggestion" button under that.
+    const payload = buildReviewPayload([finding('      - uses: actions/checkout@abc123')], {
+      validLines: new Map([['examples/forge.yml', new Set([30])]]),
+      lineText: onComment,
+    });
+    expect(payload.comments[0]!.body).not.toContain('```suggestion');
+    // The finding itself survives — it is the fix that was in the wrong place.
+    expect(payload.comments[0]!.body).toContain('Action pinned to a mutable ref');
+  });
+
+  it('is still offered when a comment is being rewritten as a comment', () => {
+    const payload = buildReviewPayload([finding('  # write on the repo.')], {
+      validLines: new Map([['examples/forge.yml', new Set([30])]]),
+      lineText: onComment,
+    });
+    expect(payload.comments[0]!.body).toContain('```suggestion');
+  });
+
+  it('is offered normally on an ordinary line', () => {
+    const payload = buildReviewPayload([finding('      - uses: actions/checkout@abc123')], {
+      validLines: new Map([['examples/forge.yml', new Set([30])]]),
+      lineText: new Map([['examples/forge.yml', new Map([[30, '      - uses: actions/checkout@v4']])]]),
+    });
+    expect(payload.comments[0]!.body).toContain('```suggestion');
+  });
+
+  it('is never offered outside the diff, where there is no button to press', () => {
+    const payload = buildReviewPayload([finding('      - uses: actions/checkout@abc123')], {
+      validLines: new Map(),
+    });
+    expect(payload.body).not.toContain('```suggestion');
+  });
+});

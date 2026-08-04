@@ -64,8 +64,12 @@ function lede(body: string, max = 220): string {
  * and the suggested change are one click away, and a reviewer with six comments
  * on screen can still see the code between them.
  */
-export function renderFindingBody(f: ReviewFinding, opts: { inline?: boolean } = {}): string {
+export function renderFindingBody(
+  f: ReviewFinding,
+  opts: { inline?: boolean; withSuggestion?: boolean } = {},
+): string {
   const inline = opts.inline ?? true;
+  const withSuggestion = opts.withSuggestion ?? true;
   const lensTag = f.lens === 'security' ? '🛡️ Security' : '🔧 Quality';
   const rest = f.body.trim().slice(lede(f.body).length).trim();
 
@@ -80,7 +84,7 @@ export function renderFindingBody(f: ReviewFinding, opts: { inline?: boolean } =
   if (rest) {
     out += `\n\n<details><summary>Why this matters</summary>\n\n${rest}\n\n</details>`;
   }
-  if (f.suggestion !== undefined) {
+  if (f.suggestion !== undefined && withSuggestion) {
     // Kept out of the collapsed block: GitHub only offers "Commit suggestion"
     // on a suggestion it can see.
     out += `\n\n\`\`\`suggestion\n${f.suggestion}\n\`\`\``;
@@ -206,6 +210,60 @@ export function renderAuditReport(findings: ReviewFinding[], displayName: string
  * GitHub returns 422 for inline comments on any other line, so we use this to
  * keep only valid comments and route the rest into the summary.
  */
+/**
+ * The text of each line the diff shows, per file.
+ *
+ * Same walk as `parseDiffValidLines`, keeping the content rather than just the
+ * number, so a suggestion can be checked against what it would actually
+ * replace before it is offered as a commit.
+ */
+export function parseDiffLineText(diff: string): Map<string, Map<number, string>> {
+  const map = new Map<string, Map<number, string>>();
+  let file: string | null = null;
+  let newLine = 0;
+  for (const raw of diff.split('\n')) {
+    if (raw.startsWith('+++ ')) {
+      const p = raw.slice(4).replace(/^b\//, '').trim();
+      file = p === '/dev/null' ? null : p;
+      if (file && !map.has(file)) map.set(file, new Map());
+      continue;
+    }
+    const hunk = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      newLine = Number(hunk[1]);
+      continue;
+    }
+    if (!file) continue;
+    if (raw.startsWith('+') || raw.startsWith(' ') || raw === '') {
+      map.get(file)!.set(newLine, raw.slice(1));
+      newLine++;
+    }
+  }
+  return map;
+}
+
+/** A line that is only a comment, in the languages a review touches. */
+const COMMENT_ONLY = /^\s*(?:\/\/|\/\*|\*|#|<!--|--)/;
+
+/**
+ * Should this suggestion be offered as a commit?
+ *
+ * GitHub applies a suggestion to the exact lines it is attached to, so one
+ * anchored a few lines off does not read as slightly wrong — it produces
+ * broken code with a "Commit suggestion" button under it. The check that
+ * catches this in practice: a comment line being replaced by something that is
+ * not a comment means the finding landed on the wrong line, because no real
+ * fix turns an explanation into an instruction.
+ */
+export function suggestionFits(f: ReviewFinding, lineText?: string): boolean {
+  if (f.suggestion === undefined) return false;
+  if (lineText === undefined) return true; // nothing to check it against
+  const replacingComment = COMMENT_ONLY.test(lineText) && lineText.trim() !== '';
+  if (!replacingComment) return true;
+  // Rewriting a comment as a comment is fine — a typo, a stale note.
+  return f.suggestion.split('\n').every((l) => l.trim() === '' || COMMENT_ONLY.test(l));
+}
+
 export function parseDiffValidLines(diff: string): Map<string, Set<number>> {
   const map = new Map<string, Set<number>>();
   let file: string | null = null;
@@ -282,6 +340,8 @@ export function buildReviewPayload(
     /** For deep links on findings that cannot be commented on inline. */
     repoUrl?: string;
     ref?: string;
+    /** Diff line text, so a misplaced suggestion is not offered as a commit. */
+    lineText?: Map<string, Map<number, string>>;
   } = {},
 ): ReviewPayload {
   const displayName = opts.displayName ?? 'ShipIT Forge';
@@ -300,7 +360,9 @@ export function buildReviewPayload(
     ...(f.startLine !== f.endLine && (!opts.validLines || opts.validLines.get(f.file)?.has(f.startLine))
       ? { start_line: f.startLine }
       : {}),
-    body: renderFindingBody(f),
+    body: renderFindingBody(f, {
+      withSuggestion: suggestionFits(f, opts.lineText?.get(f.file)?.get(f.endLine)),
+    }),
   }));
 
   let body = renderSummary(filtered, displayName);
@@ -335,7 +397,12 @@ function outOfDiff(findings: ReviewFinding[], repoUrl?: string, ref?: string): s
           ? `<a href="${repoUrl}/blob/${ref}/${f.file}#L${f.endLine}"><code>${at}</code></a>`
           : `<code>${at}</code>`;
       const summary = `${HTML_BADGE[f.severity]} · ${escapeHtml(f.title)} — ${where}`;
-      return `<details><summary>${summary}</summary>\n\n${renderFindingBody(f, { inline: false })}\n\n</details>`;
+      return `<details><summary>${summary}</summary>\n\n${renderFindingBody(f, {
+        inline: false,
+        // There is no "Commit suggestion" button outside the diff, so a
+        // suggestion block down here is a code sample pretending to be one.
+        withSuggestion: false,
+      })}\n\n</details>`;
     })
     .join('\n');
 }

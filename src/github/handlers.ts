@@ -67,6 +67,7 @@ import {
   buildReviewPayload,
   parseFindings,
   parseDiffValidLines,
+  parseDiffLineText,
   renderAuditReport,
   capNits,
   scopeFindingsToDiff,
@@ -879,6 +880,7 @@ async function doPrReview(
       displayName: DISPLAY,
       securityOnly: args.securityOnly,
       validLines,
+      lineText: parseDiffLineText(diff),
       droppedNits: dropped,
       // A finding outside the diff cannot be an inline comment, so it needs a
       // link to the line it is about.

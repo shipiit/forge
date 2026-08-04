@@ -134,12 +134,55 @@ describe('the same problem, described twice', () => {
     expect(mergeFindings([at(17, 'A', 'aaa')], [at(19, 'B', 'bb')])).toHaveLength(1);
   });
 
-  it('keeps two genuinely separate instances of the same rule', () => {
-    expect(mergeFindings([at(17, 'A', 'aaa')], [at(180, 'A', 'aaa')])).toHaveLength(2);
+  it('keeps two genuinely separate instances found by the same pass', () => {
+    // Two from the scanner are two places it read. One from each pass is one
+    // problem described twice, however far apart the two guesses landed —
+    // that is the case this merge exists for.
+    expect(mergeFindings([], [at(17, 'A', 'aaa'), at(180, 'A', 'aaa')])).toHaveLength(2);
+    expect(mergeFindings([at(17, 'A', 'aaa')], [at(180, 'A', 'aaa')])).toHaveLength(1);
   });
 
   it('keeps the more severe of the two', () => {
     const merged = mergeFindings([at(17, 'A', 'aaa', 'medium')], [at(17, 'A', 'aaa', 'critical')]);
     expect(merged[0]!.severity).toBe('critical');
+  });
+});
+
+describe('who decides where a finding is', () => {
+  const f = (file: string, line: number, title: string, category = 'CWE-494') =>
+    ({ file, startLine: line, endLine: line, lens: 'security', severity: 'medium', category, title, body: 'b' }) as never;
+
+  it('lets the pass that read the file win over the one that estimated', () => {
+    // Shipped on this branch: the model put it on 173, the scanner on 180.
+    // One problem, two comments, only one of them pointing at the right line.
+    const merged = mergeFindings(
+      [f('.github/workflows/forge.yml', 173, 'Action pinned to a mutable reference')],
+      [f('.github/workflows/forge.yml', 180, 'Action pinned to a mutable ref')],
+    );
+    expect(merged).toHaveLength(1);
+    // The scanner's line, because it read the file rather than a diff.
+    expect(merged[0]!.endLine).toBe(180);
+  });
+
+  it('keeps every instance the scanner actually found', () => {
+    const merged = mergeFindings(
+      [f('a.yml', 5, 'Mutable ref')],
+      [f('a.yml', 10, 'Mutable ref'), f('a.yml', 40, 'Mutable ref')],
+    );
+    expect(merged.map((m) => m.endLine)).toEqual([10, 40]);
+  });
+
+  it('keeps the model’s finding where no scanner looked', () => {
+    // examples/*.yml is not a workflow path, so nothing deterministic reads it.
+    const merged = mergeFindings([f('examples/forge.yml', 30, 'Mutable ref')], [f('.github/workflows/a.yml', 2, 'Mutable ref')]);
+    expect(merged).toHaveLength(2);
+  });
+
+  it('does not let one rule silence a different one in the same file', () => {
+    const merged = mergeFindings(
+      [f('a.yml', 5, 'No permissions block', 'CWE-732')],
+      [f('a.yml', 10, 'Mutable ref', 'CWE-494')],
+    );
+    expect(merged).toHaveLength(2);
   });
 });

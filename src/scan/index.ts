@@ -131,7 +131,29 @@ export async function runScanners(ctx: ScanContext, scanners: Scanner[] = SCANNE
  * Order matters: the model's findings come first so that when a scanner and the
  * model both describe the same weakness, the surviving body is whichever is
  * longer — which is nearly always the one with the reasoning in it.
+ *
+ * Where a scanner has already reported a rule in a file, the scanner decides
+ * *where* it is. A scanner read the file and counted the lines; a model read a
+ * diff and estimated them, which is how one pull request ended up with "Action
+ * pinned to a mutable reference" on line 173 and "Action pinned to a mutable
+ * ref" on line 180 — one problem, described twice, in two places, only one of
+ * which was real.
+ *
+ * So the model's finding is moved onto the nearest line the scanner reported
+ * for that rule, and then merged normally. Location from the pass that read
+ * the file, explanation from the pass that can reason about it — dropping the
+ * model's copy outright would have thrown the reasoning away with the wrong
+ * line number. Where no scanner looked at all, the model's finding stands
+ * exactly as it is.
  */
 export function mergeFindings(fromModel: ReviewFinding[], fromScanners: ReviewFinding[]): ReviewFinding[] {
-  return dedupe([...fromModel, ...fromScanners]);
+  const snapped = fromModel.map((f) => {
+    const sameRule = fromScanners.filter((s) => s.file === f.file && s.category === f.category);
+    if (sameRule.length === 0) return f;
+    const nearest = sameRule.reduce((a, b) =>
+      Math.abs(b.endLine - f.endLine) < Math.abs(a.endLine - f.endLine) ? b : a,
+    );
+    return { ...f, startLine: nearest.startLine, endLine: nearest.endLine };
+  });
+  return dedupe([...snapped, ...fromScanners]);
 }
