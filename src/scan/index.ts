@@ -4,12 +4,14 @@ import { execa } from 'execa';
 import type { ReviewFinding } from '../github/review.js';
 import { secretsScanner } from './secrets.js';
 import { iacScanner } from './iac.js';
+import { codeScanner } from './code.js';
 import { applySuppressions } from './suppress.js';
 import { dedupe, type ScanContext, type Scanner } from './types.js';
 
-export { dedupe, findingKey, type Scanner, type ScanContext } from './types.js';
+export { dedupe, findingKey, inTestFile, TEST_PATH, type Scanner, type ScanContext } from './types.js';
 export { secretsScanner, entropy, looksRandom } from './secrets.js';
 export { iacScanner } from './iac.js';
+export { codeScanner } from './code.js';
 export { applySuppressions, parseSuppressions, type Suppression } from './suppress.js';
 
 /**
@@ -19,7 +21,21 @@ export { applySuppressions, parseSuppressions, type Suppression } from './suppre
  * and are deduplicated with them, so one weakness that three sources notice
  * arrives as one comment rather than three.
  */
-export const SCANNERS: Scanner[] = [secretsScanner, iacScanner];
+export const SCANNERS: Scanner[] = [secretsScanner, iacScanner, codeScanner];
+
+/**
+ * The scanners a repository has switched on.
+ *
+ * Both default to on. They are separable because they answer different
+ * questions — one is "is there a key in here", which every repository wants,
+ * and the other is "is this code dangerous", which a repository already paying
+ * for CodeQL may not want twice.
+ */
+export function scannersFor(opts: { secretScan: boolean; codeScan: boolean }): Scanner[] {
+  return SCANNERS.filter((s) =>
+    s.name === 'code' ? opts.codeScan : s.name === 'secrets' ? opts.secretScan : opts.secretScan || opts.codeScan,
+  );
+}
 
 /** Directories never worth walking: not ours, or not source. */
 const SKIP_DIR = /^(?:node_modules|\.git|dist|build|coverage|vendor|\.next|target|__pycache__)$/;
@@ -115,7 +131,29 @@ export async function runScanners(ctx: ScanContext, scanners: Scanner[] = SCANNE
  * Order matters: the model's findings come first so that when a scanner and the
  * model both describe the same weakness, the surviving body is whichever is
  * longer — which is nearly always the one with the reasoning in it.
+ *
+ * Where a scanner has already reported a rule in a file, the scanner decides
+ * *where* it is. A scanner read the file and counted the lines; a model read a
+ * diff and estimated them, which is how one pull request ended up with "Action
+ * pinned to a mutable reference" on line 173 and "Action pinned to a mutable
+ * ref" on line 180 — one problem, described twice, in two places, only one of
+ * which was real.
+ *
+ * So the model's finding is moved onto the nearest line the scanner reported
+ * for that rule, and then merged normally. Location from the pass that read
+ * the file, explanation from the pass that can reason about it — dropping the
+ * model's copy outright would have thrown the reasoning away with the wrong
+ * line number. Where no scanner looked at all, the model's finding stands
+ * exactly as it is.
  */
 export function mergeFindings(fromModel: ReviewFinding[], fromScanners: ReviewFinding[]): ReviewFinding[] {
-  return dedupe([...fromModel, ...fromScanners]);
+  const snapped = fromModel.map((f) => {
+    const sameRule = fromScanners.filter((s) => s.file === f.file && s.category === f.category);
+    if (sameRule.length === 0) return f;
+    const nearest = sameRule.reduce((a, b) =>
+      Math.abs(b.endLine - f.endLine) < Math.abs(a.endLine - f.endLine) ? b : a,
+    );
+    return { ...f, startLine: nearest.startLine, endLine: nearest.endLine };
+  });
+  return dedupe([...snapped, ...fromScanners]);
 }

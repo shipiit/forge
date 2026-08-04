@@ -89,3 +89,43 @@ describe('publishing what a run cost', () => {
     expect(mergeConfig({ show_cost: false }, { FORGE_SHOW_COST: '1' } as NodeJS.ProcessEnv).showCost).toBe(false);
   });
 });
+
+describe('scanning for credentials before a merge', () => {
+  it('is on by default — the cost of missing one is unbounded and the scan is free', () => {
+    expect(defaultConfig({} as NodeJS.ProcessEnv).secretScan).toBe(true);
+  });
+
+  it('can be switched off by env or per repository', () => {
+    expect(defaultConfig({ FORGE_SECRET_SCAN: '0' } as NodeJS.ProcessEnv).secretScan).toBe(false);
+    expect(mergeConfig({ secret_scan: false }, {} as NodeJS.ProcessEnv).secretScan).toBe(false);
+  });
+});
+
+describe('the code scan toggle', () => {
+  it('is on unless somebody turns it off', () => {
+    expect(defaultConfig({}).codeScan).toBe(true);
+    expect(defaultConfig({ FORGE_CODE_SCAN: '0' } as NodeJS.ProcessEnv).codeScan).toBe(false);
+    expect(defaultConfig({ FORGE_CODE_SCAN: 'false' } as NodeJS.ProcessEnv).codeScan).toBe(false);
+  });
+
+  it('can be switched off in the repository config, independently of secrets', () => {
+    const c = mergeConfig({ code_scan: false }, defaultConfig({}));
+    expect(c.codeScan).toBe(false);
+    expect(c.secretScan).toBe(true);
+  });
+});
+
+describe('what the scan blocks on', () => {
+  it('defaults to high — real things stop a merge, arguments do not', () => {
+    expect(defaultConfig({}).scanBlockOn).toBe('high');
+  });
+
+  it('takes low, for a repository that wants nothing outstanding', () => {
+    expect(mergeConfig({ scan_block_on: 'low' }, defaultConfig({})).scanBlockOn).toBe('low');
+    expect(defaultConfig({ FORGE_SCAN_BLOCK_ON: 'none' } as NodeJS.ProcessEnv).scanBlockOn).toBe('none');
+  });
+
+  it('ignores a value that is not a severity rather than blocking on nonsense', () => {
+    expect(mergeConfig({ scan_block_on: 'urgent' }, defaultConfig({})).scanBlockOn).toBe('high');
+  });
+});

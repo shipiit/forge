@@ -36,6 +36,69 @@ export function saveConnection(base: string, token: string): void {
   }
 }
 
+const USER_KEY = 'forge.usage.user';
+
+export function signedInAs(): string {
+  return read(USER_KEY);
+}
+
+/** Whether this deployment has accounts, so a form is worth showing. */
+export async function hasAccounts(base = apiBase()): Promise<boolean> {
+  try {
+    const res = await fetch(`${base}/api/auth`);
+    if (!res.ok) return false;
+    return Boolean(((await res.json()) as { accounts?: boolean }).accounts);
+  } catch {
+    return false; // unreachable API: the connection panel is the right answer
+  }
+}
+
+/**
+ * Sign in with a username and password, and keep the session it returns.
+ *
+ * The password is sent once and never stored: what is kept is the session
+ * token the server issues, which can be revoked on its own and expires by
+ * itself. Storing the password to "stay signed in" would be storing the one
+ * secret that unlocks everything else the person owns.
+ */
+export async function signIn(base: string, username: string, password: string): Promise<void> {
+  const res = await fetch(`${base.replace(/\/+$/, '')}/api/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { token?: string; username?: string; error?: string };
+  if (!res.ok || !body.token) {
+    throw new ApiError(body.error || 'Could not sign in.', res.status);
+  }
+  saveConnection(base, body.token);
+  try {
+    localStorage.setItem(USER_KEY, body.username ?? username);
+  } catch {
+    /* private mode */
+  }
+}
+
+/** Sign out here and on the server, so the token stops working for anyone. */
+export async function signOut(): Promise<void> {
+  const base = apiBase();
+  const token = apiToken();
+  if (base && token) {
+    await fetch(`${base}/api/logout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    }).catch(() => {
+      /* the local half still matters even if the server is unreachable */
+    });
+  }
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
 export interface Filters {
   days: number;
   repo: string;

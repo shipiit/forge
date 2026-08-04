@@ -67,6 +67,7 @@ import {
   buildReviewPayload,
   parseFindings,
   parseDiffValidLines,
+  parseDiffLineText,
   renderAuditReport,
   capNits,
   scopeFindingsToDiff,
@@ -74,7 +75,8 @@ import {
 } from './review.js';
 import { parseSarif } from './sarif.js';
 import { redactSecrets } from '../util/resilience.js';
-import { mergeFindings, runScanners } from '../scan/index.js';
+import { collectFiles, inTestFile, mergeFindings, runScanners, SCANNERS, type Scanner } from '../scan/index.js';
+import { blocking, renderReviewAck, renderReviewDone, renderScanReport, type BlockLevel } from '../scan/report.js';
 import { fetchDependabotFindings } from './dependabot.js';
 import { isSafeRef, realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
@@ -98,6 +100,10 @@ export interface HandlerDeps {
   log: (msg: string) => void;
   /** Run a self-review pass over the fix diff before opening the PR (default true). */
   selfReview?: boolean;
+  /** Which deterministic scanners to run. Defaults to all of them. */
+  scanners?: Scanner[];
+  /** Lowest severity that fails the scan's check run. Defaults to high. */
+  scanBlockOn?: BlockLevel;
   /** Optional explicit test command override (from .github/agent.yml). */
   testCommand?: string;
   /** Workspace operations; defaults to real git. Overridden in tests. */
@@ -761,12 +767,16 @@ async function doPrReview(
     }
   }
 
-  const scope = args.securityOnly ? 'security review' : 'code + security review';
+  const ackBody = renderReviewAck(
+    DISPLAY,
+    (deps.scanners ?? SCANNERS).map((sc) => sc.name),
+    args.securityOnly,
+  );
   const ack = await octokit.rest.issues.createComment({
     owner: args.owner,
     repo: args.repo,
     issue_number: args.pullNumber,
-    body: `👀 **${DISPLAY}** is running a ${scope} on this PR… I'll post my review shortly.`,
+    body: ackBody,
   });
 
   const prRes = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
@@ -795,8 +805,20 @@ async function doPrReview(
     // findings that were free; and the model is told what was already found,
     // so it spends its turns judging whether those are reachable rather than
     // rediscovering a key it would have read past anyway.
-    const scanned = await runScanners({ cwd: ws.dir, only: new Set(parseDiffValidLines(diff).keys()) });
+    const all = await runScanners({ cwd: ws.dir, only: new Set(parseDiffValidLines(diff).keys()) }, deps.scanners);
+
+    // A finding in a test file does not become an inline review comment.
+    //
+    // A suite has to contain what it detects — the scanner's own cases are a
+    // command injection, a traversal and a key, all written deliberately — and
+    // a pull request that introduced no weakness should not arrive carrying
+    // eight nits about its own fixtures. They are still reported, at low
+    // severity, in the scan comment: a credential pasted into a test is still
+    // a credential, and quietly dropping it is how one stays there.
+    const scanned = all.filter((f) => !inTestFile(f));
+    const inTests = all.length - scanned.length;
     if (scanned.length) log(`scanners: ${scanned.length} finding(s) before the model ran`);
+    if (inTests) log(`scanners: ${inTests} finding(s) in test files, reported but not commented on`);
 
     const result = await runAgent({
       client,
@@ -858,7 +880,12 @@ async function doPrReview(
       displayName: DISPLAY,
       securityOnly: args.securityOnly,
       validLines,
+      lineText: parseDiffLineText(diff),
       droppedNits: dropped,
+      // A finding outside the diff cannot be an inline comment, so it needs a
+      // link to the line it is about.
+      repoUrl: `https://github.com/${args.owner}/${args.repo}`,
+      ref: prRes.data.head.ref,
     });
     await octokit.rest.pulls.createReview({
       owner: args.owner,
@@ -877,12 +904,31 @@ async function doPrReview(
       repo: args.repo,
       comment_id: ack.data.id,
       body:
-        withBudgetNotice(
-          result,
-          client.model,
-          `### 🔍 ${DISPLAY} reviewed this PR — ${verdict}\n\n${findings.length} finding(s) (${sec} security). See the review above for inline details and suggested fixes.` +
-            renderSkipped(plan),
-        ) + costFooter(result.usage, client.model, deps.showCost),
+        // Appended, not replaced. What was about to run is worth keeping next
+        // to what it found — overwriting it means the only record of what was
+        // looked for disappears the moment there is an answer, which is
+        // exactly when somebody wants to know.
+        `${renderReviewAck(
+          DISPLAY,
+          (deps.scanners ?? SCANNERS).map((sc) => sc.name),
+          args.securityOnly,
+          true,
+        )}\n\n---\n\n` +
+          withBudgetNotice(
+            result,
+            client.model,
+            renderReviewDone({
+              displayName: DISPLAY,
+              verdict,
+              total: findings.length,
+              security: sec,
+              scanners: (deps.scanners ?? SCANNERS).map((sc) => sc.name),
+              fromScanners: scanned.length,
+              inTestFiles: inTests,
+              includeCoverage: false,
+            }) + renderSkipped(plan),
+          ) +
+          costFooter(result.usage, client.model, deps.showCost),
     });
   } finally {
     await ws.cleanup();
@@ -1048,6 +1094,127 @@ async function doMention(
 }
 
 /** Full-repository security audit (read-only) → one grouped report comment. */
+/**
+ * Scan for committed credentials and misconfiguration, and report.
+ *
+ * No model call at any point, which is the feature: it is instant, it is free,
+ * and it gives the same answer twice. Runs on demand with `/secrets`, and
+ * before a merge when the repository asks for it.
+ */
+export function handleScan(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; issueNumber: number; ref: string; pullNumber?: number },
+): Promise<void> {
+  return withLock(`scan:${args.owner}/${args.repo}#${args.issueNumber}`, deps.log, () => doScan(deps, args));
+}
+
+async function doScan(
+  deps: HandlerDeps,
+  args: { owner: string; repo: string; issueNumber: number; ref: string; pullNumber?: number },
+): Promise<void> {
+  const { octokit, token, log } = deps;
+  const wsOps = deps.workspace ?? realWorkspace;
+  const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: args.ref }, token);
+
+  try {
+    const files = await collectFiles(ws.dir);
+    const findings = await runScanners({ cwd: ws.dir }, deps.scanners);
+    deps.run?.findings(findings);
+    log(`scan: ${findings.length} finding(s) across ${files.length} file(s)`);
+
+    const body = renderScanReport(findings, {
+      displayName: DISPLAY,
+      scope: args.pullNumber ? `this pull request's branch` : 'the repository',
+      filesScanned: files.length,
+      repoUrl: `https://github.com/${args.owner}/${args.repo}`,
+      ref: args.ref,
+      scanners: (deps.scanners ?? SCANNERS).map((sc) => sc.name),
+      blockAt: deps.scanBlockOn ?? 'high',
+    });
+
+    // One comment per pull request, rewritten in place.
+    //
+    // The scan runs on every push, and a scanner that leaves a fresh report
+    // under every push is one people collapse and stop reading by the third
+    // one. The marker is how the next run finds what this one wrote; editing
+    // also means the report always describes the current head rather than
+    // being surrounded by four stale versions of itself.
+    const marked = `${body}\n\n<!-- forge-scan -->`;
+    const existing = await findScanComment(octokit, args);
+    const posted = existing
+      ? await octokit.rest.issues.updateComment({
+          owner: args.owner,
+          repo: args.repo,
+          comment_id: existing,
+          body: marked,
+        })
+      : await octokit.rest.issues.createComment({
+          owner: args.owner,
+          repo: args.repo,
+          issue_number: args.issueNumber,
+          body: marked,
+        });
+    // updateComment is typed loosely on the narrow Octokit surface the tests
+    // stub, so the URL is read defensively rather than asserted.
+    const url = (posted as { data?: { html_url?: string } } | undefined)?.data?.html_url;
+    if (url) deps.run?.output('comment', { url, title: 'security scan' });
+
+    // A check run is what actually stops a merge, once it is required. Neutral
+    // rather than failing when nothing blocks, so a clean scan never nags.
+    const stop = blocking(findings, deps.scanBlockOn ?? 'high');
+    if (args.pullNumber && octokit.rest.checks?.create) {
+      try {
+        const pr = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
+        await octokit.rest.checks.create({
+          owner: args.owner,
+          repo: args.repo,
+          head_sha: pr.data.head.sha,
+          name: `${DISPLAY} — security scan`,
+          status: 'completed',
+          conclusion: stop.length ? 'failure' : 'success',
+          output: {
+            title: stop.length
+              ? `${stop.length} finding(s) to resolve before merging`
+              : 'No credentials, misconfiguration or code findings',
+            summary: body.slice(0, 60_000),
+          },
+        });
+      } catch (err) {
+        // A check run needs a permission the workflow may not have been given.
+        log(`scan: could not publish a check run (${err instanceof Error ? err.message : 'unknown'})`);
+      }
+    }
+  } finally {
+    await ws.cleanup();
+  }
+}
+
+/**
+ * The comment a previous scan left on this pull request, if there is one.
+ *
+ * Never throws: not being able to list comments is a reason to post a new one,
+ * not a reason to lose the report.
+ */
+async function findScanComment(
+  octokit: HandlerDeps['octokit'],
+  args: { owner: string; repo: string; issueNumber: number },
+): Promise<number | undefined> {
+  try {
+    const res = await octokit.rest.issues.listComments({
+      owner: args.owner,
+      repo: args.repo,
+      issue_number: args.issueNumber,
+      per_page: 100,
+    });
+    const mine = (res.data as Array<{ id?: number; body?: string }>).filter((c) =>
+      c.body?.includes('<!-- forge-scan -->'),
+    );
+    return mine.length ? mine[mine.length - 1]!.id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function handleAudit(
   deps: HandlerDeps,
   args: { owner: string; repo: string; issueNumber: number; ref: string; date?: string },
@@ -1072,7 +1239,7 @@ async function doAudit(
     const repoMap = await buildRepoMap(ws.dir, { maxEntries: 800 });
     // Same order as a review: the free pass first, and the model is told what
     // it already found so it spends its turns on reachability instead.
-    const scannedRepo = await runScanners({ cwd: ws.dir });
+    const scannedRepo = await runScanners({ cwd: ws.dir }, deps.scanners);
     if (scannedRepo.length) log(`scanners: ${scannedRepo.length} finding(s) before the model ran`);
 
     const result = await runAgent({
@@ -1085,6 +1252,11 @@ async function doAudit(
       onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
     deps.run?.add(result);
+    // An audit keeps its test-file findings, where a pull-request review drops
+    // them. The asymmetry is deliberate: a review comments on a diff somebody
+    // is about to merge, and nits about its own fixtures are noise there. An
+    // audit is somebody asking what is in the repository — and a key committed
+    // to a test file is one of the things they are asking about.
     const findings = mergeFindings(parseFindings(result.finalText), scannedRepo);
     deps.run?.findings(findings);
     // Merge live Dependabot alerts (current CVEs from GitHub's Advisory Database).

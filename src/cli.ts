@@ -14,6 +14,7 @@ import { createWorkspaceScanner } from './agent/tools/security.js';
 import { runSetup } from './setup.js';
 import { buildDoctorReport, renderDoctorReport } from './doctor.js';
 import { startDashboard } from './usage/serve.js';
+import { addAccount, changePassword, deleteAccount, renderAccounts } from './usage/accounts.js';
 import { cliRun } from './usage/cli.js';
 import { SUPPORTED_PROVIDERS } from './providers/index.js';
 import { estimateCost, formatCost } from './util/cost.js';
@@ -33,6 +34,61 @@ program
   .description('Interactively configure a provider + credentials, saved securely to .env')
   .action(async () => {
     await runSetup(process.cwd());
+  });
+
+/**
+ * Accounts for the dashboard.
+ *
+ * A shared token cannot be revoked for one person and says nothing about who
+ * looked. Once more than one person can reach the dashboard, it needs names.
+ */
+const users = program
+  .command('dashboard:user')
+  .alias('user')
+  .description('Manage who can sign in to the usage dashboard');
+
+const dbOption = (): string => process.env.FORGE_USAGE_DB || '.forge/usage.db';
+
+users
+  .command('add <username>')
+  .description('Create an account (the password is asked for, never passed as an argument)')
+  .option('--db <path>', 'Usage database file', dbOption())
+  .action(async (username: string, opts: { db: string }) => {
+    try {
+      console.log(await addAccount(opts.db, username));
+    } catch (err) {
+      console.error(`✖ ${(err as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
+users
+  .command('password <username>')
+  .description('Change a password, signing out every session it had')
+  .option('--db <path>', 'Usage database file', dbOption())
+  .action(async (username: string, opts: { db: string }) => {
+    try {
+      console.log(await changePassword(opts.db, username));
+    } catch (err) {
+      console.error(`✖ ${(err as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
+users
+  .command('remove <username>')
+  .description('Delete an account and sign out every session it had')
+  .option('--db <path>', 'Usage database file', dbOption())
+  .action((username: string, opts: { db: string }) => {
+    console.log(deleteAccount(opts.db, username));
+  });
+
+users
+  .command('list')
+  .description('Who can sign in, and when they last did')
+  .option('--db <path>', 'Usage database file', dbOption())
+  .action((opts: { db: string }) => {
+    console.log(renderAccounts(opts.db));
   });
 
 program

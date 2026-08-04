@@ -232,3 +232,123 @@ describe('telling people how to dismiss it', () => {
     expect(body.indexOf('Resolve this conversation')).toBeGreaterThan(body.indexOf('A key is in the source.'));
   });
 });
+
+describe('findings on lines the pull request did not touch', () => {
+  const f = (file: string, line: number) => ({
+    file,
+    startLine: line,
+    endLine: line,
+    lens: 'security' as const,
+    severity: 'medium' as const,
+    category: 'CWE-494',
+    title: 'Action pinned to a mutable ref',
+    body: 'A tag can be moved. Whoever controls it controls what runs with your token.\n\nPin the action to the commit SHA instead, so what ran yesterday is what runs today.',
+  });
+
+  it('gives them the body an inline comment would have had', () => {
+    // GitHub refuses an inline comment outside the diff, so the summary is the
+    // only place these can live — and one line naming a file is the one form
+    // of finding nobody can act on.
+    const payload = buildReviewPayload([f('.github/workflows/ci.yml', 17)], {
+      validLines: new Map([['src/other.ts', new Set([1])]]),
+      repoUrl: 'https://github.com/o/r',
+      ref: 'main',
+    });
+    expect(payload.comments).toHaveLength(0);
+    expect(payload.body).toContain('Additional findings (outside the diff)');
+    expect(payload.body).toContain('Whoever controls it controls what runs');
+    expect(payload.body).toContain('Pin the action to the commit SHA');
+    // HTML, not markdown: GitHub does not parse markdown inside a <summary>,
+    // so the badge and the link have to be tags or they render as source.
+    expect(payload.body).toContain('<a href="https://github.com/o/r/blob/main/.github/workflows/ci.yml#L17">');
+    expect(payload.body).toContain('🟡 <strong>Medium</strong>');
+    expect(payload.body).not.toMatch(/<summary>[^<]*\*\*/);
+  });
+
+  it('collapses each one so ten do not bury what is in the diff', () => {
+    const payload = buildReviewPayload([f('a.yml', 1), f('b.yml', 2)], {
+      validLines: new Map(),
+    });
+    // Each finding also nests a "Why this matters" block, so count the outer
+    // summaries — the ones carrying a file:line.
+    expect(payload.body.match(/<summary>.*?Action pinned/g) ?? []).toHaveLength(2);
+  });
+});
+
+describe('a title cannot break out of the summary tag', () => {
+  it('escapes markup a model put in a finding title', () => {
+    const payload = buildReviewPayload(
+      [
+        {
+          file: 'a.ts',
+          startLine: 1,
+          endLine: 1,
+          lens: 'security',
+          severity: 'high',
+          category: 'CWE-79',
+          title: '</summary><img src=x onerror=alert(1)>',
+          body: 'b',
+        } as never,
+      ],
+      { validLines: new Map() },
+    );
+    // The summary is raw HTML we build, so a title that closes the tag would
+    // break the block open. Inside the details body it stays markdown, which
+    // GitHub sanitises on render.
+    const summary = payload.body.match(/<summary>.*?<\/summary>/)![0];
+    expect(summary).toContain('&lt;/summary&gt;&lt;img');
+    expect(summary.match(/<\/summary>/g)).toHaveLength(1);
+  });
+});
+
+describe('a suggestion that would replace the wrong line', () => {
+  const finding = (suggestion: string) => ({
+    file: 'examples/forge.yml',
+    startLine: 30,
+    endLine: 30,
+    lens: 'security' as const,
+    severity: 'medium' as const,
+    category: 'CWE-494',
+    title: 'Action pinned to a mutable ref',
+    body: 'A tag can be moved.',
+    suggestion,
+  });
+
+  const onComment = new Map([['examples/forge.yml', new Map([[30, '  # write on the repository.']])]]);
+
+  it('is not offered as a commit when it would turn a comment into code', () => {
+    // This shipped: a suggestion anchored on a comment line, offering to
+    // replace the explanation with `- uses: actions/checkout@<sha>`. GitHub
+    // puts a "Commit suggestion" button under that.
+    const payload = buildReviewPayload([finding('      - uses: actions/checkout@abc123')], {
+      validLines: new Map([['examples/forge.yml', new Set([30])]]),
+      lineText: onComment,
+    });
+    expect(payload.comments[0]!.body).not.toContain('```suggestion');
+    // The finding itself survives — it is the fix that was in the wrong place.
+    expect(payload.comments[0]!.body).toContain('Action pinned to a mutable ref');
+  });
+
+  it('is still offered when a comment is being rewritten as a comment', () => {
+    const payload = buildReviewPayload([finding('  # write on the repo.')], {
+      validLines: new Map([['examples/forge.yml', new Set([30])]]),
+      lineText: onComment,
+    });
+    expect(payload.comments[0]!.body).toContain('```suggestion');
+  });
+
+  it('is offered normally on an ordinary line', () => {
+    const payload = buildReviewPayload([finding('      - uses: actions/checkout@abc123')], {
+      validLines: new Map([['examples/forge.yml', new Set([30])]]),
+      lineText: new Map([['examples/forge.yml', new Map([[30, '      - uses: actions/checkout@v4']])]]),
+    });
+    expect(payload.comments[0]!.body).toContain('```suggestion');
+  });
+
+  it('is never offered outside the diff, where there is no button to press', () => {
+    const payload = buildReviewPayload([finding('      - uses: actions/checkout@abc123')], {
+      validLines: new Map(),
+    });
+    expect(payload.body).not.toContain('```suggestion');
+  });
+});

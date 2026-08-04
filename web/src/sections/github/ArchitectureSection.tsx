@@ -30,6 +30,12 @@ export function ArchitectureSection() {
         spend cap, a provider outage — still carries the findings that were free, because they were gathered
         before anything could fail.
       </p>
+      <p className="mt-3 text-sm leading-relaxed text-muted">
+        One box is missing from the drawing: a third scanner reads the source itself — command injection, path
+        traversal, a credential written to a log, unsafe deserialization — alongside the two shown. Said here
+        rather than left for the next redraw, because a diagram that quietly under-claims is still a diagram
+        that does not match the code.
+      </p>
     </Section>
   );
 }

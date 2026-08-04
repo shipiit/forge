@@ -1,5 +1,5 @@
 import type { Probot, Context } from "probot";
-import { createLLMClient } from "./providers/index.js";
+import { createLLMClient, createLLMClientOrStub } from "./providers/index.js";
 import type { ProviderId } from "./providers/types.js";
 import {
   handleIssueFix,
@@ -12,8 +12,10 @@ import {
   handleHistory,
   handleRelease,
   handleRoutine,
+  handleScan,
   type HandlerDeps,
 } from "./github/handlers.js";
+import { scannersFor } from "./scan/index.js";
 import type { OctokitLike } from "./github/pr.js";
 import { redactSecrets } from "./util/resilience.js";
 import { mergeConfig, defaultConfig, type ForgeConfig } from "./config.js";
@@ -50,7 +52,7 @@ async function deps(
   };
   return {
     octokit: context.octokit as unknown as OctokitLike,
-    client: createLLMClient({ provider: provider(), model: config.model }),
+    client: createLLMClientOrStub({ provider: provider(), model: config.model }, (m) => context.log.info(m)),
     token: auth.token,
     log: (msg: string) => context.log.info(redactSecrets(msg)),
     testCommand: config.testCommand,
@@ -65,6 +67,8 @@ async function deps(
     findingsMinSeverity: config.findingsMinSeverity,
     findingsMaxIssues: config.findingsMaxIssues,
     selfReview: true,
+    scanners: scannersFor(config),
+    scanBlockOn: config.scanBlockOn,
   };
 }
 
@@ -173,9 +177,27 @@ export default function app(probot: Probot, options: { getRouter?: (path?: strin
     ["pull_request.opened", "pull_request.synchronize"],
     async (context) => {
       const config = await loadConfig(context);
-      if (config.autoReview !== "always") return;
       const { repository, pull_request } = context.payload;
       const base = { owner: repository.owner.login, repo: repository.name };
+
+      // The credential scan runs whatever the review cadence is: it costs
+      // nothing, and a key committed to a branch is already public to anyone
+      // who can clone it.
+      if (config.secretScan || config.codeScan) {
+        await dispatch(
+          context,
+          config,
+          { flow: 'audit', ...base, prNumber: pull_request.number },
+          (d) =>
+            handleScan(d, {
+              ...base,
+              issueNumber: pull_request.number,
+              pullNumber: pull_request.number,
+              ref: pull_request.head.ref,
+            }),
+        );
+      }
+      if (config.autoReview !== "always") return;
       await dispatch(
         context,
         config,
@@ -256,6 +278,17 @@ export default function app(probot: Probot, options: { getRouter?: (path?: strin
           skill: 'how-to',
           issueTitle: issue.title,
           issueBody: issue.body,
+        }),
+      );
+      return;
+    }
+    if (/^\/(?:secrets?|secret-scan|scan)\b/i.test(body)) {
+      await dispatch(context, config, { flow: 'audit', ...ref, issueNumber: issue.number }, (d) =>
+        handleScan(d, {
+          ...ref,
+          issueNumber: issue.number,
+          ref: base.defaultBranch,
+          ...(isPr ? { pullNumber: issue.number } : {}),
         }),
       );
       return;

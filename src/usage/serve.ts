@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { migrate } from './sqlite.js';
 import { PRAGMAS } from './schema.js';
 import { serveUsage, type ApiOptions } from './api.js';
+import { userCount } from './auth.js';
 import { SQLiteRecorder } from './sqlite.js';
 import { DEFAULT_DB } from './index.js';
 
@@ -135,15 +136,22 @@ export function mountDashboard(
   env: NodeJS.ProcessEnv = process.env,
   log: (msg: string) => void = () => {},
 ): boolean {
-  const token = env.FORGE_DASHBOARD_TOKEN?.trim();
+  const token = env.FORGE_DASHBOARD_TOKEN?.trim() ?? '';
   const file = env.FORGE_USAGE_DB?.trim() || (env.FORGE_USAGE === '1' ? DEFAULT_DB : '');
-  if (!getRouter || !token || !file) {
-    if (file && !token) log('usage dashboard not mounted: set FORGE_DASHBOARD_TOKEN to enable it');
-    return false;
-  }
+  if (!getRouter || !file) return false;
 
   try {
     const { db, artifactDir } = openUsageDb(file);
+    // Either credential is enough to mount: a shared token for scripts, or at
+    // least one account for people. Neither means nothing is mounted — this
+    // host is public by definition, since it is how GitHub reaches you.
+    if (!token && userCount(db) === 0) {
+      log(
+        'usage dashboard not mounted: set FORGE_DASHBOARD_TOKEN, or create an account with ' +
+          '`forge dashboard user add <name>`',
+      );
+      return false;
+    }
     const router = getRouter('/usage');
     router.use((req, res, next) => {
       const origin = env.FORGE_DASHBOARD_ORIGIN?.trim();

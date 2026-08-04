@@ -181,6 +181,49 @@ function createSingleClient(config: ProviderConfig, opts: { demoTask?: string } 
  * Fallbacks that are not themselves configured are skipped silently rather than
  * breaking startup.
  */
+/**
+ * A client that exists so a keyless run can still do the free half.
+ *
+ * The scanners need no model call — that is their whole point — but building
+ * the deps needs a client, and constructing a real one without a credential
+ * throws. So a repository that wants only the security scan could not have it,
+ * which made "no model call, no token cost" true and useless at the same time.
+ *
+ * This stands in for the real one. Anything that actually asks it to think
+ * fails with the original message, at the point where a credential was
+ * genuinely required rather than at startup.
+ */
+export function unconfiguredClient(provider: ProviderId, reason: string): LLMClient {
+  return {
+    id: provider,
+    supportsVision: false,
+    model: 'unconfigured',
+    chat() {
+      return Promise.reject(new Error(reason));
+    },
+  };
+}
+
+/**
+ * Build a client, or one that only fails when something asks it to think.
+ *
+ * Used where a run may turn out not to need a model at all. Never used where
+ * one is definitely needed: there, failing at startup with the missing-key
+ * message is the more useful failure.
+ */
+export function createLLMClientOrStub(
+  config: ProviderConfig,
+  log: (msg: string) => void = () => {},
+): LLMClient {
+  try {
+    return createLLMClient(config);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'No model provider is configured.';
+    log(`no model provider configured (${reason}) — deterministic scans will still run`);
+    return unconfiguredClient(config.provider, reason);
+  }
+}
+
 export function createLLMClient(
   config: ProviderConfig,
   opts: { demoTask?: string; log?: (msg: string) => void } = {},

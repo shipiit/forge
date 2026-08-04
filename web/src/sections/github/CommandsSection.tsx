@@ -8,6 +8,7 @@ const COMMANDS: [string, string][] = [
   ['/review', 'One review now, without subscribing to future pushes.'],
   ['/review always', 'Reviews now and on every later push to this PR.'],
   ['/security', 'Security-only review of the current PR.'],
+  ['/secrets', 'Committed credentials and misconfiguration, grouped by rule with every location. No model call.'],
   ['/audit', 'Full-repository security scan, plus live Dependabot CVEs.'],
   ['/help <question>', 'Reads the code and answers in numbered steps — paths, commands, how to check it worked.'],
   ['/run <routine>', 'Start a saved routine on demand.'],

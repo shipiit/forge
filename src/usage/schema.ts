@@ -146,6 +146,31 @@ CREATE TABLE IF NOT EXISTS outputs (
 CREATE INDEX IF NOT EXISTS outputs_run  ON outputs (run_id);
 CREATE INDEX IF NOT EXISTS outputs_kind ON outputs (kind, created_at DESC);
 `,
+
+  // 2 — accounts for the dashboard
+  //
+  // A shared token cannot be revoked for one person and says nothing about who
+  // looked. The dashboard carries repository names, actor logins and error
+  // strings, so it needs named accounts once more than one person can reach it.
+  //
+  // No password is stored, only an scrypt hash with its salt; no session token
+  // is stored, only its SHA-256 — a copy of this file cannot be replayed as a
+  // login.
+  `
+CREATE TABLE IF NOT EXISTS dashboard_users (
+  username        TEXT PRIMARY KEY,
+  password_hash   TEXT NOT NULL,
+  created_at      INTEGER NOT NULL,
+  last_login      INTEGER
+);
+CREATE TABLE IF NOT EXISTS dashboard_sessions (
+  token_hash      TEXT PRIMARY KEY,
+  username        TEXT NOT NULL REFERENCES dashboard_users(username) ON DELETE CASCADE,
+  created_at      INTEGER NOT NULL,
+  expires_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_expiry ON dashboard_sessions (expires_at);
+`,
 ];
 
 /** The schema version this build expects. */

@@ -44,7 +44,8 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 | 🛠️ | **Fix an issue → open a PR** — investigates the repo, writes the fix on a branch, runs the tests, opens a PR that closes the issue | Label `agent-fix`, or comment `/fix` |
 | 🔍 | **Review a PR** — inline comments + summary verdict, quality **and** security lenses, **scoped strictly to the changed files** | Open a PR, or comment `/review` / `/review always` |
 | 🛡️ | **Security review** — flags SSRF, injection, secrets, authz… with **severity**, a **CWE**, and a **suggested-fix** block | Auto on PRs, or comment `/security` |
-| 🔎 | **Deterministic scanners** — secrets (provider shapes + entropy + context) and infrastructure (Dockerfile, compose, Kubernetes, Terraform, workflows), run before the model at no token cost and merged with its findings | Automatic on every review and audit |
+| 🔎 | **Deterministic scanners** — secrets (provider shapes + entropy + context), infrastructure (Dockerfile, compose, Kubernetes, Terraform, workflows) and source code (injection, traversal, clear-text logging, deserialization), run before the model at no token cost and merged with its findings | Automatic on every review and audit |
+| 🔐 | **Security scan** — every committed credential, misconfiguration and code weakness, grouped by rule with every location, and a check run that can block the merge. **No model call: instant and free** | Automatic on each PR, or comment `/secrets` |
 | 🔬 | **Whole-repo audit** — maps entry points, follows untrusted input to dangerous sinks, one grouped report | Comment `/audit` |
 | 📜 | **Change-history document** — one entry per merged change, written **from that diff alone**; arrives as a PR | `history: true` in `agent.yml` |
 | ⏰ | **Routines** — a saved skill plus its triggers: cron, on-demand, or any repository event, each with filters | `routines:` in `agent.yml`, `/run <name>` |
@@ -89,6 +90,16 @@ always completes as `neutral` so it can't block a merge through branch protectio
 - **Infrastructure scanning** — the files that get the least review and decide the most: containers
   running as root, `:latest` bases, privileged pods, host mounts, buckets open to the world, `0.0.0.0/0`,
   actions pinned to a mutable tag, `pull_request_target`, and untrusted event text reaching a shell.
+- **Source-code scanning** — command injection, path traversal, clear-text logging of a credential,
+  exception exposure, open redirect, unsafe deserialization, binding every interface, and a workflow
+  that never declares its permissions. Every rule needs two things on the same line: something
+  attacker-controlled and something dangerous done with it — a rule that fires on the sink alone, on
+  every `exec` and every `readFile`, is a rule people switch off in a week.
+- **Three passes at not crying wolf** — taint is matched against the code on a line and not its prose,
+  so a log message ending *"using the workflow token"* is not a leaked token; comment-only lines are
+  skipped, because a comment describing a bug is not the bug; and findings in tests and fixtures drop
+  to low rather than vanishing, since a scanner's own suite has to contain what it detects — but a
+  credential pasted into a test is still a credential.
 - **Dismissal you can audit** — resolve the conversation to dismiss a finding on that PR, or write
   `// forge-ignore: secrets — reason` on the line to dismiss it everywhere. It covers that line only,
   never the file, so a marker written last year cannot hide what was added under it since.
@@ -326,13 +337,16 @@ on:
   issue_comment: { types: [created] }
   pull_request: { types: [opened, synchronize, review_requested] }
   pull_request_review_comment: { types: [created] }
-permissions: { contents: write, pull-requests: write, issues: write, checks: read, statuses: read, actions: write }
+permissions: { contents: write, pull-requests: write, issues: write, checks: write, statuses: read, actions: write }
 jobs:
   forge:
     runs-on: ubuntu-latest
     steps:
       - uses: shipiit/forge@v2
-        with: { provider: vertex }
+        with:
+          provider: vertex
+          secret-scan: '1'   # committed credentials — on by default
+          code-scan: '1'     # source-code security rules — on by default
         env:
           LLM_PROVIDER: vertex
           VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT }}
@@ -342,6 +356,67 @@ jobs:
 That's it — label an issue `agent-fix`, comment `/review` on a PR, or `@shipit-forge` anything, and
 it runs in **your** Actions with **your** key and compute. No server to host, nothing to register.
 
+### 🏢 What happens when you install it on an organisation
+
+Nothing to configure per repository. Install the App (or add the workflow) and from that moment:
+
+| Event | What runs | Needs a model key? |
+|---|---|---|
+| Pull request opened | Security scan, then the review | Scan **no**, review yes |
+| New commits pushed | Both again, on the new head | Scan **no**, review yes |
+| Issue labelled `agent-fix` | The agent fixes it and opens a PR | Yes |
+| `/review`, `/security`, `/secrets`, `@shipit-forge …` | That command | `/secrets` **no**, rest yes |
+
+The defaults are `auto_review: always`, `review_behavior: every_push`, `auto_fix: label`, and both
+scans on — so every pull request in the organisation is reviewed and scanned without anybody opting
+in. Any repository can turn any of it off in its own `.github/agent.yml`; the organisation-wide
+default is **on**, not enforced.
+
+Two honest caveats:
+
+- **The App needs a provider key on the server you host it on.** Installing the App on an
+  organisation does not give it a model — whoever runs the server configures that once, and every
+  installed repository then uses it. With the Action instead, each repository uses its own key from
+  its own secrets.
+- **The scans need no key at all.** They make no model call, so a repository with no provider
+  configured still gets the full security scan and its check run — the review is what stops, and it
+  says so rather than failing the run.
+
+### 🛡️ Turning the scan into a merge gate
+
+The two scans need no credential and no model call, so they run on **every** pull request even with
+review switched off. Three things make them a gate rather than a comment:
+
+1. **`checks: write`** in `permissions`. The scan publishes a check run; with `checks: read` it still
+   comments, but the check run fails to be created and nothing tells you. This is the single most
+   common reason a gate "does not work".
+2. **Settings → Branches → Branch protection rule → Require status checks to pass**, and tick
+   **`ShipIT Forge — security scan`**. It appears in that list once the scan has run at least once.
+3. Nothing else. A finding of **critical** or **high** fails the check; anything lower is reported
+   and passes, so the gate stops the things worth stopping and stays out of the way otherwise.
+
+Want a stricter gate — **nothing outstanding merges** — set `scan-block-on: low` on the Action (or
+`scan_block_on: low` in `.github/agent.yml`). Then every finding has to be fixed or dismissed with a
+`// forge-ignore` marker before the check passes. `none` turns the gate off and leaves the report.
+The comment always says which threshold is in force, so nobody has to guess why something merged.
+
+Findings in **test files never become review comments.** A suite has to contain what it detects — the
+scanner's own cases are a command injection, a path traversal and a key, all written on purpose — and
+a pull request that introduced no weakness should not arrive carrying eight nits about its own
+fixtures. They still appear in the scan comment at low severity, because a credential pasted into a
+test is still a credential and quietly dropping it is how one stays there.
+
+What you get on each pull request is one comment, grouped by rule, with every file and line — and it
+is **rewritten in place** on each push rather than posted again. To dismiss a finding, resolve the
+conversation (that pull request only), or write `// forge-ignore: secrets — reason` on the line to
+dismiss it everywhere. The marker covers that line and never the file, so one written last year
+cannot hide what was added under it since.
+
+Tighter permissions: drop the workflow-level block entirely and give each job its own. Forge flagged
+workflow-wide `checks: write` on its own pull request as a supply-chain risk and it was right — the
+job that publishes a check run is the only one that needs it. This repository's own
+[`.github/workflows/forge.yml`](./.github/workflows/forge.yml) is set up that way.
+
 > **Action vs hosted App:** the **Action** = per-org keys, zero infra, runs in their CI. The
 > **App** (above) = one server you host and pay for, one-click install for others. Same engine.
 
@@ -350,7 +425,18 @@ it runs in **your** Actions with **your** key and compute. No server to host, no
 Where the money goes, which tool is slow, and why a particular run cost what it did.
 
 **Recording is opt-in and off by default** — it stores repository names, actor logins and error strings,
-which is not something to switch on for somebody without asking. Set `FORGE_USAGE_DB` (a path) or
+which is not something to switch on for somebody without asking. Nothing is readable without a
+credential, and there are two kinds because they are for two different things:
+
+| | For | Expires | Revocable alone |
+|---|---|---|---|
+| **Account** — `forge dashboard:user add <name>` | People | Yes, 12h idle | Yes |
+| **Shared token** — `FORGE_DASHBOARD_TOKEN` | Scripts, CI | No | No |
+
+A password is stored only as an scrypt hash with its own salt, and a session token only as its
+SHA-256 — a copy of the database cannot be replayed as a login. Changing a password or deleting an
+account signs out every session it had. Guessing is throttled per username, so one person being
+attacked cannot lock out everybody else. Set `FORGE_USAGE_DB` (a path) or
 `FORGE_USAGE=1` on whichever surface runs the agent — the App, the Action, or the CLI — and runs start
 landing in it.
 
@@ -358,7 +444,12 @@ landing in it.
 # 1. Record into a local database
 export FORGE_USAGE_DB=.forge/usage.db
 
-# 2. Serve the API (always authenticated; prints a token if you have not set one)
+# 2. Create an account for each person who should see it
+#    (the password is asked for — never passed as an argument, where it would
+#    land in `ps`, in shell history, and in the CI log of whoever tries it)
+npx forge dashboard:user add rahul
+
+# 3. Serve the API (always authenticated; prints a token if you have not set one)
 npx forge dashboard --db .forge/usage.db --port 4300
 
 # 3. Open the dashboard and point it at that API under "Connection"
@@ -406,6 +497,9 @@ model: gemini-2.5-pro          # provider-specific model id
 trigger_label: agent-fix
 auto_fix: label                # label | opened | off
 auto_review: always            # always | requested | off
+secret_scan: true              # scan every PR for committed credentials (default true)
+code_scan: true                # source-code security rules alongside it (default true)
+scan_block_on: high            # critical | high | medium | low | none — what fails the check run
 test_command: "npm test"       # else auto-detected
 review_depth: standard         # light | standard | deep
 ignore_paths: ["dist/**", "*.lock"]
@@ -425,7 +519,7 @@ ignore_paths: ["dist/**", "*.lock"]
 ```
 issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
                                           │
-                  scanners ◀─────────────┤   (no model call: secrets, IaC)
+                  scanners ◀─────────────┤   (no model call: secrets, IaC, code)
                        agent loop ◀───────┘   (LLM + tools, provider-agnostic)
                        read · search · edit · multi_edit · glob · git_history · run_bash · run_tests
                                           │
@@ -446,11 +540,13 @@ issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
   network), `run_tests` (auto-detected).
 - **Agent loop** (`src/agent/loop.ts`) — chat → tool calls → results → repeat, with retries,
   iteration + token limits, and a repo-map for fast orientation.
-- **Scanners** (`src/scan`) — deterministic passes that run *before* the model and cost nothing: a
-  secrets scanner (provider shapes + Shannon entropy + file context) and an infrastructure scanner
-  (Dockerfile, compose, Kubernetes, Terraform, workflows). A model reads past the fourth key in a
-  config file; these do not, and they give the same answer twice. Their findings are merged and
-  deduplicated with the model's, so one weakness that both notice arrives as **one** comment.
+- **Scanners** (`src/scan`) — three deterministic passes that run *before* the model and cost nothing:
+  secrets (provider shapes + Shannon entropy + file context), infrastructure (Dockerfile, compose,
+  Kubernetes, Terraform, workflows) and source code (taint reaching a dangerous call on the same
+  line). A model reads past the fourth key in a config file; these do not, and they give the same
+  answer twice. Their findings are merged and deduplicated with the model's, so one weakness that
+  both notice arrives as **one** comment. Either scan can be switched off with `secret_scan` /
+  `code_scan`, or with the `secret-scan` / `code-scan` inputs on the Action.
 - **GitHub layer** (`src/github`) — vision image extraction, workspace clone/branch/commit/push,
   PR composer, diff-aware security review composer; wired to webhooks in `src/app.ts`.
 - **Dismissal** — resolving a review conversation dismisses that finding for the pull request;

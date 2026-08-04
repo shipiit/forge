@@ -12,6 +12,50 @@ export function OrgSection() {
       title="Roll it out across every repository"
       lead="Two paths. The GitHub App installs once and covers every repository in the organization. The Action is per-repository but needs no server — start with one repo, then template it."
     >
+      <div className="mb-8 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+        <h3 className="text-sm font-semibold text-text">What starts happening the moment it is installed</h3>
+        <p className="mt-2 text-sm leading-relaxed text-muted">
+          Nothing to configure per repository. The defaults are{' '}
+          <code className="text-[rgb(var(--syn-keyword))]">auto_review: always</code>,{' '}
+          <code className="text-[rgb(var(--syn-keyword))]">review_behavior: every_push</code>,{' '}
+          <code className="text-[rgb(var(--syn-keyword))]">auto_fix: label</code>, and both scans on — so every
+          pull request in the organization is scanned and reviewed without anybody opting in. Any repository can
+          turn any of it off in its own <code className="text-[rgb(var(--syn-keyword))]">.github/agent.yml</code>:
+          the org-wide default is on, not enforced.
+        </p>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[520px] border-collapse text-left text-sm">
+            <thead>
+              <tr className="border-b border-white/[0.08] text-xs uppercase tracking-wider text-muted">
+                <th className="py-2 pr-4 font-medium">Event</th>
+                <th className="py-2 pr-4 font-medium">What runs</th>
+                <th className="py-2 font-medium">Needs a model key?</th>
+              </tr>
+            </thead>
+            <tbody className="text-muted">
+              {[
+                ['Pull request opened', 'Security scan, then the review', 'Scan no · review yes'],
+                ['New commits pushed', 'Both again, on the new head', 'Scan no · review yes'],
+                ['Issue labelled agent-fix', 'The agent fixes it and opens a PR', 'Yes'],
+                ['/review · /security · /secrets · @mention', 'That command', '/secrets no · rest yes'],
+              ].map(([event, runs, key]) => (
+                <tr key={event} className="border-b border-white/[0.05] last:border-0">
+                  <td className="py-2.5 pr-4 text-text">{event}</td>
+                  <td className="py-2.5 pr-4">{runs}</td>
+                  <td className="py-2.5">{key}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-4 text-sm leading-relaxed text-muted">
+          Two things worth knowing before you promise it to a team. Installing the App on an organization does
+          not give it a model — whoever hosts the server configures a provider key once, and every installed
+          repository then uses it; with the Action, each repository uses its own key from its own secrets. And
+          the scans need no key at all, so a repository with no provider configured still gets the full security
+          scan and its check run. The review is what stops, and it says so rather than failing the run.
+        </p>
+      </div>
       <Tabs
         ariaLabel="Organization rollout"
         tabs={[

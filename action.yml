@@ -76,6 +76,27 @@ inputs:
   thinking-budget:
     description: 'Extended-thinking token budget. 0 (default) disables it.'
     required: false
+  # --- Security scanning: deterministic, no model call, no token cost --------
+  secret-scan:
+    description: >-
+      Scan for committed credentials on every pull request. On by default. Set
+      to "0" to turn it off. Costs nothing — there is no model call.
+    required: false
+  code-scan:
+    description: >-
+      Run the source-code security rules (injection, path traversal, clear-text
+      logging, unsafe deserialization, workflow permissions) alongside the
+      credential scan. On by default; set to "0" for secrets only.
+    required: false
+
+  scan-block-on:
+    description: >-
+      Lowest severity that fails the scan's check run: critical | high |
+      medium | low | info | none. Default "high". Set "low" to require every
+      finding to be resolved or dismissed before the pull request can merge;
+      "none" reports without ever blocking.
+    required: false
+
   fallback-providers:
     description: 'Comma-separated providers to fall back to if the primary fails hard, e.g. "bedrock,openai".'
     required: false

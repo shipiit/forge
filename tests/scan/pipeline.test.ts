@@ -1,13 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { SCANNERS, mergeFindings } from '../../src/scan/index.js';
+import { scannersFor, SCANNERS, mergeFindings, inTestFile } from '../../src/scan/index.js';
 
 describe('what the pipeline actually is', () => {
-  it('is two scanners, not four', () => {
-    // A diagram claiming a dependency/SCA pass and a separate config scanner
-    // would be advertising something that does not exist. Two: secrets and
-    // infrastructure. This test fails the day that stops being true, which is
-    // the point — the docs and the diagram have to move with it.
-    expect(SCANNERS.map((s) => s.name)).toEqual(['secrets', 'iac']);
+  it('is three scanners, and the docs have to match', () => {
+    // A diagram claiming a dependency/SCA pass would be advertising something
+    // that does not exist. This fails the day the list changes, which is the
+    // point — the README and the diagram have to move with it.
+    expect(SCANNERS.map((s) => s.name)).toEqual(['secrets', 'iac', 'code']);
   });
 
   it('keeps one comment when the model and a scanner find the same thing', () => {
@@ -58,5 +57,132 @@ describe('what the model is told about the scan', () => {
     const text = scanSummary(Array.from({ length: 500 }, (_, i) => find(i))).text;
     expect(text.split('\n').length).toBeLessThan(45);
     expect(text).toContain('460 more');
+  });
+});
+
+describe('choosing which scanners run', () => {
+  it('runs everything by default', () => {
+    expect(scannersFor({ secretScan: true, codeScan: true }).map((s) => s.name)).toEqual([
+      'secrets',
+      'iac',
+      'code',
+    ]);
+  });
+
+  it('drops the code rules when only credentials are wanted', () => {
+    expect(scannersFor({ secretScan: true, codeScan: false }).map((s) => s.name)).toEqual(['secrets', 'iac']);
+  });
+
+  it('keeps the configuration rules when only code scanning is on', () => {
+    // A repository that switched off the credential scan still wants to know
+    // its workflow hands a write token to everything it runs.
+    expect(scannersFor({ secretScan: false, codeScan: true }).map((s) => s.name)).toEqual(['iac', 'code']);
+  });
+
+  it('runs nothing when both are off', () => {
+    expect(scannersFor({ secretScan: false, codeScan: false })).toHaveLength(0);
+  });
+});
+
+describe('a test fixture is not a review comment', () => {
+  it('recognises the shapes tests actually have', () => {
+    for (const p of [
+      'tests/scan/code.test.ts',
+      'src/scan/__tests__/a.ts',
+      'src/a.spec.tsx',
+      'pkg/handler_test.go',
+      'app/test_views.py',
+      'spec/models/user.rb',
+    ]) {
+      expect(inTestFile({ file: p })).toBe(true);
+    }
+  });
+
+  it('does not mistake shipped code for a fixture', () => {
+    for (const p of ['src/scan/code.ts', 'src/contest.ts', 'lib/latest.js', 'src/specification.ts']) {
+      expect(inTestFile({ file: p })).toBe(false);
+    }
+  });
+});
+
+describe('the same problem, described twice', () => {
+  const at = (line: number, title: string, body: string, severity = 'medium') =>
+    ({
+      file: '.github/workflows/ci.yml',
+      startLine: line,
+      endLine: line,
+      lens: 'security',
+      severity,
+      category: 'CWE-494',
+      title,
+      body,
+    }) as never;
+
+  it('merges a model and a scanner that chose different words', () => {
+    // This shipped: "Action pinned to a mutable reference" from the model and
+    // "Action pinned to a mutable ref" from the scanner, same file, same line,
+    // posted as two findings.
+    const merged = mergeFindings(
+      [at(17, 'Action pinned to a mutable reference', 'A tag can be moved, and whoever owns it decides what runs.')],
+      [at(17, 'Action pinned to a mutable ref', 'Pin it.')],
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.body).toContain('whoever owns it decides');
+  });
+
+  it('merges when the two disagree by a line or two', () => {
+    expect(mergeFindings([at(17, 'A', 'aaa')], [at(19, 'B', 'bb')])).toHaveLength(1);
+  });
+
+  it('keeps two genuinely separate instances found by the same pass', () => {
+    // Two from the scanner are two places it read. One from each pass is one
+    // problem described twice, however far apart the two guesses landed —
+    // that is the case this merge exists for.
+    expect(mergeFindings([], [at(17, 'A', 'aaa'), at(180, 'A', 'aaa')])).toHaveLength(2);
+    expect(mergeFindings([at(17, 'A', 'aaa')], [at(180, 'A', 'aaa')])).toHaveLength(1);
+  });
+
+  it('keeps the more severe of the two', () => {
+    const merged = mergeFindings([at(17, 'A', 'aaa', 'medium')], [at(17, 'A', 'aaa', 'critical')]);
+    expect(merged[0]!.severity).toBe('critical');
+  });
+});
+
+describe('who decides where a finding is', () => {
+  const f = (file: string, line: number, title: string, category = 'CWE-494') =>
+    ({ file, startLine: line, endLine: line, lens: 'security', severity: 'medium', category, title, body: 'b' }) as never;
+
+  it('lets the pass that read the file win over the one that estimated', () => {
+    // Shipped on this branch: the model put it on 173, the scanner on 180.
+    // One problem, two comments, only one of them pointing at the right line.
+    const merged = mergeFindings(
+      [f('.github/workflows/forge.yml', 173, 'Action pinned to a mutable reference')],
+      [f('.github/workflows/forge.yml', 180, 'Action pinned to a mutable ref')],
+    );
+    expect(merged).toHaveLength(1);
+    // The scanner's line, because it read the file rather than a diff.
+    expect(merged[0]!.endLine).toBe(180);
+  });
+
+  it('keeps every instance the scanner actually found', () => {
+    const merged = mergeFindings(
+      [f('a.yml', 5, 'Mutable ref')],
+      [f('a.yml', 10, 'Mutable ref'), f('a.yml', 40, 'Mutable ref')],
+    );
+    expect(merged.map((m) => m.endLine)).toEqual([10, 40]);
+  });
+
+  it('keeps the model’s finding where no scanner looked', () => {
+    // examples/*.yml is not a workflow path, so nothing deterministic reads it.
+    const merged = mergeFindings([f('examples/forge.yml', 30, 'Mutable ref')], [f('.github/workflows/a.yml', 2, 'Mutable ref')]);
+    expect(merged).toHaveLength(2);
+  });
+
+  it('does not let one rule silence a different one in the same file', () => {
+    const merged = mergeFindings(
+      [f('a.yml', 5, 'No permissions block', 'CWE-732')],
+      [f('a.yml', 10, 'Mutable ref', 'CWE-494')],
+    );
+    expect(merged).toHaveLength(2);
   });
 });

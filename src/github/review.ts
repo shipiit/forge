@@ -64,16 +64,27 @@ function lede(body: string, max = 220): string {
  * and the suggested change are one click away, and a reviewer with six comments
  * on screen can still see the code between them.
  */
-export function renderFindingBody(f: ReviewFinding): string {
+export function renderFindingBody(
+  f: ReviewFinding,
+  opts: { inline?: boolean; withSuggestion?: boolean } = {},
+): string {
+  const inline = opts.inline ?? true;
+  const withSuggestion = opts.withSuggestion ?? true;
   const lensTag = f.lens === 'security' ? '🛡️ Security' : '🔧 Quality';
   const rest = f.body.trim().slice(lede(f.body).length).trim();
 
-  let out = `**${f.title}** — ${SEVERITY_BADGE[f.severity]} · ${lensTag} · \`${f.category}\`\n\n${lede(f.body)}`;
+  // Outside the diff the title is already the summary of the block this sits
+  // in, so repeating it is just noise; the severity line is still worth
+  // having because the collapsed summary is all most people read.
+  const heading = inline
+    ? `**${f.title}** — ${SEVERITY_BADGE[f.severity]} · ${lensTag} · \`${f.category}\``
+    : `${SEVERITY_BADGE[f.severity]} · ${lensTag} · \`${f.category}\``;
+  let out = `${heading}\n\n${lede(f.body)}`;
 
   if (rest) {
     out += `\n\n<details><summary>Why this matters</summary>\n\n${rest}\n\n</details>`;
   }
-  if (f.suggestion !== undefined) {
+  if (f.suggestion !== undefined && withSuggestion) {
     // Kept out of the collapsed block: GitHub only offers "Commit suggestion"
     // on a suggestion it can see.
     out += `\n\n\`\`\`suggestion\n${f.suggestion}\n\`\`\``;
@@ -81,7 +92,13 @@ export function renderFindingBody(f: ReviewFinding): string {
   // How to make it go away, said once, quietly. Both mechanisms already
   // existed and neither was discoverable: people were left with a comment and
   // no way to disagree with it except to argue in a reply.
-  out += `\n\n<sub>Resolve this conversation to dismiss it, or add \`// forge-ignore: ${f.lens}\` on that line to dismiss it everywhere.</sub>`;
+  //
+  // Outside the diff there is no conversation to resolve — GitHub would not
+  // accept an inline comment there — so offering that is telling somebody to
+  // click something that does not exist.
+  out += inline
+    ? `\n\n<sub>Resolve this conversation to dismiss it, or add \`// forge-ignore: ${f.lens}\` on that line to dismiss it everywhere.</sub>`
+    : `\n\n<sub>To dismiss this, add \`// forge-ignore: ${f.lens} — reason\` on that line.</sub>`;
 
   // Identity for re-review: lets a later run skip this finding instead of
   // posting it again, and resolve the thread once it is fixed.
@@ -193,6 +210,60 @@ export function renderAuditReport(findings: ReviewFinding[], displayName: string
  * GitHub returns 422 for inline comments on any other line, so we use this to
  * keep only valid comments and route the rest into the summary.
  */
+/**
+ * The text of each line the diff shows, per file.
+ *
+ * Same walk as `parseDiffValidLines`, keeping the content rather than just the
+ * number, so a suggestion can be checked against what it would actually
+ * replace before it is offered as a commit.
+ */
+export function parseDiffLineText(diff: string): Map<string, Map<number, string>> {
+  const map = new Map<string, Map<number, string>>();
+  let file: string | null = null;
+  let newLine = 0;
+  for (const raw of diff.split('\n')) {
+    if (raw.startsWith('+++ ')) {
+      const p = raw.slice(4).replace(/^b\//, '').trim();
+      file = p === '/dev/null' ? null : p;
+      if (file && !map.has(file)) map.set(file, new Map());
+      continue;
+    }
+    const hunk = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      newLine = Number(hunk[1]);
+      continue;
+    }
+    if (!file) continue;
+    if (raw.startsWith('+') || raw.startsWith(' ') || raw === '') {
+      map.get(file)!.set(newLine, raw.slice(1));
+      newLine++;
+    }
+  }
+  return map;
+}
+
+/** A line that is only a comment, in the languages a review touches. */
+const COMMENT_ONLY = /^\s*(?:\/\/|\/\*|\*|#|<!--|--)/;
+
+/**
+ * Should this suggestion be offered as a commit?
+ *
+ * GitHub applies a suggestion to the exact lines it is attached to, so one
+ * anchored a few lines off does not read as slightly wrong — it produces
+ * broken code with a "Commit suggestion" button under it. The check that
+ * catches this in practice: a comment line being replaced by something that is
+ * not a comment means the finding landed on the wrong line, because no real
+ * fix turns an explanation into an instruction.
+ */
+export function suggestionFits(f: ReviewFinding, lineText?: string): boolean {
+  if (f.suggestion === undefined) return false;
+  if (lineText === undefined) return true; // nothing to check it against
+  const replacingComment = COMMENT_ONLY.test(lineText) && lineText.trim() !== '';
+  if (!replacingComment) return true;
+  // Rewriting a comment as a comment is fine — a typo, a stale note.
+  return f.suggestion.split('\n').every((l) => l.trim() === '' || COMMENT_ONLY.test(l));
+}
+
 export function parseDiffValidLines(diff: string): Map<string, Set<number>> {
   const map = new Map<string, Set<number>>();
   let file: string | null = null;
@@ -266,6 +337,11 @@ export function buildReviewPayload(
     validLines?: Map<string, Set<number>>;
     /** Nits withheld by the cap, mentioned as a count instead of posted. */
     droppedNits?: number;
+    /** For deep links on findings that cannot be commented on inline. */
+    repoUrl?: string;
+    ref?: string;
+    /** Diff line text, so a misplaced suggestion is not offered as a commit. */
+    lineText?: Map<string, Map<number, string>>;
   } = {},
 ): ReviewPayload {
   const displayName = opts.displayName ?? 'ShipIT Forge';
@@ -284,7 +360,9 @@ export function buildReviewPayload(
     ...(f.startLine !== f.endLine && (!opts.validLines || opts.validLines.get(f.file)?.has(f.startLine))
       ? { start_line: f.startLine }
       : {}),
-    body: renderFindingBody(f),
+    body: renderFindingBody(f, {
+      withSuggestion: suggestionFits(f, opts.lineText?.get(f.file)?.get(f.endLine)),
+    }),
   }));
 
   let body = renderSummary(filtered, displayName);
@@ -292,11 +370,55 @@ export function buildReviewPayload(
     body += `\n\n_Plus ${opts.droppedNits} similar minor item(s), withheld to keep this review actionable._`;
   }
   if (summaryOnly.length > 0) {
-    body +=
-      `\n\n#### Additional findings (outside the diff)\n` +
-      summaryOnly.map((f) => `- \`${f.file}:${f.endLine}\` — ${SEVERITY_BADGE[f.severity]} ${f.title}`).join('\n');
+    body += `\n\n#### Additional findings (outside the diff)\n\n${outOfDiff(summaryOnly, opts.repoUrl, opts.ref)}`;
   }
   return { event: chooseEvent(filtered), body, comments };
+}
+
+/**
+ * Findings on lines this pull request did not touch.
+ *
+ * GitHub will not accept an inline comment outside the diff, so these have
+ * nowhere to live but the summary — and a bare line naming a file is the one
+ * form of finding nobody can act on. Reported at one line each they read as
+ * noise; given the same body an inline comment would have had, they read as
+ * the review they are. Each is collapsed, so ten of them do not bury the
+ * findings that are in the diff, and each links to the exact line.
+ */
+function outOfDiff(findings: ReviewFinding[], repoUrl?: string, ref?: string): string {
+  return findings
+    .map((f) => {
+      // HTML, not markdown. GitHub does not parse markdown inside a <summary>,
+      // so `**Medium**` and a `[text](url)` link render as their own source —
+      // which is what shipped, and it looked broken because it was.
+      const at = `${f.file}:${f.endLine}`;
+      const where =
+        repoUrl && ref
+          ? `<a href="${repoUrl}/blob/${ref}/${f.file}#L${f.endLine}"><code>${at}</code></a>`
+          : `<code>${at}</code>`;
+      const summary = `${HTML_BADGE[f.severity]} · ${escapeHtml(f.title)} — ${where}`;
+      return `<details><summary>${summary}</summary>\n\n${renderFindingBody(f, {
+        inline: false,
+        // There is no "Commit suggestion" button outside the diff, so a
+        // suggestion block down here is a code sample pretending to be one.
+        withSuggestion: false,
+      })}\n\n</details>`;
+    })
+    .join('\n');
+}
+
+/** The same badges, in HTML, for the places markdown is not parsed. */
+const HTML_BADGE: Record<ReviewFinding['severity'], string> = {
+  critical: '🔴 <strong>Critical</strong>',
+  high: '🟠 <strong>High</strong>',
+  medium: '🟡 <strong>Medium</strong>',
+  low: '🔵 <strong>Low</strong>',
+  info: '⚪ <strong>Info</strong>',
+};
+
+/** A finding title comes from a model; it must not be able to close the tag. */
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
