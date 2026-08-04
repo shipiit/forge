@@ -75,7 +75,7 @@ import {
 import { parseSarif } from './sarif.js';
 import { redactSecrets } from '../util/resilience.js';
 import { collectFiles, inTestFile, mergeFindings, runScanners, SCANNERS, type Scanner } from '../scan/index.js';
-import { blocking, renderScanReport, type BlockLevel } from '../scan/report.js';
+import { blocking, renderReviewAck, renderScanReport, type BlockLevel } from '../scan/report.js';
 import { fetchDependabotFindings } from './dependabot.js';
 import { isSafeRef, realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
@@ -766,12 +766,15 @@ async function doPrReview(
     }
   }
 
-  const scope = args.securityOnly ? 'security review' : 'code + security review';
   const ack = await octokit.rest.issues.createComment({
     owner: args.owner,
     repo: args.repo,
     issue_number: args.pullNumber,
-    body: `👀 **${DISPLAY}** is running a ${scope} on this PR… I'll post my review shortly.`,
+    body: renderReviewAck(
+      DISPLAY,
+      (deps.scanners ?? SCANNERS).map((sc) => sc.name),
+      args.securityOnly,
+    ),
   });
 
   const prRes = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderScanReport, blocking } from '../../src/scan/report.js';
+import { renderScanReport, blocking, renderReviewAck } from '../../src/scan/report.js';
 
 const f = (over: Record<string, unknown> = {}) =>
   ({
@@ -153,5 +153,35 @@ describe('a fixture never holds the gate shut', () => {
     });
     expect(body).toContain('tests/a.test.ts');
     expect(body).toContain('none of them blocking');
+  });
+});
+
+describe('the note posted when a review starts', () => {
+  it('says what is running rather than telling somebody to wait', () => {
+    const ack = renderReviewAck('ShipIT Forge', ['secrets', 'iac', 'code']);
+    expect(ack).toContain('🔑 Secrets');
+    expect(ack).toContain('🏗️ Infrastructure');
+    expect(ack).toContain('🧩 Code');
+    expect(ack).toContain('🤖 **Code review**');
+    expect(ack).toContain('no model call');
+  });
+
+  it('never claims a pass the repository switched off', () => {
+    // A comment advertising a scan that is not running is the kind of wrong
+    // nobody goes and checks.
+    const ack = renderReviewAck('ShipIT Forge', ['secrets']);
+    expect(ack).toContain('🔑 Secrets');
+    expect(ack).not.toContain('🧩 Code');
+    expect(ack).not.toContain('🏗️ Infrastructure');
+  });
+
+  it('names the security lens when that is what was asked for', () => {
+    expect(renderReviewAck('ShipIT Forge', ['secrets'], true)).toContain('🛡️ **Security review**');
+  });
+
+  it('still says something sensible with every scan off', () => {
+    const ack = renderReviewAck('ShipIT Forge', []);
+    expect(ack).toContain('is reviewing this pull request');
+    expect(ack).not.toContain('|');
   });
 });
