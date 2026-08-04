@@ -227,3 +227,35 @@ describe('the comment the review leaves behind', () => {
     expect(done).not.toContain('test files');
   });
 });
+
+describe('when the result is appended under the opening note', () => {
+  it('does not repeat the coverage list', () => {
+    // The note posted at the start already carries the table. The same list
+    // twice in one comment reads as a mistake, because it is one.
+    const done = renderReviewDone({
+      displayName: 'ShipIT Forge',
+      verdict: '💬 commented',
+      total: 2,
+      security: 2,
+      scanners: ['secrets', 'iac', 'code'],
+      includeCoverage: false,
+    });
+    expect(done).not.toContain('What was scanned');
+    expect(done).not.toContain('Committed credentials');
+    expect(done).toContain('**2 findings**');
+  });
+});
+
+describe('the same table, before and after', () => {
+  it('stops saying it is about to do something once it has', () => {
+    const before = renderReviewAck('ShipIT Forge', ['secrets'], false, false);
+    const after = renderReviewAck('ShipIT Forge', ['secrets'], false, true);
+    expect(before).toContain('is reviewing this pull request');
+    expect(after).not.toContain('is reviewing');
+    expect(after).toContain('what this run looked at');
+    // The table itself is the same either way — it is the sentence above it
+    // that changes meaning.
+    expect(after).toContain('🔑 Secrets');
+    expect(after).toContain('survived');
+  });
+});

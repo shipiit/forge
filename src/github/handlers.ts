@@ -766,15 +766,16 @@ async function doPrReview(
     }
   }
 
+  const ackBody = renderReviewAck(
+    DISPLAY,
+    (deps.scanners ?? SCANNERS).map((sc) => sc.name),
+    args.securityOnly,
+  );
   const ack = await octokit.rest.issues.createComment({
     owner: args.owner,
     repo: args.repo,
     issue_number: args.pullNumber,
-    body: renderReviewAck(
-      DISPLAY,
-      (deps.scanners ?? SCANNERS).map((sc) => sc.name),
-      args.securityOnly,
-    ),
+    body: ackBody,
   });
 
   const prRes = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
@@ -901,19 +902,31 @@ async function doPrReview(
       repo: args.repo,
       comment_id: ack.data.id,
       body:
-        withBudgetNotice(
-          result,
-          client.model,
-          renderReviewDone({
-            displayName: DISPLAY,
-            verdict,
-            total: findings.length,
-            security: sec,
-            scanners: (deps.scanners ?? SCANNERS).map((sc) => sc.name),
-            fromScanners: scanned.length,
-            inTestFiles: inTests,
-          }) + renderSkipped(plan),
-        ) + costFooter(result.usage, client.model, deps.showCost),
+        // Appended, not replaced. What was about to run is worth keeping next
+        // to what it found — overwriting it means the only record of what was
+        // looked for disappears the moment there is an answer, which is
+        // exactly when somebody wants to know.
+        `${renderReviewAck(
+          DISPLAY,
+          (deps.scanners ?? SCANNERS).map((sc) => sc.name),
+          args.securityOnly,
+          true,
+        )}\n\n---\n\n` +
+          withBudgetNotice(
+            result,
+            client.model,
+            renderReviewDone({
+              displayName: DISPLAY,
+              verdict,
+              total: findings.length,
+              security: sec,
+              scanners: (deps.scanners ?? SCANNERS).map((sc) => sc.name),
+              fromScanners: scanned.length,
+              inTestFiles: inTests,
+              includeCoverage: false,
+            }) + renderSkipped(plan),
+          ) +
+          costFooter(result.usage, client.model, deps.showCost),
     });
   } finally {
     await ws.cleanup();
