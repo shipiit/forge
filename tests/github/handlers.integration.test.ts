@@ -195,6 +195,7 @@ describe('handlePrReview (integration)', () => {
   it('finds a secret even when the model reports nothing', async () => {
     // The whole point of scanning before the model: this review would have
     // been "no blocking issues" on the model's word alone.
+    // forge-ignore: secrets — the fixture is the point: the scanner must match it
     const ws = fakeWorkspace({ 'config.py': 'x\n'.repeat(9) + 'GITHUB_TOKEN = "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"\n' });
     cleanups.push(ws.cleanup);
     const diff = ['--- a/config.py', '+++ b/config.py', '@@ -9,1 +9,2 @@', ' ctx', '+GITHUB_TOKEN = "ghp_..."'].join('\n');
@@ -220,6 +221,7 @@ describe('handlePrReview (integration)', () => {
     // Ordering is the claim; this is the evidence. The model must be able to
     // see what was already found, so it judges reachability instead of
     // rediscovering it.
+    // forge-ignore: secrets — the fixture is the point: the scanner must match it
     const ws = fakeWorkspace({ 'config.py': 'x\n'.repeat(9) + 'GITHUB_TOKEN = "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"\n' });
     cleanups.push(ws.cleanup);
     const diff = ['--- a/config.py', '+++ b/config.py', '@@ -9,1 +9,2 @@', ' ctx', '+GITHUB_TOKEN = "ghp_..."'].join('\n');
@@ -246,6 +248,7 @@ describe('handlePrReview (integration)', () => {
   it('reports the scanner finding when the model never answers at all', async () => {
     // A run that dies on the first call — provider outage, spend cap — used to
     // lose everything. The free pass happened before it, so it survives.
+    // forge-ignore: secrets — fixture
     const ws = fakeWorkspace({ 'config.py': 'GITHUB_TOKEN = "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"\n' });
     cleanups.push(ws.cleanup);
     const diff = ['--- a/config.py', '+++ b/config.py', '@@ -1,0 +1,1 @@', '+GITHUB_TOKEN = "ghp_..."'].join('\n');
