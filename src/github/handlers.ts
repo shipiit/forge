@@ -73,6 +73,7 @@ import {
   type ReviewFinding,
 } from './review.js';
 import { parseSarif } from './sarif.js';
+import { mergeFindings, runScanners } from '../scan/index.js';
 import { fetchDependabotFindings } from './dependabot.js';
 import { realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
@@ -773,7 +774,15 @@ async function doPrReview(
 
     // Hard-enforce the scope: the prompt asks for changed files only, this
     // guarantees it even if the model wanders.
-    const findings = scopeFindingsToDiff(parseFindings(result.finalText), diff);
+    // The deterministic scanners see the same files the model reviewed. They
+    // cost nothing and catch the things a model reads past — a key in a config
+    // file, a workflow that interpolates an issue title into a shell.
+    // The paths the diff touched, which is exactly what the model reviewed.
+    const scanned = await runScanners({ cwd: ws.dir, only: new Set(parseDiffValidLines(diff).keys()) });
+    const findings = scopeFindingsToDiff(
+      mergeFindings(parseFindings(result.finalText), scanned),
+      diff,
+    );
     deps.run?.findings(findings);
     deps.run?.artifact('diff', diff);
 
@@ -1033,7 +1042,7 @@ async function doAudit(
       onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
     });
     deps.run?.add(result);
-    const findings = parseFindings(result.finalText);
+    const findings = mergeFindings(parseFindings(result.finalText), await runScanners({ cwd: ws.dir }));
     deps.run?.findings(findings);
     // Merge live Dependabot alerts (current CVEs from GitHub's Advisory Database).
     findings.push(...(await fetchDependabotFindings(octokit, args.owner, args.repo, log)));
