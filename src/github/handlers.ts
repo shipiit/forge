@@ -73,6 +73,7 @@ import {
   type ReviewFinding,
 } from './review.js';
 import { parseSarif } from './sarif.js';
+import { redactSecrets } from '../util/resilience.js';
 import { mergeFindings, runScanners } from '../scan/index.js';
 import { fetchDependabotFindings } from './dependabot.js';
 import { isSafeRef, realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
@@ -212,6 +213,37 @@ function watch(
 /** Apply the run's tool allow/deny selection to a toolset. */
 function pick(deps: HandlerDeps, tools: Tool[]): Tool[] {
   return selectTools(tools, deps.toolSelection ?? {});
+}
+
+/** How many scanner findings to name before the list stops being useful. */
+const SCAN_SUMMARY_LIMIT = 40;
+
+/**
+ * The scan, as one turn of context for the model.
+ *
+ * Two things this deliberately does not do. It sends each finding's title and
+ * location and never its body: a secret finding's body quotes the first
+ * characters of what it matched, and there is no reason to put that in a prompt
+ * when the title already says what was found. It is redacted anyway — a scanner
+ * added later might put matched text in a title, and this should not be the
+ * place that discovers it.
+ *
+ * And it is capped. A repository with a thousand findings would otherwise turn
+ * the first turn of every review into a wall of list items, paid for by token.
+ */
+export function scanSummary(findings: ReviewFinding[]): { type: 'text'; text: string } {
+  const shown = findings.slice(0, SCAN_SUMMARY_LIMIT);
+  const rest = findings.length - shown.length;
+  const lines = shown.map((f) => `- ${f.file}:${f.endLine} ${f.severity} ${f.category} — ${f.title}`);
+  if (rest > 0) lines.push(`- …and ${rest} more of the same kind.`);
+
+  return {
+    type: 'text',
+    text: redactSecrets(
+      'A deterministic scan of the changed files already found these. Do not repeat them; ' +
+        `judge whether each is reachable and say so only if you disagree:\n${lines.join('\n')}`,
+    ),
+  };
 }
 
 /**
@@ -775,18 +807,7 @@ async function doPrReview(
         ws.dir,
         prompt(deps, composeReviewSystemPrompt(reviewSystemPrompt({ securityOnly: args.securityOnly }), instructions)),
       ),
-      initialContent: scanned.length
-        ? [
-            ...initialContent,
-            {
-              type: 'text' as const,
-              text:
-                `A deterministic scan of the changed files already found these. Do not repeat them; ` +
-                `judge whether each is reachable and say so only if you disagree:\n` +
-                scanned.map((f) => `- ${f.file}:${f.endLine} ${f.severity} ${f.category} — ${f.title}`).join('\n'),
-            },
-          ]
-        : initialContent,
+      initialContent: scanned.length ? [...initialContent, scanSummary(scanned)] : initialContent,
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps),
       cwd: ws.dir,
