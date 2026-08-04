@@ -78,6 +78,11 @@ export function renderFindingBody(f: ReviewFinding): string {
     // on a suggestion it can see.
     out += `\n\n\`\`\`suggestion\n${f.suggestion}\n\`\`\``;
   }
+  // How to make it go away, said once, quietly. Both mechanisms already
+  // existed and neither was discoverable: people were left with a comment and
+  // no way to disagree with it except to argue in a reply.
+  out += `\n\n<sub>Resolve this conversation to dismiss it, or add \`// forge-ignore: ${f.lens}\` on that line to dismiss it everywhere.</sub>`;
+
   // Identity for re-review: lets a later run skip this finding instead of
   // posting it again, and resolve the thread once it is fixed.
   out += `\n\n${commentMarker(f)}`;

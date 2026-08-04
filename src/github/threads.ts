@@ -57,11 +57,10 @@ export function planThreads(findings: ReviewFinding[], existing: ExistingComment
   const alreadyPosted: ReviewFinding[] = [];
 
   for (const f of findings) {
-    const prev = live.get(fingerprint(f));
-    // A resolved thread means a human dealt with it. Re-posting would reopen an
-    // argument they already settled, so treat resolved as handled.
-    if (prev && !prev.resolved) alreadyPosted.push(f);
-    else if (prev && prev.resolved) alreadyPosted.push(f);
+    // Already commented, resolved or not, is already said. An unresolved
+    // thread is the same comment; a resolved one is somebody having dismissed
+    // it, and re-posting reopens an argument they already settled.
+    if (live.has(fingerprint(f))) alreadyPosted.push(f);
     else toPost.push(f);
   }
 
