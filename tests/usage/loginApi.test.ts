@@ -157,3 +157,31 @@ describe('whether to offer a sign-in form', () => {
     expect(JSON.parse(out)).toEqual({ accounts: false });
   });
 });
+
+describe('reaching the API from a page on another origin', () => {
+  it('allows the method the login actually uses', async () => {
+    // The dashboard page is static and is usually served from somewhere other
+    // than the agent. A preflight that lists only GET means the browser never
+    // sends the sign-in request at all.
+    const req = new IncomingMessage(new Socket());
+    req.method = 'OPTIONS';
+    req.url = '/api/login';
+    let headers: Record<string, string> = {};
+    const res = {
+      writeHead(_s: number, h: Record<string, string>) {
+        headers = h;
+        return this;
+      },
+      end() {},
+    } as unknown as ServerResponse;
+
+    await serveUsage(
+      { db, artifactDir: '/tmp', token: TOKEN, origin: 'https://shipiit.github.io' },
+      req,
+      res,
+    );
+    expect(headers['access-control-allow-methods']).toContain('POST');
+    expect(headers['access-control-allow-origin']).toBe('https://shipiit.github.io');
+    expect(headers['access-control-allow-headers']).toContain('content-type');
+  });
+});

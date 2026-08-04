@@ -78,7 +78,12 @@ function corsHeaders(origin?: string): Record<string, string> {
   return {
     'access-control-allow-origin': origin,
     'access-control-allow-headers': 'authorization,content-type',
-    'access-control-allow-methods': 'GET,OPTIONS',
+    // POST as well as GET: signing in and out are POSTs, and a browser on
+    // another origin will not even send the request if the preflight does not
+    // list the method. This is only reachable cross-origin — the dashboard
+    // page is static and often served from somewhere else entirely — which is
+    // exactly where it went unnoticed.
+    'access-control-allow-methods': 'GET,POST,OPTIONS',
     'access-control-max-age': '600',
     vary: 'origin',
   };
