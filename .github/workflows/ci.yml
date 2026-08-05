@@ -22,4 +22,11 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+
+      # Does the review still find what it should, and stay quiet about what
+      # it should not? The suite above proves the code runs; this proves the
+      # findings are worth reading — the property that regresses silently when
+      # a prompt is edited or a model is swapped for a cheaper one.
+      - run: npm run build
+      - run: node dist/cli.js eval --baseline evals/baseline.json
       - run: npm run build

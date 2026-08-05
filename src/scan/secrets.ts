@@ -18,6 +18,8 @@ interface Rule {
   pattern: RegExp;
   severity?: ReviewFinding['severity'];
   entropy?: number;
+  /** Suppresses the rule when it matches the line — the case that is not a leak. */
+  unless?: RegExp;
 }
 
 /** Providers whose tokens have a documented, unmistakable shape. */
@@ -34,7 +36,15 @@ const PROVIDER_RULES: Rule[] = [
   { id: 'npm', label: 'npm access token', pattern: /\bnpm_[A-Za-z0-9]{36}\b/ },
   { id: 'private-key', label: 'Private key', pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/ },
   { id: 'jwt', label: 'JSON Web Token', pattern: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/, severity: 'medium' },
-  { id: 'pg-url', label: 'Database connection string with a password', pattern: /\b(?:postgres|postgresql|mysql|mongodb(?:\+srv)?|redis|amqp):\/\/[^\s:@/]+:[^\s:@/]+@/ },
+  {
+    id: 'pg-url',
+    label: 'Database connection string with a password',
+    pattern: /\b(?:postgres|postgresql|mysql|mongodb(?:\+srv)?|redis|amqp):\/\/[^\s:@/]+:[^\s:@/]+@/,
+    // Not when it points at the developer's own machine or a compose service
+    // name. There is no remote system on the other end of localhost, so there
+    // is nothing to compromise — and every project's example file has one.
+    unless: /@(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|db|database|postgres|mysql|redis|mongo|host\.docker\.internal)[:/\s]/i,
+  },
 ];
 
 /** Generic assignments — only a finding when the value also looks random. */
@@ -49,7 +59,7 @@ const ASSIGNMENT =
  * not fire on the very spellings people actually use.
  */
 const PLACEHOLDER =
-  /(?<![A-Za-z])(?:example|sample|placeholder|dummy|fake|test|redacted|changeme|your|xxx+|todo|replace|insert|notreal|<[^>]+>|\.\.\.)(?![A-Za-z])/i;
+  /(?<![A-Za-z])(?:example|sample|placeholder|dummy|fake|test|redacted|changeme|your|xxx+|todo|replace|insert|notreal|password|passwd|username|user|secret|mypassword|hostname|dbname|<[^>]+>|\.\.\.)(?![A-Za-z])/i;
 
 /**
  * Paths where a credential-shaped string is documentation, not a leak.
@@ -154,6 +164,7 @@ export const secretsScanner: Scanner = {
         const m = line.match(rule.pattern);
         if (!m) continue;
         const value = m[0];
+        if (rule.unless?.test(line)) continue;
         // The placeholder test applies to the token, not the sentence around
         // it. Reading the whole line meant "set KEY=sk-ant-… in your shell"
         // was dismissed because the prose said "your" — a real key, silently

@@ -43,7 +43,9 @@
     "test:watch": "vitest",
     "forge": "tsx src/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test",
+    "eval": "npm run build && node dist/cli.js eval",
+    "eval:baseline": "npm run build && node dist/cli.js eval --save-baseline evals/baseline.json"
   },
   "engines": {
     "node": ">=20"

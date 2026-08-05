@@ -1,0 +1,107 @@
+[
+  {
+    "name": "request data reaching a shell is command injection",
+    "files": {
+      "src/api.ts": "import { exec } from 'node:child_process';\n\nexport function convert(req, res) {\n  exec(`convert ${req.query.file} out.png`);\n  res.send('ok');\n}\n"
+    },
+    "expect": [
+      {
+        "file": "src/api.ts",
+        "category": "CWE-78",
+        "minSeverity": "critical",
+        "because": "Taint and a sink on one line. This is the case the rule exists for."
+      }
+    ]
+  },
+  {
+    "name": "a log message that mentions a credential does not leak one",
+    "files": {
+      "src/action.ts": "try {\n  return await appAuth();\n} catch (err) {\n  console.log(`App auth unavailable (${(err as Error).message}); using the workflow token.`);\n}\n"
+    },
+    "forbid": [
+      {
+        "category": "CWE-532",
+        "because": "Our own line, and the scanner's first false positive. The word token in prose is not a token."
+      }
+    ]
+  },
+  {
+    "name": "a comment describing a bug is not the bug",
+    "files": {
+      "src/scan/rules.ts": "// The shape this rule looks for:\n//   console.log(\"token:\", token);\n// and in Python:\n//   print(f\"password={password}\")\nexport const RULES = [];\n"
+    },
+    "forbid": [
+      {
+        "category": "CWE-532",
+        "because": "The rule table documented itself and then reported itself."
+      }
+    ]
+  },
+  {
+    "name": "an environment read is still taint after the prose filter",
+    "files": {
+      "src/run.py": "import os\nos.system(os.environ.get(\"CMD\"))\n"
+    },
+    "expect": [
+      {
+        "file": "src/run.py",
+        "category": "CWE-78",
+        "because": "Dropping string contents wholesale switched every Python rule off, silently."
+      }
+    ]
+  },
+  {
+    "name": "a well-known environment variable is not taint",
+    "files": {
+      "src/home.py": "import os\nos.system(os.environ.get(\"HOME\"))\n"
+    },
+    "forbid": [
+      {
+        "category": "CWE-78",
+        "because": "The allowlist has to survive the prose filter, or it stops meaning anything."
+      }
+    ]
+  },
+  {
+    "name": "unpickling your own cache does not block a merge",
+    "files": {
+      "src/cache.py": "import pickle\n\ndef load():\n    with open('cache.bin', 'rb') as f:\n        return pickle.loads(f.read())\n"
+    },
+    "expect": [
+      {
+        "file": "src/cache.py",
+        "category": "CWE-502",
+        "because": "Worth saying. Not worth blocking on when nothing attacker-controlled is present."
+      }
+    ],
+    "forbid": []
+  },
+  {
+    "name": "a mitigation that wrapped onto the next line still counts",
+    "files": {
+      "src/conf.py": "import yaml\n\ndef load(text):\n    return yaml.load(\n        text, Loader=yaml.SafeLoader)\n"
+    },
+    "forbid": [
+      {
+        "category": "CWE-502",
+        "because": "Loader=yaml.SafeLoader wraps. Reading one line called the correct code dangerous."
+      }
+    ]
+  },
+  {
+    "name": "ordinary code that happens to use a dangerous call is silent",
+    "files": {
+      "src/build.ts": "import { execSync } from 'node:child_process';\nimport fs from 'node:fs';\n\nexecSync('npm run build');\nfs.readFileSync(new URL('./config.json', import.meta.url));\nconsole.log('server started');\n"
+    },
+    "forbid": [
+      {
+        "category": "CWE-78",
+        "because": "A rule that fires on every exec is a rule people switch off in a week."
+      },
+      {
+        "category": "CWE-22",
+        "because": "Same, for readFileSync."
+      }
+    ]
+  }
+]

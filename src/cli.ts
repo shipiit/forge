@@ -15,6 +15,8 @@ import { runSetup } from './setup.js';
 import { buildDoctorReport, renderDoctorReport } from './doctor.js';
 import { startDashboard } from './usage/serve.js';
 import { addAccount, changePassword, deleteAccount, renderAccounts } from './usage/accounts.js';
+import { loadCases, runSuite } from './evals/run.js';
+import { renderScorecard, regressedAgainst } from './evals/score.js';
 import { cliRun } from './usage/cli.js';
 import { SUPPORTED_PROVIDERS } from './providers/index.js';
 import { estimateCost, formatCost } from './util/cost.js';
@@ -89,6 +91,58 @@ users
   .option('--db <path>', 'Usage database file', dbOption())
   .action((opts: { db: string }) => {
     console.log(renderAccounts(opts.db));
+  });
+
+/**
+ * Is the review any good?
+ *
+ * The test suite proves the code runs. This measures whether the findings are
+ * worth reading — the only property anybody buys, and the one that regresses
+ * silently when a prompt is edited or a model is swapped for a cheaper one.
+ */
+program
+  .command('eval')
+  .description('Score review quality against the corpus: precision, recall, and named false positives')
+  .option('--cases <dir>', 'Directory of case files', 'evals/cases')
+  .option('--baseline <file>', 'Fail if quality dropped against this scorecard', '')
+  .option('--save-baseline <file>', 'Write this run to a file to compare against later', '')
+  .action(async (opts: { cases: string; baseline: string; saveBaseline: string }) => {
+    const cases = await loadCases(opts.cases);
+    if (cases.length === 0) {
+      console.error(`No cases in ${opts.cases}.`);
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log(`Scoring ${cases.length} case(s) from ${opts.cases}…\n`);
+    const card = await runSuite(cases);
+    console.log(renderScorecard(card));
+
+    if (opts.saveBaseline) {
+      const { promises: fsp } = await import('node:fs');
+      await fsp.writeFile(
+        opts.saveBaseline,
+        `${JSON.stringify({ precision: card.precision, recall: card.recall, f1: card.f1 }, null, 2)}\n`,
+      );
+      console.log(`\nBaseline written to ${opts.saveBaseline}.`);
+    }
+
+    if (opts.baseline) {
+      const { promises: fsp } = await import('node:fs');
+      const previous = JSON.parse(await fsp.readFile(opts.baseline, 'utf8')) as {
+        precision: number;
+        recall: number;
+      };
+      const failures = regressedAgainst(previous, card);
+      if (failures.length) {
+        console.error(`\n✖ Review quality dropped:\n  - ${failures.join('\n  - ')}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log('\n✓ No drop against the baseline.');
+    }
+
+    if (card.failed > 0) process.exitCode = 1;
   });
 
 program

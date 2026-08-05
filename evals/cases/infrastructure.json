@@ -1,0 +1,62 @@
+[
+  {
+    "name": "untrusted event text reaching a shell in a workflow",
+    "files": {
+      ".github/workflows/deploy.yml": "name: Deploy\non:\n  issues:\n    types: [opened]\npermissions:\n  contents: read\njobs:\n  greet:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo \"New issue: ${{ github.event.issue.title }}\"\n"
+    },
+    "expect": [
+      {
+        "file": ".github/workflows/deploy.yml",
+        "category": "CWE-78",
+        "because": "An issue title is written by whoever opened it. This is remote code execution with a token attached."
+      }
+    ]
+  },
+  {
+    "name": "a container that drops back to root",
+    "files": {
+      "Dockerfile": "FROM node:22-slim\nWORKDIR /app\nCOPY . .\nRUN npm ci\nUSER root\nCMD [\"node\", \"dist/server.js\"]\n"
+    },
+    "expect": [
+      {
+        "file": "Dockerfile",
+        "category": "CWE-250",
+        "because": "Running as root is the default nobody chose. Choosing it explicitly is worth a comment."
+      }
+    ]
+  },
+  {
+    "name": "a workflow with no permissions block",
+    "files": {
+      ".github/workflows/ci.yml": "name: CI\non:\n  push:\n    branches: [main]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: npm test\n"
+    },
+    "expect": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "category": "CWE-732",
+        "because": "With no permissions block the job gets the repository default, often write on everything."
+      },
+      {
+        "file": ".github/workflows/ci.yml",
+        "category": "CWE-494",
+        "because": "actions/checkout@v4 is a tag, and a tag can be moved by whoever owns it."
+      }
+    ]
+  },
+  {
+    "name": "a correctly locked-down workflow is silent",
+    "files": {
+      ".github/workflows/lint.yml": "name: Lint\non:\n  pull_request:\npermissions:\n  contents: read\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@b4d893f40445585b467e9f731215b3e648f95c52\n      - run: npm run lint\n"
+    },
+    "forbid": [
+      {
+        "category": "CWE-732",
+        "because": "It declares its permissions. Reporting it anyway teaches people the fix does not help."
+      },
+      {
+        "category": "CWE-494",
+        "because": "Pinned to a full commit SHA, which is the fix for a mutable ref."
+      }
+    ]
+  }
+]
