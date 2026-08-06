@@ -1,6 +1,6 @@
 {
   "name": "shipit-forge",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "ShipIT Forge \u2014 autonomous GitHub coding agent (multi-provider).",
   "type": "module",
   "bin": {
