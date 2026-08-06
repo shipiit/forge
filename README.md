@@ -82,9 +82,12 @@ always completes as `neutral` so it can't block a merge through branch protectio
 - **Deterministic per-edit checks** — every write is scanned for risky patterns (dynamic execution, unsafe
   deserialization, DOM injection, hardcoded credentials, weak crypto, workflow edits) with **no model call
   and no token cost**. Add your own rules in `.forge/security-patterns.json`.
-- **Secret scanning that does not cry wolf** — twelve provider shapes (GitHub, AWS, Anthropic, OpenAI,
-  Google, Slack, Stripe, npm, JWT, PEM, database URLs), Shannon entropy for generic assignments, and file
-  context. `your-api-key-here` is not a finding; a real key in a README is, at lower severity — because
+- **Secret scanning that does not cry wolf** — thirty-one provider shapes (GitHub, GitLab, AWS, Azure,
+  Anthropic, OpenAI, Google, Slack, Stripe, Twilio, SendGrid, Shopify, Square, Hugging Face, Discord,
+  Telegram, Linear, Sentry, Supabase, npm, JWT, PEM, database URLs and more) **plus a generic pass** that
+  catches a credential from a vendor nobody has heard of, by reading the variable name and the randomness
+  of the value rather than the vendor. The named list says *which* provider to rotate; the generic pass is
+  what makes the coverage general. `your-api-key-here` is not a finding; a real key in a README is, at lower severity — because
   people do paste real keys into documentation, and staying quiet there is quiet exactly where the
   mistake is easiest to make.
 - **Infrastructure scanning** — the files that get the least review and decide the most: containers

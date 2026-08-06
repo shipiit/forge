@@ -45,9 +45,6 @@ export function findingKey(f: ReviewFinding): string {
   return [f.file, f.category, f.endLine].join('|');
 }
 
-/** Lines apart that two reports of one rule are still the same finding. */
-const NEAR = 3;
-
 const RANK: Record<ReviewFinding['severity'], number> = {
   critical: 4,
   high: 3,
@@ -77,10 +74,18 @@ function pick(a: ReviewFinding, b: ReviewFinding): ReviewFinding {
  * a secret finding, a pattern finding, and something the model also noticed.
  * Three comments on one line reads as three problems.
  *
- * Two passes. The first merges exact matches; the second merges reports of the
- * same rule in the same file a few lines apart, because a model counting lines
- * in a diff and a scanner counting them in the file do not always agree, and
- * being one line out is not a second bug.
+ * Exact matches only: same file, same rule, same line.
+ *
+ * There was a second pass here that also merged reports of one rule a few
+ * lines apart, to reconcile a model counting lines in a diff with a scanner
+ * counting them in a file. It collapsed real findings. Six credentials on six
+ * consecutive lines are six credentials — merging them means rotating one key
+ * and leaving five live, which is worse than reporting the same thing twice.
+ *
+ * Reconciling the two sources belongs where the two sources meet, and
+ * `mergeFindings` does it there by moving the model's finding onto the line
+ * the scanner reported for that rule. Line proximity is not evidence of
+ * sameness within a single source.
  */
 export function dedupe(findings: ReviewFinding[]): ReviewFinding[] {
   const best = new Map<string, ReviewFinding>();
@@ -89,20 +94,11 @@ export function dedupe(findings: ReviewFinding[]): ReviewFinding[] {
     const seen = best.get(key);
     best.set(key, seen ? pick(seen, f) : f);
   }
-
-  const out: ReviewFinding[] = [];
-  for (const f of [...best.values()].sort((a, b) => a.endLine - b.endLine)) {
-    const near = out.findIndex(
-      (o) => o.file === f.file && o.category === f.category && Math.abs(o.endLine - f.endLine) <= NEAR,
-    );
-    if (near === -1) out.push(f);
-    else out[near] = pick(out[near]!, f);
-  }
-  return out;
+  return [...best.values()];
 }
 
 export const TEST_PATH =
-  /(?:^|\/)(?:tests?|__tests__|spec|fixtures?|__mocks__)\/|\.(?:test|spec)\.[jt]sx?$|_test\.(?:py|go|rb)$|(?:^|\/)test_[^/]+\.py$/i;
+  /(?:^|\/)(?:tests?|__tests__|spec|fixtures?|__mocks__|testdata|evals?)\/|\.(?:test|spec)\.[jt]sx?$|_test\.(?:py|go|rb)$|(?:^|\/)test_[^/]+\.py$/i;
 
 /** Is this finding pointing at a test fixture rather than at shipped code? */
 export function inTestFile(f: { file: string }): boolean {

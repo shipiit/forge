@@ -1,5 +1,9 @@
 import type { ReviewFinding } from '../github/review.js';
-import type { ScanFile, Scanner } from './types.js';
+// TEST_PATH is shared rather than kept in step by hand: this file had its own
+// copy, and the two had already drifted. An eval corpus is planted credentials
+// by definition — the same category as a test fixture, and the one this
+// scanner was reporting at critical against itself.
+import { TEST_PATH, type ScanFile, type Scanner } from './types.js';
 
 /**
  * Secret detection.
@@ -22,7 +26,16 @@ interface Rule {
   unless?: RegExp;
 }
 
-/** Providers whose tokens have a documented, unmistakable shape. */
+/**
+ * Providers whose tokens have a documented, unmistakable shape.
+ *
+ * A named shape is reported without an entropy check, because the prefix is
+ * the evidence — `glpat-` is a GitLab token or it is nothing. This list will
+ * never be complete, and it does not have to be: anything not named here is
+ * still caught by the generic assignment pass below, which reads the variable
+ * name and the randomness of the value rather than the vendor. The named list
+ * exists to say *which* provider to go and rotate.
+ */
 const PROVIDER_RULES: Rule[] = [
   { id: 'github-pat', label: 'GitHub personal access token', pattern: /\bgh[pousr]_[A-Za-z0-9]{36,255}\b/ },
   { id: 'github-fine', label: 'GitHub fine-grained token', pattern: /\bgithub_pat_[A-Za-z0-9_]{22,255}\b/ },
@@ -34,6 +47,24 @@ const PROVIDER_RULES: Rule[] = [
   { id: 'slack', label: 'Slack token', pattern: /\bxox[abposr]-[0-9A-Za-z-]{10,}\b/ },
   { id: 'stripe', label: 'Stripe secret key', pattern: /\bsk_(?:live|test)_[0-9A-Za-z]{16,}\b/ },
   { id: 'npm', label: 'npm access token', pattern: /\bnpm_[A-Za-z0-9]{36}\b/ },
+  { id: 'gitlab', label: 'GitLab personal access token', pattern: /\bglpat-[A-Za-z0-9_-]{20,}\b/ },
+  { id: 'sendgrid', label: 'SendGrid API key', pattern: /\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/ },
+  { id: 'twilio-sid', label: 'Twilio account SID', pattern: /\bAC[0-9a-f]{32}\b/, severity: 'medium' },
+  { id: 'twilio-key', label: 'Twilio API key', pattern: /\bSK[0-9a-f]{32}\b/ },
+  { id: 'mailgun', label: 'Mailgun API key', pattern: /\bkey-[0-9a-f]{32}\b/ },
+  { id: 'shopify', label: 'Shopify access token', pattern: /\bshp(?:at|ss|ca|pa)_[0-9a-fA-F]{32}\b/ },
+  { id: 'square', label: 'Square access token', pattern: /\bsq0(?:atp|csp)-[A-Za-z0-9_-]{22,}\b/ },
+  { id: 'hugging-face', label: 'Hugging Face token', pattern: /\bhf_[A-Za-z0-9]{30,}\b/ },
+  { id: 'google-oauth', label: 'Google OAuth client secret', pattern: /\bGOCSPX-[A-Za-z0-9_-]{20,}\b/ },
+  { id: 'telegram', label: 'Telegram bot token', pattern: /\b\d{8,10}:AA[A-Za-z0-9_-]{30,}\b/ },
+  { id: 'discord', label: 'Discord bot token', pattern: /\b[MNO][A-Za-z0-9_-]{23,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}\b/ },
+  { id: 'postman', label: 'Postman API key', pattern: /\bPMAK-[A-Za-z0-9]{24}-[A-Za-z0-9]{34}\b/ },
+  { id: 'linear', label: 'Linear API key', pattern: /\blin_api_[A-Za-z0-9]{40,}\b/ },
+  { id: 'doppler', label: 'Doppler token', pattern: /\bdp\.(?:pt|st|sa|ct)\.[A-Za-z0-9]{40,}\b/ },
+  { id: 'supabase', label: 'Supabase service key', pattern: /\bsbp_[0-9a-f]{40}\b/ },
+  { id: 'sentry', label: 'Sentry auth token', pattern: /\bsntry[su]_[A-Za-z0-9_]{40,}\b/ },
+  { id: 'azure-storage', label: 'Azure storage account key', pattern: /\bAccountKey=[A-Za-z0-9+/]{80,}={0,2}/ },
+  { id: 'slack-webhook', label: 'Slack incoming webhook', pattern: /\bhooks\.slack\.com\/services\/T[A-Za-z0-9_]+\/B[A-Za-z0-9_]+\/[A-Za-z0-9_]{20,}/ },
   { id: 'private-key', label: 'Private key', pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/ },
   { id: 'jwt', label: 'JSON Web Token', pattern: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/, severity: 'medium' },
   {
@@ -49,7 +80,10 @@ const PROVIDER_RULES: Rule[] = [
 
 /** Generic assignments — only a finding when the value also looks random. */
 const ASSIGNMENT =
-  /(?:^|[^A-Za-z0-9_])(?:api[_-]?key|secret|token|passwd|password|access[_-]?key|private[_-]?key|client[_-]?secret|auth)[A-Za-z0-9_]*\s*[:=]\s*["'`]([^"'`\n]{12,})["'`]/i;
+  // `_` is allowed before the keyword. Excluding it meant VENDOR_API_KEY and
+  // INTERNAL_SIGNING_KEY — the shapes real projects actually use — never
+  // matched, so the generic pass only covered names that began with the word.
+  /(?:^|[^A-Za-z0-9])(?:api[_-]?key|apikey|secret|token|passwd|password|pwd|access[_-]?key|private[_-]?key|client[_-]?secret|auth|credential|bearer|signing[_-]?key|encryption[_-]?key|session[_-]?key|webhook[_-]?secret|refresh[_-]?token|service[_-]?account)[A-Za-z0-9_]*\s*[:=]\s*["'`]([^"'`\n]{12,})["'`]/i;
 
 /**
  * Words that mean "this is not a real one", in any casing.
@@ -69,7 +103,7 @@ const PLACEHOLDER =
  * not recognised as documentation at all.
  */
 const DOC_PATH = /(?:^|\/)(?:\.env\.example|README|CHANGELOG|LICENSE|docs?\/|examples?\/)|\.mdx?$/i;
-const TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|fixtures?|__mocks__)\//i;
+
 
 /** Shannon entropy in bits per character. Random keys sit well above 3.5. */
 export function entropy(s: string): number {
@@ -93,7 +127,14 @@ export function entropy(s: string): number {
  */
 function looksLikeAnIdentifier(value: string): boolean {
   const parts = value.split(/[-_.]/);
-  return parts.length >= 2 && parts.every((p) => /^[A-Za-z]+$/.test(p));
+  if (parts.length < 2) return false;
+  // A part is word-like if it reads as a word rather than as key material.
+  // Requiring pure letters was too strict: it called
+  // `django.contrib.auth.hashers.PBKDF2PasswordHasher` random, because one
+  // segment contains a digit. A run of three letters is what separates a word
+  // from a key — `PBKDF` has one, `Ax7Kq2` does not — and very short segments
+  // carry no entropy either way, so `X-Request-Token` still reads as a name.
+  return parts.every((p) => p.length <= 2 || /[A-Za-z]{3,}/.test(p));
 }
 
 /** True when the value is random enough to be a real credential. */

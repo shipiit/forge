@@ -73,6 +73,37 @@ export async function runSuite(cases: EvalCase[], opts: RunOptions = {}): Promis
   return scorecard(results);
 }
 
+/**
+ * Expand `{{hex:32}}` and `{{alnum:20}}` into credential-shaped filler.
+ *
+ * A corpus for a secret scanner needs strings that look exactly like real
+ * credentials, and committing those is how a repository ends up with its own
+ * push protection refusing it — which is what happened here. GitHub's scanner
+ * cannot tell our GitLab fixture from a real token, and it is right not to
+ * try.
+ *
+ * So the shape lives in the case file and the entropy is generated when the
+ * case is read. Deterministic, from the placeholder's own position, so the
+ * corpus scores the same on every machine and every run.
+ */
+export function expandFixtures(text: string): string {
+  let n = 0;
+  return text.replace(/\{\{(hex|alnum):(\d+)\}\}/g, (_, kind: string, lenRaw: string) => {
+    const alphabet =
+      kind === 'hex' ? '0123456789abcdef' : 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    const length = Number(lenRaw);
+    // A tiny LCG seeded by the placeholder index: no randomness at runtime, so
+    // a corpus that passes here passes in CI.
+    let seed = (n += 1) * 2654435761;
+    let out = '';
+    for (let i = 0; i < length; i++) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      out += alphabet[seed % alphabet.length];
+    }
+    return out;
+  });
+}
+
 /** Load every `*.json` case from a directory, sorted for a stable report. */
 export async function loadCases(dir: string): Promise<EvalCase[]> {
   let names: string[];
@@ -84,7 +115,7 @@ export async function loadCases(dir: string): Promise<EvalCase[]> {
 
   const cases: EvalCase[] = [];
   for (const name of names) {
-    const raw = await fs.readFile(path.join(dir, name), 'utf8');
+    const raw = expandFixtures(await fs.readFile(path.join(dir, name), 'utf8'));
     const parsed = JSON.parse(raw) as EvalCase | EvalCase[];
     // A file may hold one case or several; several keeps related cases
     // together, which is how somebody reads them.

@@ -60,3 +60,22 @@ The deterministic scanners run with no model, no network and no cost, so the
 corpus is runnable on a laptop before opening a pull request. To score the
 model as well, pass a `review` function to `runSuite` — that needs a provider
 and a budget, so it is opt-in rather than part of CI.
+
+## Fixtures are generated, not committed
+
+A corpus for a secret scanner needs strings that look exactly like real
+credentials — and committing those is how a repository ends up with its own
+push protection refusing the commit. That happened here: GitHub blocked the
+first attempt over the GitLab, Shopify, Slack and Twilio fixtures, and it was
+right to. It cannot tell our fixture from a real token.
+
+So the case files hold the *shape* and the entropy is generated when the case
+is read:
+
+```json
+"src/app.ts": "const t = 'glpat-{{alnum:20}}';"
+```
+
+`{{alnum:N}}` and `{{hex:N}}` expand at load time, deterministically from the
+placeholder's position — so the corpus scores identically on every machine and
+in CI, and nothing credential-shaped is ever stored in git.
