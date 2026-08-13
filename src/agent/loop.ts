@@ -24,13 +24,27 @@ export interface AgentLimits {
    * expensive model.
    */
   maxSpendUsd?: number;
+  /**
+   * Wall-clock ceiling for the whole run, in milliseconds.
+   *
+   * Turn count and spend both bound the run in the dimensions a healthy
+   * provider varies in. Neither bounds time: a stalling endpoint answers every
+   * turn eventually, cheaply and within the iteration count, and still costs
+   * twenty minutes. Measured — two turns at 491s and 711s inside a twelve-turn
+   * review that should have taken two minutes.
+   *
+   * Checked between turns, so it stops the run rather than interrupting one.
+   * Whatever has been found by then is reported: a partial review posted is
+   * worth more than a complete one nobody waited for.
+   */
+  maxWallClockMs?: number;
 }
 
 export interface AgentResult {
   finalText: string;
   iterations: number;
   /** `budget` means it stopped early because the spend cap was reached. */
-  stoppedBy: 'end' | 'limit' | 'budget';
+  stoppedBy: 'end' | 'limit' | 'budget' | 'deadline';
   messages: Msg[];
   usage: Usage;
   /** Set when stoppedBy is 'budget'; what it had spent when it stopped. */
@@ -77,7 +91,8 @@ export type AgentEvent =
   | { type: 'tool_error'; name: string; message: string }
   | { type: 'assistant_text'; text: string }
   | { type: 'compacted'; savedChars: number }
-  | { type: 'budget'; spentUsd: number; capUsd: number };
+  | { type: 'budget'; spentUsd: number; capUsd: number }
+  | { type: 'deadline'; elapsedMs: number; iterations: number };
 
 /**
  * Drive the model/tool loop until the model finishes or limits are hit.
@@ -100,7 +115,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   let actedNudged = false;
   const acted = new Set<string>();
 
+  const startedAt = Date.now();
   for (let n = 1; n <= limits.maxIterations; n++) {
+    // Between turns, never mid-turn: stopping the run is a decision, killing a
+    // request in flight throws away work already paid for.
+    if (limits.maxWallClockMs && Date.now() - startedAt >= limits.maxWallClockMs) {
+      onEvent?.({ type: 'deadline', elapsedMs: Date.now() - startedAt, iterations: n - 1 });
+      return { finalText, iterations: n - 1, stoppedBy: 'deadline', messages, usage };
+    }
     onEvent?.({ type: 'iteration', n });
 
     // Elide stale tool output once the transcript is genuinely large. Rewriting

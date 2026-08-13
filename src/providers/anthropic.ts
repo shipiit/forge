@@ -164,7 +164,7 @@ export class AnthropicAdapter implements LLMClient {
     // plus its retries turns a stalled endpoint into half an hour of silence.
     this.client =
       opts.client ??
-      (new Anthropic({ apiKey: opts.apiKey, timeout: timeoutMs(), maxRetries: 2 }) as unknown as AnthropicLike);
+      (new Anthropic({ apiKey: opts.apiKey, timeout: timeoutMs(), maxRetries: 0 }) as unknown as AnthropicLike);
   }
 
   async chat(req: ChatRequest): Promise<ChatResult> {

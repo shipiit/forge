@@ -189,7 +189,10 @@ export class OpenAIAdapter implements LLMClient {
         // is well past the slowest legitimate turn we have measured and well
         // short of a wasted runner.
         timeout: timeoutMs(),
-        maxRetries: 2,
+        // Retries belong to withRetry, which knows a timeout is not worth
+        // repeating. Two layers each retrying twice is up to twelve attempts
+        // for one turn, which is how a stalled endpoint costs twenty minutes.
+        maxRetries: 0,
       }) as unknown as OpenAILike);
   }
 

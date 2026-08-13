@@ -153,11 +153,26 @@ export interface HandlerDeps {
 const defaultRateLimitStore = new MemoryRateLimitStore();
 
 /** The limits every runAgent call in a handler should carry. */
+/**
+ * Wall-clock ceiling for one run.
+ *
+ * Fifteen minutes: several times the slowest healthy review measured, and well
+ * under the point where somebody has stopped waiting and gone to look at
+ * something else. A check that takes longer than that has stopped being a check
+ * and become a thing people merge around.
+ */
+function deadlineMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.FORGE_RUN_DEADLINE_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return 900_000;
+  return Math.min(Math.max(raw, 60_000), 6 * 3_600_000);
+}
+
 function limitsFor(deps: HandlerDeps, maxIterations = MAX_ITER): AgentLimits {
   return {
     maxIterations,
     maxOutputTokens: MAX_TOKENS,
     maxSpendUsd: deps.spendCapPerRunUsd ?? NO_CAP,
+    maxWallClockMs: deadlineMs(),
   };
 }
 
@@ -291,7 +306,12 @@ async function seedChangedFiles(
 function progress(log: (m: string) => void): (e: AgentEvent) => void {
   return (e) => {
     if (e.type === 'tool') log(`tool: ${e.name}`);
-    else if (e.type === 'turn') {
+    else if (e.type === 'deadline') {
+      log(
+        `stopped at the ${Math.round(e.elapsedMs / 60_000)} minute deadline after ${e.iterations} turn(s) — ` +
+          `reporting what was found. Raise FORGE_RUN_DEADLINE_MS if this repository needs longer.`,
+      );
+    } else if (e.type === 'turn') {
       const secs = (e.latencyMs / 1000).toFixed(1);
       const cached = e.usage.cacheReadTokens ? `, ${e.usage.cacheReadTokens} cached` : '';
       log(

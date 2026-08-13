@@ -12,11 +12,34 @@ export interface RetryOptions {
 
 const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/**
+ * A timeout is not a transient failure.
+ *
+ * `ECONNRESET` is a blip: something dropped, try again and it works. A request
+ * that ran for the entire timeout budget and produced nothing is different —
+ * the endpoint took the work and stalled, and asking again buys another full
+ * budget of the same. Measured on a real run against a stalling provider: two
+ * turns cost 491 and 711 seconds against a 300-second timeout, because each
+ * timeout was retried rather than surfaced.
+ *
+ * So timeouts fail immediately and say so. Everything genuinely transient —
+ * rate limits, 5xx, a reset connection, DNS — still retries.
+ */
+export function isTimeout(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  if (code === 'ETIMEDOUT' || code === 'ETIME') return true;
+  const name = (err as { name?: string })?.name ?? '';
+  if (/timeout/i.test(name)) return true; // APIConnectionTimeoutError, AbortError variants
+  const message = (err as { message?: string })?.message ?? '';
+  return /timed?\s*out/i.test(message);
+}
+
 function defaultRetryable(err: unknown): boolean {
+  if (isTimeout(err)) return false;
   const status = (err as { status?: number; statusCode?: number })?.status ?? (err as { statusCode?: number })?.statusCode;
   if (typeof status === 'number') return status === 429 || (status >= 500 && status < 600);
   const code = (err as { code?: string })?.code;
-  if (code && ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ENOTFOUND'].includes(code)) return true;
+  if (code && ['ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ENOTFOUND'].includes(code)) return true;
   return false;
 }
 

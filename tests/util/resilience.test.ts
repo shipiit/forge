@@ -36,9 +36,21 @@ describe('withRetry', () => {
   it('gives up after the retry budget', async () => {
     let calls = 0;
     await expect(
-      withRetry(async () => { calls++; throw { code: 'ETIMEDOUT' }; }, { retries: 2, sleep: noSleep }),
-    ).rejects.toEqual({ code: 'ETIMEDOUT' });
+      withRetry(async () => { calls++; throw { code: 'ECONNRESET' }; }, { retries: 2, sleep: noSleep }),
+    ).rejects.toEqual({ code: 'ECONNRESET' });
     expect(calls).toBe(3); // initial + 2 retries
+  });
+
+  it('does not retry a timeout, because a stall repeats', async () => {
+    // A reset connection is a blip — try again and it works. A request that
+    // burned the whole timeout budget and produced nothing is the endpoint
+    // stalling, and asking again buys another full budget of the same. Two
+    // turns at 491s and 711s against a 300s timeout is what that cost.
+    for (const err of [{ code: 'ETIMEDOUT' }, { name: 'APIConnectionTimeoutError' }, new Error('Request timed out.')]) {
+      let calls = 0;
+      await expect(withRetry(async () => { calls++; throw err; }, { retries: 3, sleep: noSleep })).rejects.toBeTruthy();
+      expect(calls).toBe(1);
+    }
   });
 });
 
