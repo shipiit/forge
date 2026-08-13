@@ -216,6 +216,32 @@ function watch(
   return deps.run ? deps.run.listen(phase, onEvent) : onEvent;
 }
 
+/**
+ * Progress, one line per step.
+ *
+ * A run that prints nothing between "scanning" and "done" is indistinguishable
+ * from one that has hung, and the person watching cannot tell which — so they
+ * wait, or they cancel a job that was working. Observed on a real review: six
+ * and a half minutes of silence on a provider that answers in two seconds a
+ * turn. The model was fine; the log was the problem.
+ *
+ * Turn latency is the number that identifies where the time went. Twenty turns
+ * at six seconds is a long review; one turn at four minutes is a sick endpoint.
+ * They are the same wall-clock and completely different problems.
+ */
+function progress(log: (m: string) => void): (e: AgentEvent) => void {
+  return (e) => {
+    if (e.type === 'tool') log(`tool: ${e.name}`);
+    else if (e.type === 'turn') {
+      const secs = (e.latencyMs / 1000).toFixed(1);
+      const cached = e.usage.cacheReadTokens ? `, ${e.usage.cacheReadTokens} cached` : '';
+      log(
+        `turn ${e.idx}: ${secs}s · ${e.usage.inputTokens} in${cached} / ${e.usage.outputTokens} out · ${e.stopReason}`,
+      );
+    }
+  };
+}
+
 /** Apply the run's tool allow/deny selection to a toolset. */
 function pick(deps: HandlerDeps, tools: Tool[]): Tool[] {
   return selectTools(tools, deps.toolSelection ?? {});
@@ -514,7 +540,7 @@ export async function handleIssueAnalyze(
         tools: pick(deps, reviewToolset()), // read-only: no edits
         limits: limitsFor(deps),
         cwd: ws.dir,
-        onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
+        onEvent: watch(deps, 'main', progress(log)),
       });
       deps.run?.add(result);
 
@@ -634,7 +660,7 @@ async function doIssueFix(
       // The flows whose job is to change something: ending without having
       // used one of these is a stop, not a finish.
       actionTools: ['write_file', 'edit_file', 'multi_edit', 'apply_patch'],
-      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
+      onEvent: watch(deps, 'main', progress(log)),
     });
     deps.run?.add(result);
 
@@ -678,7 +704,7 @@ async function doIssueFix(
         tools: pick(deps, reviewToolset()),
         limits: limitsFor(deps),
         cwd: ws.dir,
-        onEvent: watch(deps, 'self_review'),
+        onEvent: watch(deps, 'self_review', progress(log)),
       });
       deps.run?.add(reviewRes);
       totalUsage = addUsage(totalUsage, reviewRes.usage);
@@ -767,17 +793,37 @@ async function doPrReview(
     }
   }
 
-  const ackBody = renderReviewAck(
+  const ackBody = `${renderReviewAck(
     DISPLAY,
     (deps.scanners ?? SCANNERS).map((sc) => sc.name),
     args.securityOnly,
-  );
-  const ack = await octokit.rest.issues.createComment({
-    owner: args.owner,
-    repo: args.repo,
-    issue_number: args.pullNumber,
-    body: ackBody,
-  });
+  )}\n\n<!-- forge-review -->`;
+
+  // Reuse the previous run's comment rather than adding another.
+  //
+  // This is posted before the model runs and rewritten with the result after,
+  // so on every push it left one more "reviewing this pull request" behind.
+  // Three runs, three of them, and the finished review buried above the two
+  // that never finished. The scan report already worked this way; the ack was
+  // the one that got missed.
+  const previous = await findForgeComment(octokit, args, '<!-- forge-review -->');
+  let ackId = previous;
+  if (previous) {
+    await octokit.rest.issues.updateComment({
+      owner: args.owner,
+      repo: args.repo,
+      comment_id: previous,
+      body: ackBody,
+    });
+  } else {
+    const created = await octokit.rest.issues.createComment({
+      owner: args.owner,
+      repo: args.repo,
+      issue_number: args.pullNumber,
+      body: ackBody,
+    });
+    ackId = created.data.id;
+  }
 
   const prRes = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
   const diff = await fetchPrDiff(octokit, args.owner, args.repo, args.pullNumber);
@@ -833,7 +879,7 @@ async function doPrReview(
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps),
       cwd: ws.dir,
-      onEvent: watch(deps),
+      onEvent: watch(deps, 'main', progress(log)),
     });
     deps.run?.add(result);
 
@@ -902,13 +948,13 @@ async function doPrReview(
     await octokit.rest.issues.updateComment({
       owner: args.owner,
       repo: args.repo,
-      comment_id: ack.data.id,
+      comment_id: ackId!,
       body:
         // Appended, not replaced. What was about to run is worth keeping next
         // to what it found — overwriting it means the only record of what was
         // looked for disappears the moment there is an answer, which is
         // exactly when somebody wants to know.
-        `${renderReviewAck(
+        `<!-- forge-review -->\n\n${renderReviewAck(
           DISPLAY,
           (deps.scanners ?? SCANNERS).map((sc) => sc.name),
           args.securityOnly,
@@ -970,7 +1016,7 @@ async function doPrFollowup(
       tools: pick(deps, editToolset({ testCommand: deps.testCommand })),
       limits: limitsFor(deps),
       cwd: ws.dir,
-      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
+      onEvent: watch(deps, 'main', progress(log)),
     });
     deps.run?.add(result);
 
@@ -1079,7 +1125,7 @@ async function doMention(
       tools: pick(deps, selectTools(reviewToolset(), { allowed: skill?.tools ?? [] })),
       limits: limitsFor(deps),
       cwd: ws.dir,
-      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
+      onEvent: watch(deps, 'main', progress(log)),
     });
     deps.run?.add(result);
     await octokit.rest.issues.createComment({
@@ -1276,25 +1322,31 @@ async function doScan(
  * Never throws: not being able to list comments is a reason to post a new one,
  * not a reason to lose the report.
  */
-async function findScanComment(
+async function findForgeComment(
   octokit: HandlerDeps['octokit'],
-  args: { owner: string; repo: string; issueNumber: number },
+  args: { owner?: string; repo?: string; issueNumber?: number; pullNumber?: number } & Record<string, unknown>,
+  marker: string,
 ): Promise<number | undefined> {
+  const issueNumber = (args.issueNumber ?? args.pullNumber) as number | undefined;
+  if (!issueNumber) return undefined;
   try {
     const res = await octokit.rest.issues.listComments({
-      owner: args.owner,
-      repo: args.repo,
-      issue_number: args.issueNumber,
+      owner: args.owner as string,
+      repo: args.repo as string,
+      issue_number: issueNumber,
       per_page: 100,
     });
-    const mine = (res.data as Array<{ id?: number; body?: string }>).filter((c) =>
-      c.body?.includes('<!-- forge-scan -->'),
-    );
+    const mine = (res.data as Array<{ id?: number; body?: string }>).filter((c) => c.body?.includes(marker));
     return mine.length ? mine[mine.length - 1]!.id : undefined;
   } catch {
     return undefined;
   }
 }
+
+const findScanComment = (
+  octokit: HandlerDeps['octokit'],
+  args: { owner: string; repo: string; issueNumber: number },
+): Promise<number | undefined> => findForgeComment(octokit, args, '<!-- forge-scan -->');
 
 export function handleAudit(
   deps: HandlerDeps,
@@ -1330,7 +1382,7 @@ async function doAudit(
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps, Math.max(MAX_ITER, 40)),
       cwd: ws.dir,
-      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
+      onEvent: watch(deps, 'main', progress(log)),
     });
     deps.run?.add(result);
     // An audit keeps its test-file findings, where a pull-request review drops
@@ -1426,7 +1478,7 @@ async function doCiFailure(
       tools: pick(deps, editToolset({ testCommand: deps.testCommand })),
       limits: limitsFor(deps),
       cwd: ws.dir,
-      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
+      onEvent: watch(deps, 'main', progress(log)),
     });
     deps.run?.add(result);
     const committed = await wsOps.commitAll(ws, `ci-fix: resolve failing CI on #${args.pullNumber}\n\n${cleanSummary(result.finalText, 1500)}`);
@@ -1548,7 +1600,7 @@ async function doHistory(
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps, Math.min(MAX_ITER, 12)),
       cwd: ws.dir,
-      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
+      onEvent: watch(deps, 'main', progress(log)),
     });
     deps.run?.add(result);
 
@@ -1663,7 +1715,7 @@ async function doRoutine(
       limits: limitsFor(deps),
       cwd: ws.dir,
       ...(r.write ? { security: await createWorkspaceScanner(ws.dir) } : {}),
-      onEvent: watch(deps, 'main', (e) => e.type === 'tool' && log(`tool: ${e.name}`)),
+      onEvent: watch(deps, 'main', progress(log)),
     });
     deps.run?.add(result);
 
@@ -1762,7 +1814,7 @@ async function doRelease(
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps, Math.min(MAX_ITER, 10)),
       cwd: ws.dir,
-      onEvent: watch(deps),
+      onEvent: watch(deps, 'main', progress(log)),
     });
     deps.run?.add(result);
 

@@ -192,6 +192,31 @@ describe('handlePrReview (integration)', () => {
     expect(review.body).toMatch(/outside the diff/); // out-of-diff finding moved to summary
   });
 
+  it('reuses its own comment instead of stacking one per push', async () => {
+    // Observed live: three runs left three "reviewing this pull request"
+    // comments, with the finished review buried above the two that never
+    // finished. The scan report already upserted; the ack was missed.
+    const ws = fakeWorkspace({ 'app.py': 'x\n' });
+    cleanups.push(ws.cleanup);
+    const { octokit, calls } = fakeOctokit({ diff: '--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n+x\n' });
+    const existing = [{ id: 77, user: { login: 'github-actions[bot]' }, body: 'anything <!-- forge-review -->' }];
+    (octokit as any).rest.issues.listComments = async () => ({ data: existing });
+
+    const deps: HandlerDeps = {
+      octokit,
+      client: new FakeLLMClient([{ text: '[]', toolCalls: [], usage, stopReason: 'end' }]),
+      token: 't',
+      log: () => {},
+      workspace: ws.port,
+    };
+    await handlePrReview(deps, { owner: 'o', repo: 'r', pullNumber: 5 });
+
+    expect(calls.comments).toHaveLength(0);
+    expect(calls.updates.map((u: any) => u.comment_id)).toContain(77);
+    // The marker has to survive the rewrite, or the next push cannot find it.
+    expect(calls.updates.some((u: any) => u.body?.includes('<!-- forge-review -->'))).toBe(true);
+  });
+
   it('finds a secret even when the model reports nothing', async () => {
     // The whole point of scanning before the model: this review would have
     // been "no blocking issues" on the model's word alone.
