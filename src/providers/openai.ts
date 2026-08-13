@@ -147,6 +147,21 @@ export interface OpenAIOptions {
   supportsVision?: boolean;
 }
 
+/**
+ * How long to wait for one model turn.
+ *
+ * Configurable because "too slow" is a property of the endpoint, not of the
+ * client: a 1T-parameter model on somebody's own GPUs is legitimately slower
+ * than a hosted one, and a number that is right for both does not exist.
+ * Clamped so a typo cannot disable the timeout altogether, which is the state
+ * this exists to prevent.
+ */
+export function timeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.FORGE_REQUEST_TIMEOUT_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return 300_000;
+  return Math.min(Math.max(raw, 10_000), 1_800_000);
+}
+
 export class OpenAIAdapter implements LLMClient {
   readonly id: ProviderId;
   readonly supportsVision: boolean;
@@ -164,7 +179,18 @@ export class OpenAIAdapter implements LLMClient {
       (isReasoningModel(this.model) ? 'medium' : undefined);
     this.client =
       opts.client ??
-      (new OpenAI({ apiKey: opts.apiKey, ...(opts.baseURL ? { baseURL: opts.baseURL } : {}) }) as unknown as OpenAILike);
+      (new OpenAI({
+        apiKey: opts.apiKey,
+        ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
+        // The SDK defaults to ten minutes and two retries. Against a hosted
+        // endpoint that is generous; against a self-hosted or experimental one
+        // that stalls, it is half an hour of a job printing nothing, and the
+        // person watching cannot tell a hang from a slow model. Five minutes
+        // is well past the slowest legitimate turn we have measured and well
+        // short of a wasted runner.
+        timeout: timeoutMs(),
+        maxRetries: 2,
+      }) as unknown as OpenAILike);
   }
 
   async chat(req: ChatRequest): Promise<ChatResult> {

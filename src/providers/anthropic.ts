@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { ChatRequest, ChatResult, LLMClient, Msg, ProviderId, StopReason, ToolSpec, Usage } from './types.js';
 import { clampMaxTokens } from './limits.js';
+import { timeoutMs } from './openai.js';
 
 const DEFAULT_MODEL = 'claude-opus-4-8';
 
@@ -159,7 +160,11 @@ export class AnthropicAdapter implements LLMClient {
     this.model = opts.model || process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
     this.promptCaching = opts.promptCaching ?? process.env.FORGE_PROMPT_CACHE !== '0';
     this.thinkingBudget = opts.thinkingBudget ?? Number(process.env.FORGE_THINKING_BUDGET || 0);
-    this.client = opts.client ?? (new Anthropic({ apiKey: opts.apiKey }) as unknown as AnthropicLike);
+    // Same reasoning as the OpenAI adapter: without a timeout the SDK default
+    // plus its retries turns a stalled endpoint into half an hour of silence.
+    this.client =
+      opts.client ??
+      (new Anthropic({ apiKey: opts.apiKey, timeout: timeoutMs(), maxRetries: 2 }) as unknown as AnthropicLike);
   }
 
   async chat(req: ChatRequest): Promise<ChatResult> {
