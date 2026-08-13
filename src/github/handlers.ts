@@ -1122,15 +1122,14 @@ export function handleScan(
  * failed API call into a green check on a pull request that adds a credential,
  * and a gate that fails open is worse than no gate.
  */
-async function touchedByPull(
+async function touchedPaths(
   deps: HandlerDeps,
   owner: string,
   repo: string,
   pullNumber: number,
-  findings: ReviewFinding[],
-): Promise<ReviewFinding[]> {
+): Promise<Set<string> | undefined> {
   const list = deps.octokit.rest.pulls?.listFiles;
-  if (!list) return findings;
+  if (!list) return undefined;
   try {
     // Paginated: a large pull request past the first page would otherwise look
     // as though it touched nothing beyond file 30.
@@ -1142,13 +1141,15 @@ async function touchedByPull(
     });
     const files: { filename: string }[] =
       pages ?? (await list({ owner, repo, pull_number: pullNumber, per_page: 100 })).data;
-    const norm = (p: string) => p.replace(/^\.\//, '');
-    const touched = new Set(files.map((f) => norm(f.filename)));
-    if (touched.size === 0) return findings;
-    return findings.filter((f) => touched.has(norm(f.file)));
+    const touched = new Set(files.map((f) => f.filename.replace(/^\.\//, '')));
+    // An empty pull request is not a reason to scan nothing in particular; let
+    // it fall through to the whole tree rather than report a vacuous success.
+    return touched.size > 0 ? touched : undefined;
   } catch (err) {
-    deps.log(`scan: could not read the changed files (${err instanceof Error ? err.message : 'unknown'}); gating on the whole tree`);
-    return findings;
+    deps.log(
+      `scan: could not read the changed files (${err instanceof Error ? err.message : 'unknown'}); scanning the whole tree`,
+    );
+    return undefined;
   }
 }
 
@@ -1161,14 +1162,36 @@ async function doScan(
   const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: args.ref }, token);
 
   try {
-    const files = await collectFiles(ws.dir);
-    const findings = await runScanners({ cwd: ws.dir }, deps.scanners);
+    // A pull-request review scans the change; an audit scans everything.
+    //
+    // Reviewing a change against the whole repository reports the same
+    // historic findings on every pull request anyone opens. The author reads a
+    // list dominated by files they have never touched, concludes the tool is
+    // talking about somebody else's problem, and stops reading — which costs
+    // more than the historic findings were ever worth surfacing this way.
+    //
+    // The whole tree still gets scanned: on demand with `/secrets`, and on a
+    // schedule. That is where a credential committed last year belongs, in a
+    // report somebody reads once and acts on, rather than as noise attached to
+    // an unrelated change.
+    //
+    // When the changed files cannot be established, this falls back to the
+    // whole tree — the same failure direction as the gate. Scanning too much
+    // is noise; scanning nothing is a green check that means nothing.
+    const changed = args.pullNumber
+      ? await touchedPaths(deps, args.owner, args.repo, args.pullNumber)
+      : undefined;
+
+    const files = await collectFiles(ws.dir, changed);
+    const findings = await runScanners({ cwd: ws.dir, only: changed }, deps.scanners);
     deps.run?.findings(findings);
-    log(`scan: ${findings.length} finding(s) across ${files.length} file(s)`);
+    log(
+      `scan: ${findings.length} finding(s) across ${files.length} ${changed ? 'changed file(s)' : 'file(s)'}`,
+    );
 
     const body = renderScanReport(findings, {
       displayName: DISPLAY,
-      scope: args.pullNumber ? `this pull request's branch` : 'the repository',
+      scope: changed ? 'the files this pull request changes' : 'the repository',
       filesScanned: files.length,
       repoUrl: `https://github.com/${args.owner}/${args.repo}`,
       ref: args.ref,
@@ -1220,9 +1243,7 @@ async function doScan(
     if (args.pullNumber && octokit.rest.checks?.create) {
       try {
         const pr = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
-        const scoped = await touchedByPull(deps, args.owner, args.repo, args.pullNumber, findings);
-        const stop = blocking(scoped, deps.scanBlockOn ?? 'high');
-        const carried = blocking(findings, deps.scanBlockOn ?? 'high').length - stop.length;
+        const stop = blocking(findings, deps.scanBlockOn ?? 'high');
         await octokit.rest.checks.create({
           owner: args.owner,
           repo: args.repo,
@@ -1233,8 +1254,8 @@ async function doScan(
           output: {
             title: stop.length
               ? `${stop.length} finding(s) in the files this pull request changed`
-              : carried > 0
-                ? `No new findings — ${carried} pre-existing, elsewhere in the repository`
+              : changed
+                ? `Nothing found in the ${files.length} file(s) this pull request changes`
                 : 'No credentials, misconfiguration or code findings',
             summary: body.slice(0, 60_000),
           },

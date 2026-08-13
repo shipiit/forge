@@ -106,11 +106,11 @@ describe('the check run that gates the merge', () => {
   });
 });
 
-describe('what the gate is allowed to block on', () => {
-  // The scan reads the whole tree; the gate answers a narrower question — may
-  // THIS change merge. Blocking on the whole tree means the first pull request
-  // after switching the scanner on cannot merge until somebody clears every
-  // historic finding, and what people do at that point is switch it off.
+describe('a review scans the change, an audit scans everything', () => {
+  // Reviewing a change against the whole repository reports the same historic
+  // findings on every pull request anybody opens. The author reads a list
+  // dominated by files they have never touched, decides the tool is talking
+  // about somebody else's problem, and stops reading.
   const tree = {
     'src/api.ts': 'exec(`convert ${req.query.file} out.png`);\n',
     'README.md': '# docs\n',
@@ -121,37 +121,47 @@ describe('what the gate is allowed to block on', () => {
     return o;
   };
 
-  it('does not block a change on a finding somewhere else in the repository', async () => {
+  it('says nothing about a file the change never touched', async () => {
     const ws = workspace(tree);
-    const { octokit, checks } = touching(['README.md']);
+    const { octokit, checks, created } = touching(['README.md']);
     await handleScan(deps(octokit, ws.port), args);
     expect(checks[0].conclusion).toBe('success');
-    // Green, but not silent about why — otherwise the debt disappears.
-    expect(checks[0].output.title).toContain('pre-existing');
+    // Not merely unblocking — absent. The report is about this change.
+    expect(created[0].body).not.toContain('src/api.ts');
     await ws.cleanup();
   });
 
   it('still blocks when the finding is in a file the change touched', async () => {
     const ws = workspace(tree);
-    const { octokit, checks } = touching(['src/api.ts']);
+    const { octokit, checks, created } = touching(['src/api.ts']);
     await handleScan(deps(octokit, ws.port), args);
     expect(checks[0].conclusion).toBe('failure');
-    await ws.cleanup();
-  });
-
-  it('keeps reporting the whole tree even when the gate is scoped', async () => {
-    // Scoping the gate must not shrink the report. A credential committed last
-    // year is still leaked whether or not today's diff went near it.
-    const ws = workspace(tree);
-    const { octokit, created } = touching(['README.md']);
-    await handleScan(deps(octokit, ws.port), args);
     expect(created[0].body).toContain('src/api.ts');
     await ws.cleanup();
   });
 
-  it('gates on everything when the changed files cannot be read', async () => {
-    // Fails closed. Guessing "nothing was touched" would turn one failed API
-    // call into a green check on a pull request that adds a credential.
+  it('says which of the two it did, so the number is not a mystery', async () => {
+    const ws = workspace(tree);
+    const { octokit, created } = touching(['README.md']);
+    await handleScan(deps(octokit, ws.port), args);
+    expect(created[0].body).toContain('the files this pull request changes');
+    await ws.cleanup();
+  });
+
+  it('scans the whole tree for an audit, where there is no change to scope to', async () => {
+    // `/secrets` and the scheduled run are where a credential committed last
+    // year belongs — read once and acted on, not attached to unrelated work.
+    const ws = workspace(tree);
+    const { octokit, created } = octokitWith([]);
+    await handleScan(deps(octokit, ws.port), { owner: 'o', repo: 'r', issueNumber: 7, ref: 'main' });
+    expect(created[0].body).toContain('src/api.ts');
+    expect(created[0].body).toContain('the repository');
+    await ws.cleanup();
+  });
+
+  it('falls back to the whole tree when the changed files cannot be read', async () => {
+    // Scanning too much is noise; scanning nothing is a green check that means
+    // nothing. One failed API call must not become the second.
     const ws = workspace(tree);
     const denied = touching([]);
     (denied.octokit as any).rest.pulls.listFiles = async () => { throw new Error('403'); };
@@ -166,8 +176,8 @@ describe('what the gate is allowed to block on', () => {
   });
 
   it('reads past the first page of changed files', async () => {
-    // Unpaginated, a finding on file 101 of a large pull request would stop
-    // gating — the quietest possible failure.
+    // Unpaginated, file 101 of a large pull request would go unscanned — the
+    // quietest possible failure.
     const ws = workspace(tree);
     const { octokit, checks } = touching([]);
     (octokit as any).rest.pulls.listFiles = async () => ({ data: [{ filename: 'README.md' }] });
