@@ -80,8 +80,55 @@ const SECRET_PATTERNS: RegExp[] = [
 ];
 
 /** Redact common secret shapes from a string before logging. */
-export function redactSecrets(input: string): string {
+/**
+ * Environment variables whose values are credentials.
+ *
+ * Pattern matching only catches shapes somebody thought of. A provider key
+ * that is a bare 32-character string with no prefix matches nothing — and one
+ * reached a public build log, ten characters of it printed inside a JSON parse
+ * error, because the value was fed to the wrong provider and the parser quoted
+ * what it choked on.
+ *
+ * These values are known exactly. Redacting them by identity needs no pattern
+ * and cannot be defeated by a vendor inventing a new prefix.
+ */
+const CREDENTIAL_ENV = [
+  'ANTHROPIC_API_KEY',
+  'OPENAI_API_KEY',
+  'GEMINI_API_KEY',
+  'GOOGLE_API_KEY',
+  'GROQ_API_KEY',
+  'TOGETHER_API_KEY',
+  'TOGETHERAI_API_KEY',
+  'OPENAI_COMPATIBLE_API_KEY',
+  'VERTEX_CREDENTIALS_JSON',
+  'GITHUB_TOKEN',
+  'PRIVATE_KEY',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_SESSION_TOKEN',
+];
+
+/** Escape a literal for use inside a RegExp. */
+function literal(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function redactSecrets(input: string, env: NodeJS.ProcessEnv = process.env): string {
   let out = input;
   for (const pat of SECRET_PATTERNS) out = out.replace(pat, '[REDACTED]');
+
+  for (const name of CREDENTIAL_ENV) {
+    const value = env[name];
+    // Short values are not credentials worth redacting, and blanking a common
+    // word would make the log unreadable while protecting nothing.
+    if (!value || value.length < 12) continue;
+    out = out.replace(new RegExp(literal(value), 'g'), '[REDACTED]');
+    // A parser that chokes on a credential quotes a prefix of it, not the
+    // whole thing — `"yxYLh1SgoD"... is not valid JSON`. The value itself
+    // never appears, so matching it whole catches nothing.
+    for (const n of [40, 24, 16, 10, 8]) {
+      if (value.length > n) out = out.replace(new RegExp(literal(value.slice(0, n)), 'g'), '[REDACTED]');
+    }
+  }
   return out;
 }

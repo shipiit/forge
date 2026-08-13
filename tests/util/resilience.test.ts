@@ -55,6 +55,32 @@ describe('withRetry', () => {
 });
 
 describe('redactSecrets', () => {
+  it('redacts a credential it holds, whatever shape it is', () => {
+    // The patterns catch shapes somebody thought of. A provider key that is a
+    // bare 32-character string with no prefix matches none of them — and one
+    // reached a public build log because of exactly that.
+    const key = 'yxYLh1SgoD3lRa1B4XF0MOErz_oJ67wP';
+    const out = redactSecrets(`connecting with ${key} now`, { OPENAI_COMPATIBLE_API_KEY: key });
+    expect(out).not.toContain(key);
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it('redacts the prefix a parser quotes back', () => {
+    // `Unexpected token 'y', "yxYLh1SgoD"... is not valid JSON` — the value
+    // never appears whole, so matching it whole catches nothing.
+    const key = 'yxYLh1SgoD3lRa1B4XF0MOErz_oJ67wP';
+    const out = redactSecrets(`Unexpected token 'y', "${key.slice(0, 10)}"... is not valid JSON`, {
+      VERTEX_CREDENTIALS_JSON: key,
+    });
+    expect(out).not.toContain('yxYLh1SgoD');
+  });
+
+  it('leaves short values alone', () => {
+    // Blanking a common word would make the log unreadable and protect nothing.
+    const out = redactSecrets('the region is us-central1', { VERTEX_CREDENTIALS_JSON: 'us-central1' });
+    expect(out).toContain('us-central1');
+  });
+
   it('redacts GitHub, OpenAI, Anthropic, AWS keys and tokens in URLs', () => {
     const s = redactSecrets(
       'token ghp_abcdefghijklmnopqrstuvwxyz0123 and sk-ant-abcdefghij1234567890xyz and ' +
