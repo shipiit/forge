@@ -8,6 +8,12 @@ export interface OctokitLike {
       get(params: Record<string, unknown>): Promise<{ data: { body: string | null; title: string; head: { ref: string; sha: string }; base: { ref: string } } }>;
       list(params: Record<string, unknown>): Promise<{ data: Array<{ number: number; html_url: string }> }>;
       listReviewComments?(params: Record<string, unknown>): Promise<unknown>;
+      /**
+       * Optional: the files a pull request changed. The scan gates on these,
+       * so that enabling it does not block every merge on historic findings.
+       * Absent, the gate covers the whole tree — stricter, never looser.
+       */
+      listFiles?(params: Record<string, unknown>): Promise<{ data: Array<{ filename: string }> }>;
     };
     issues: {
       createComment(params: Record<string, unknown>): Promise<{ data: { id: number; html_url?: string } }>;
@@ -37,6 +43,12 @@ export interface OctokitLike {
     };
   };
   request(route: string, params: Record<string, unknown>): Promise<{ data: unknown }>;
+  /**
+   * Optional: follows `Link` headers. A pull request touching more than one
+   * page of files would otherwise look as though it changed only the first
+   * hundred, and a finding on file 101 would stop gating.
+   */
+  paginate?<T>(route: unknown, params: Record<string, unknown>): Promise<T[]>;
   /** Optional: thread resolution has no REST equivalent, so it needs GraphQL. */
   graphql?(query: string, variables?: Record<string, unknown>): Promise<unknown>;
 }

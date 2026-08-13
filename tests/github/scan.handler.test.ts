@@ -105,3 +105,75 @@ describe('the check run that gates the merge', () => {
     await ws.cleanup();
   });
 });
+
+describe('what the gate is allowed to block on', () => {
+  // The scan reads the whole tree; the gate answers a narrower question — may
+  // THIS change merge. Blocking on the whole tree means the first pull request
+  // after switching the scanner on cannot merge until somebody clears every
+  // historic finding, and what people do at that point is switch it off.
+  const tree = {
+    'src/api.ts': 'exec(`convert ${req.query.file} out.png`);\n',
+    'README.md': '# docs\n',
+  };
+  const touching = (files: string[]) => {
+    const o = octokitWith([]);
+    (o.octokit as any).rest.pulls.listFiles = async () => ({ data: files.map((filename) => ({ filename })) });
+    return o;
+  };
+
+  it('does not block a change on a finding somewhere else in the repository', async () => {
+    const ws = workspace(tree);
+    const { octokit, checks } = touching(['README.md']);
+    await handleScan(deps(octokit, ws.port), args);
+    expect(checks[0].conclusion).toBe('success');
+    // Green, but not silent about why — otherwise the debt disappears.
+    expect(checks[0].output.title).toContain('pre-existing');
+    await ws.cleanup();
+  });
+
+  it('still blocks when the finding is in a file the change touched', async () => {
+    const ws = workspace(tree);
+    const { octokit, checks } = touching(['src/api.ts']);
+    await handleScan(deps(octokit, ws.port), args);
+    expect(checks[0].conclusion).toBe('failure');
+    await ws.cleanup();
+  });
+
+  it('keeps reporting the whole tree even when the gate is scoped', async () => {
+    // Scoping the gate must not shrink the report. A credential committed last
+    // year is still leaked whether or not today's diff went near it.
+    const ws = workspace(tree);
+    const { octokit, created } = touching(['README.md']);
+    await handleScan(deps(octokit, ws.port), args);
+    expect(created[0].body).toContain('src/api.ts');
+    await ws.cleanup();
+  });
+
+  it('gates on everything when the changed files cannot be read', async () => {
+    // Fails closed. Guessing "nothing was touched" would turn one failed API
+    // call into a green check on a pull request that adds a credential.
+    const ws = workspace(tree);
+    const denied = touching([]);
+    (denied.octokit as any).rest.pulls.listFiles = async () => { throw new Error('403'); };
+    await handleScan(deps(denied.octokit, ws.port), args);
+    expect(denied.checks[0].conclusion).toBe('failure');
+
+    // Same when the API surface has no listFiles at all.
+    const old = octokitWith([]);
+    await handleScan(deps(old.octokit, ws.port), args);
+    expect(old.checks[0].conclusion).toBe('failure');
+    await ws.cleanup();
+  });
+
+  it('reads past the first page of changed files', async () => {
+    // Unpaginated, a finding on file 101 of a large pull request would stop
+    // gating — the quietest possible failure.
+    const ws = workspace(tree);
+    const { octokit, checks } = touching([]);
+    (octokit as any).rest.pulls.listFiles = async () => ({ data: [{ filename: 'README.md' }] });
+    (octokit as any).paginate = async () => [{ filename: 'README.md' }, { filename: 'src/api.ts' }];
+    await handleScan(deps(octokit, ws.port), args);
+    expect(checks[0].conclusion).toBe('failure');
+    await ws.cleanup();
+  });
+});

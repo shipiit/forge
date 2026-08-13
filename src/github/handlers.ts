@@ -1108,6 +1108,50 @@ export function handleScan(
   return withLock(`scan:${args.owner}/${args.repo}#${args.issueNumber}`, deps.log, () => doScan(deps, args));
 }
 
+/**
+ * The findings that sit in files this pull request changed.
+ *
+ * Asked of the API rather than derived from a diff, because the scan works
+ * from a clone and never had the diff in hand. A renamed or deleted file comes
+ * back too; a finding cannot be in one, so the extra names cost nothing.
+ *
+ * When the touched set cannot be established — an Octokit surface without
+ * `listFiles`, a permission the workflow was not granted, a network failure —
+ * every finding is returned. That keeps the gate exactly as strict as it was
+ * before this scoping existed. Guessing "nothing was touched" would turn one
+ * failed API call into a green check on a pull request that adds a credential,
+ * and a gate that fails open is worse than no gate.
+ */
+async function touchedByPull(
+  deps: HandlerDeps,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  findings: ReviewFinding[],
+): Promise<ReviewFinding[]> {
+  const list = deps.octokit.rest.pulls?.listFiles;
+  if (!list) return findings;
+  try {
+    // Paginated: a large pull request past the first page would otherwise look
+    // as though it touched nothing beyond file 30.
+    const pages = await deps.octokit.paginate?.<{ filename: string }>(list, {
+      owner,
+      repo,
+      pull_number: pullNumber,
+      per_page: 100,
+    });
+    const files: { filename: string }[] =
+      pages ?? (await list({ owner, repo, pull_number: pullNumber, per_page: 100 })).data;
+    const norm = (p: string) => p.replace(/^\.\//, '');
+    const touched = new Set(files.map((f) => norm(f.filename)));
+    if (touched.size === 0) return findings;
+    return findings.filter((f) => touched.has(norm(f.file)));
+  } catch (err) {
+    deps.log(`scan: could not read the changed files (${err instanceof Error ? err.message : 'unknown'}); gating on the whole tree`);
+    return findings;
+  }
+}
+
 async function doScan(
   deps: HandlerDeps,
   args: { owner: string; repo: string; issueNumber: number; ref: string; pullNumber?: number },
@@ -1161,10 +1205,24 @@ async function doScan(
 
     // A check run is what actually stops a merge, once it is required. Neutral
     // rather than failing when nothing blocks, so a clean scan never nags.
-    const stop = blocking(findings, deps.scanBlockOn ?? 'high');
+    //
+    // The scan reads the whole tree, and the report says so — a credential
+    // committed last year is still leaked, and hiding it because today's diff
+    // did not touch it would be the wrong report. The gate is a different
+    // question: it asks whether *this* change may merge. Scoping it to the
+    // files the pull request touched is what makes enabling the scanner
+    // survivable. Whole-tree blocking means the first pull request after
+    // switching it on cannot merge until somebody clears every historic
+    // finding, and what people do at that point is turn the scanner off.
+    //
+    // The rest still appear in the comment, under their own heading, so the
+    // debt stays visible without holding a README change hostage.
     if (args.pullNumber && octokit.rest.checks?.create) {
       try {
         const pr = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
+        const scoped = await touchedByPull(deps, args.owner, args.repo, args.pullNumber, findings);
+        const stop = blocking(scoped, deps.scanBlockOn ?? 'high');
+        const carried = blocking(findings, deps.scanBlockOn ?? 'high').length - stop.length;
         await octokit.rest.checks.create({
           owner: args.owner,
           repo: args.repo,
@@ -1174,8 +1232,10 @@ async function doScan(
           conclusion: stop.length ? 'failure' : 'success',
           output: {
             title: stop.length
-              ? `${stop.length} finding(s) to resolve before merging`
-              : 'No credentials, misconfiguration or code findings',
+              ? `${stop.length} finding(s) in the files this pull request changed`
+              : carried > 0
+                ? `No new findings — ${carried} pre-existing, elsewhere in the repository`
+                : 'No credentials, misconfiguration or code findings',
             summary: body.slice(0, 60_000),
           },
         });
