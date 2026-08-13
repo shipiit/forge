@@ -192,6 +192,33 @@ describe('handlePrReview (integration)', () => {
     expect(review.body).toMatch(/outside the diff/); // out-of-diff finding moved to summary
   });
 
+  it('hands the changed files over instead of making the model fetch them', async () => {
+    // Measured on a real two-file pull request: five read_file calls and a
+    // list_dir before the review started, each a round trip, each resent on
+    // every turn afterwards. The diff is hunks with three lines of context;
+    // reading the file is the first thing any reviewer does.
+    const ws = fakeWorkspace({ 'app.py': 'SECRET_MARKER_IN_FILE = 1\n' });
+    cleanups.push(ws.cleanup);
+    const diff = ['--- a/app.py', '+++ b/app.py', '@@ -1 +1 @@', '+x'].join('\n');
+    const { octokit } = fakeOctokit({ diff });
+    const client = new FakeLLMClient([{ text: '[]', toolCalls: [], usage, stopReason: 'end' }]);
+    const seen: string[] = [];
+    const orig = client.chat.bind(client);
+    (client as any).chat = async (req: any) => {
+      seen.push(JSON.stringify(req.messages));
+      return orig(req);
+    };
+
+    await handlePrReview(
+      { octokit, client, token: 't', log: () => {}, workspace: ws.port } as HandlerDeps,
+      { owner: 'o', repo: 'r', pullNumber: 5 },
+    );
+
+    // The file's contents are in the first message, before any tool call.
+    expect(seen[0]).toContain('SECRET_MARKER_IN_FILE');
+    expect(seen[0]).toContain('do not read them again');
+  });
+
   it('reuses its own comment instead of stacking one per push', async () => {
     // Observed live: three runs left three "reviewing this pull request"
     // comments, with the finished review buried above the two that never

@@ -71,11 +71,14 @@ import {
   renderAuditReport,
   capNits,
   scopeFindingsToDiff,
+  changedFiles,
   type ReviewFinding,
 } from './review.js';
 import { parseSarif } from './sarif.js';
 import { redactSecrets } from '../util/resilience.js';
 import { collectFiles, inTestFile, mergeFindings, runScanners, SCANNERS, type Scanner } from '../scan/index.js';
+import { MAX_READ_CHARS } from '../agent/tools/fs.js';
+import type { ContentPart } from '../providers/types.js';
 import { blocking, renderReviewAck, renderReviewDone, renderScanReport, type BlockLevel } from '../scan/report.js';
 import { fetchDependabotFindings } from './dependabot.js';
 import { isSafeRef, realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
@@ -214,6 +217,62 @@ function watch(
   onEvent?: (e: AgentEvent) => void,
 ): ((e: AgentEvent) => void) | undefined {
   return deps.run ? deps.run.listen(phase, onEvent) : onEvent;
+}
+
+/**
+ * The changed files, in full, as one block of content.
+ *
+ * Bounded twice over: each file at the same cap `read_file` uses, and the
+ * whole block at four times that. A pull request that rewrites a lockfile
+ * would otherwise put half a million characters into the first message and
+ * resend them on every turn afterwards — the exact cost this exists to avoid.
+ * Past the budget the remaining files are named rather than included, so the
+ * agent knows to read them and knows they were not hidden from it.
+ */
+async function seedChangedFiles(
+  cwd: string,
+  diff: string,
+  log: (m: string) => void,
+): Promise<ContentPart | undefined> {
+  const files = changedFiles(diff);
+  if (files.length === 0) return undefined;
+
+  const PER_FILE = MAX_READ_CHARS;
+  const TOTAL = MAX_READ_CHARS * 4;
+  const parts: string[] = [];
+  const skipped: string[] = [];
+  let used = 0;
+
+  for (const rel of files) {
+    if (used >= TOTAL) {
+      skipped.push(rel);
+      continue;
+    }
+    let text: string;
+    try {
+      text = await fs.readFile(path.join(cwd, rel), 'utf8');
+    } catch {
+      continue; // deleted by this change, or binary — the diff already says so
+    }
+    const room = Math.min(PER_FILE, TOTAL - used);
+    const clipped = text.length > room ? `${text.slice(0, room)}\n… [truncated — use read_file with offset for the rest]` : text;
+    used += clipped.length;
+    parts.push(`--- ${rel} ---\n${clipped}`);
+  }
+
+  if (parts.length === 0) return undefined;
+  log(`seeded ${parts.length} changed file(s) into the review context${skipped.length ? `, ${skipped.length} too large to include` : ''}`);
+
+  const tail = skipped.length
+    ? `\n\nNot included, over the budget — read them if you need to: ${skipped.join(', ')}`
+    : '';
+  return {
+    type: 'text',
+    text:
+      `Full contents of the files this pull request changes, at the head commit. ` +
+      `You already have these — do not read them again. Read other files only when a specific ` +
+      `question about reachability needs answering.\n\n${parts.join('\n\n')}${tail}`,
+  };
 }
 
 /**
@@ -866,6 +925,21 @@ async function doPrReview(
     if (scanned.length) log(`scanners: ${scanned.length} finding(s) before the model ran`);
     if (inTests) log(`scanners: ${inTests} finding(s) in test files, reported but not commented on`);
 
+    // Hand over the changed files whole, before the first turn.
+    //
+    // A diff is a set of hunks with three lines of context, so the first thing
+    // any reviewer does is read the files to see what the hunks sit in. Left to
+    // do that itself the agent spends its opening turns on read_file and
+    // list_dir — five reads and a directory listing on a two-file change,
+    // measured — and each one costs a round trip and is resent on every turn
+    // afterwards. Handing them over costs the same tokens once instead of
+    // repeatedly, and removes the turns entirely.
+    //
+    // Only the changed files. Reading a caller to judge whether a sink is
+    // reachable is still allowed and still worth a turn; orienting is not.
+    const seeded = await seedChangedFiles(ws.dir, diff, log);
+    const content = [...initialContent, ...(seeded ? [seeded] : [])];
+
     const result = await runAgent({
       client,
       // REVIEW.md overrides the default guidance; FORGE.md is context whose
@@ -875,7 +949,7 @@ async function doPrReview(
         ws.dir,
         prompt(deps, composeReviewSystemPrompt(reviewSystemPrompt({ securityOnly: args.securityOnly }), instructions)),
       ),
-      initialContent: scanned.length ? [...initialContent, scanSummary(scanned)] : initialContent,
+      initialContent: scanned.length ? [...content, scanSummary(scanned)] : content,
       tools: pick(deps, reviewToolset()),
       limits: limitsFor(deps),
       cwd: ws.dir,
