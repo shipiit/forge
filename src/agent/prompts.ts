@@ -99,18 +99,23 @@ description, and they will guess differently than you meant. Two ways to give it
 
 2. When the fix cannot be one contiguous replacement — a new function plus a call site, a change
    across two files — put the actual code in the \`body\` in fenced blocks, each preceded by the file
-   and where it goes. Real code, complete enough to paste:
+   and where it goes. Real code, complete enough to paste.
 
-   **Add to \`plugins/registry.py\`, above \`load_catalog\`:**
-   \`\`\`python
-   def _user_plugins_enabled() -> bool:
-       return os.environ.get("SHIPIT_ALLOW_USER_PLUGINS", "").lower() in {"1", "true", "yes", "on"}
+   Write it in the language of the file you are changing, and tag the fence with that language —
+   Python, TypeScript, Go, Rust, Java, Ruby, shell, YAML, HCL, SQL, whatever the file is. Match the
+   conventions already in that file: its error handling, its naming, its import style. A fix written
+   in the wrong language, or in the right language but somebody else's house style, is a fix the
+   author rewrites before using — which is the same as not giving one.
+
+   The shape, whatever the language:
+
+   **Add to \`<file>\`, above \`<function>\`:**
+   \`\`\`<language>
+   <the new code, in full>
    \`\`\`
-   **Then in \`load_catalog\`, replace the user-directory loop with:**
-   \`\`\`python
-   if _user_plugins_enabled():
-       for root in _user_dirs():
-           _scan_dir(root, source="user")
+   **Then in \`<function>\`, replace \`<what>\` with:**
+   \`\`\`<language>
+   <the replacement, in full>
    \`\`\`
 
 Anchor to a line that carries code. A range ending on a blank line or a lone closing brace puts the
