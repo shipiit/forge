@@ -84,7 +84,7 @@ export function renderFindingBody(
   if (rest) {
     out += `\n\n<details><summary>Why this matters</summary>\n\n${rest}\n\n</details>`;
   }
-  if (f.suggestion !== undefined && withSuggestion) {
+  if (f.suggestion && withSuggestion) {
     // Kept out of the collapsed block: GitHub only offers "Commit suggestion"
     // on a suggestion it can see.
     out += `\n\n\`\`\`suggestion\n${f.suggestion}\n\`\`\``;
@@ -256,7 +256,11 @@ const COMMENT_ONLY = /^\s*(?:\/\/|\/\*|\*|#|<!--|--)/;
  * fix turns an explanation into an instruction.
  */
 export function suggestionFits(f: ReviewFinding, lineText?: string): boolean {
-  if (f.suggestion === undefined) return false;
+  // `!f.suggestion`, not `=== undefined`. A model told that suggestions matter
+  // starts emitting `"suggestion": null` on the findings that do not have one,
+  // and an explicit null is not an absent key — it reached `.split` and took
+  // the whole review down after the model had already been paid for.
+  if (!f.suggestion) return false;
   if (lineText === undefined) return true; // nothing to check it against
   const replacingComment = COMMENT_ONLY.test(lineText) && lineText.trim() !== '';
   if (!replacingComment) return true;
@@ -475,10 +479,38 @@ export function parseFindings(text: string): ReviewFinding[] {
   if (start === -1 || end === -1 || end < start) return [];
   try {
     const arr = JSON.parse(raw.slice(start, end + 1)) as unknown[];
-    return arr.filter(isFinding);
+    return arr.filter(isFinding).map(normalise);
   } catch {
     return [];
   }
+}
+
+/**
+ * Make a parsed finding safe to use without checking every field again.
+ *
+ * The model writes this JSON, so every optional string can arrive as an
+ * explicit `null` rather than an absent key — and `null` passes a
+ * `!== undefined` guard on its way to `.split`, which is how one finding took
+ * down a whole review after the model had already been paid for it.
+ *
+ * Normalising once here means the rest of the pipeline can treat these as the
+ * strings their types claim they are. Cheaper than a guard at every use, and
+ * it cannot be forgotten at a new one.
+ */
+function normalise(f: ReviewFinding): ReviewFinding {
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
+  const out: ReviewFinding = {
+    ...f,
+    body: str(f.body) ?? '',
+    category: str(f.category) ?? '',
+    lens: f.lens === 'security' ? 'security' : 'quality',
+    // A start after the end is not a range; GitHub rejects the comment outright.
+    startLine: typeof f.startLine === 'number' && f.startLine <= f.endLine ? f.startLine : f.endLine,
+  };
+  const suggestion = str(f.suggestion);
+  if (suggestion === undefined) delete out.suggestion;
+  else out.suggestion = suggestion;
+  return out;
 }
 
 function isFinding(x: unknown): x is ReviewFinding {
