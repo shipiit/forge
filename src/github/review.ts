@@ -88,6 +88,14 @@ export function renderFindingBody(
     // Kept out of the collapsed block: GitHub only offers "Commit suggestion"
     // on a suggestion it can see.
     out += `\n\n\`\`\`suggestion\n${f.suggestion}\n\`\`\``;
+  } else if (f.suggestion) {
+    // The fix is still worth reading; it just must not carry a button that
+    // commits it. Rejected suggestions are ones whose placement looks wrong,
+    // and a wrong placement applied in one click is a broken file.
+    out += `\n\n<details><summary>Suggested fix — check placement before applying</summary>\n\n` +
+      `\`\`\`\n${f.suggestion}\n\`\`\`\n\n` +
+      `<sub>Not offered as a committable suggestion: it does not fit the lines this comment is ` +
+      `anchored to. Apply it where it belongs.</sub>\n\n</details>`;
   }
   // How to make it go away, said once, quietly. Both mechanisms already
   // existed and neither was discoverable: people were left with a comment and
@@ -255,17 +263,55 @@ const COMMENT_ONLY = /^\s*(?:\/\/|\/\*|\*|#|<!--|--)/;
  * not a comment means the finding landed on the wrong line, because no real
  * fix turns an explanation into an instruction.
  */
-export function suggestionFits(f: ReviewFinding, lineText?: string): boolean {
+/** A line that declares something: replacing it without restoring it breaks the file. */
+const DECLARATION =
+  /^\s*(?:(?:async\s+)?def|class|(?:export\s+)?(?:async\s+)?function|func|fn|impl|interface|trait|struct|enum|module|package)\b/;
+
+/** How far a line is indented, for comparing where code sits. */
+const indentOf = (line: string): number => (line.match(/^[ \t]*/)?.[0].length ?? 0);
+
+export function suggestionFits(f: ReviewFinding, lineText?: string, replaced?: string[]): boolean {
   // `!f.suggestion`, not `=== undefined`. A model told that suggestions matter
   // starts emitting `"suggestion": null` on the findings that do not have one,
   // and an explicit null is not an absent key — it reached `.split` and took
   // the whole review down after the model had already been paid for.
   if (!f.suggestion) return false;
+
+  const lines = f.suggestion.split('\n');
+
+  if (replaced && replaced.length > 0) {
+    const body = replaced.join('\n');
+
+    // Replacing a declaration without writing it back deletes it. Seen live:
+    // a suggestion anchored across two blank lines, a `def` and the first line
+    // of its docstring, replacing all four with statements from the function
+    // body — one click away from a file with no signature, an unterminated
+    // docstring, and a name that is not in scope.
+    const declarations = replaced.filter((l) => DECLARATION.test(l));
+    for (const decl of declarations) {
+      const name = decl.trim();
+      if (!lines.some((l) => l.trim() === name)) return false;
+    }
+
+    // An odd number of triple quotes means the range starts or ends inside a
+    // docstring. Replacing part of one leaves the rest dangling.
+    const triples = (body.match(/"""|'''/g) ?? []).length;
+    if (triples % 2 !== 0) return false;
+
+    // Top-level code replaced by indented code is a fragment that has been
+    // anchored at the wrong depth.
+    const firstReplaced = replaced.find((l) => l.trim() !== '');
+    const firstSuggested = lines.find((l) => l.trim() !== '');
+    if (firstReplaced !== undefined && firstSuggested !== undefined) {
+      if (indentOf(firstReplaced) === 0 && indentOf(firstSuggested) > 0) return false;
+    }
+  }
+
   if (lineText === undefined) return true; // nothing to check it against
   const replacingComment = COMMENT_ONLY.test(lineText) && lineText.trim() !== '';
   if (!replacingComment) return true;
   // Rewriting a comment as a comment is fine — a typo, a stale note.
-  return f.suggestion.split('\n').every((l) => l.trim() === '' || COMMENT_ONLY.test(l));
+  return lines.every((l) => l.trim() === '' || COMMENT_ONLY.test(l));
 }
 
 /**
@@ -368,6 +414,24 @@ export function scopeFindingsToDiff(findings: ReviewFinding[], diff: string): Re
  * diff), findings whose line is not commentable are moved into the summary body
  * instead of becoming inline comments (avoiding GitHub 422 errors).
  */
+/**
+ * The lines a suggestion would overwrite, in order.
+ *
+ * GitHub replaces `start_line`..`line` inclusive, so that range — not the
+ * single anchored line — is what has to be checked before offering a commit
+ * button. Empty when the diff text is unavailable, which leaves the older,
+ * weaker check in place rather than blocking every suggestion.
+ */
+function replacedRange(f: ReviewFinding, endLine: number, lineText?: Map<number, string>): string[] | undefined {
+  if (!lineText) return undefined;
+  const out: string[] = [];
+  for (let n = Math.min(f.startLine, endLine); n <= endLine; n++) {
+    const t = lineText.get(n);
+    if (t !== undefined) out.push(t);
+  }
+  return out.length ? out : undefined;
+}
+
 export function buildReviewPayload(
   findings: ReviewFinding[],
   opts: {
@@ -404,7 +468,7 @@ export function buildReviewPayload(
         ? { start_line: f.startLine }
         : {}),
       body: renderFindingBody(f, {
-        withSuggestion: suggestionFits(f, opts.lineText?.get(f.file)?.get(line)),
+        withSuggestion: suggestionFits(f, opts.lineText?.get(f.file)?.get(line), replacedRange(f, line, opts.lineText?.get(f.file))),
       }),
     };
   });
