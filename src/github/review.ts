@@ -264,6 +264,41 @@ export function suggestionFits(f: ReviewFinding, lineText?: string): boolean {
   return f.suggestion.split('\n').every((l) => l.trim() === '' || COMMENT_ONLY.test(l));
 }
 
+/**
+ * The line a comment should actually hang on.
+ *
+ * A model asked for a range often gives one that ends on a blank line or a
+ * closing brace — the end of the block it was describing, not the code. GitHub
+ * anchors the comment to the last line, so the reader opens a finding about
+ * arbitrary code execution and sees an empty `+`. Observed exactly that:
+ * "Comment on lines +114 to +115" over two blank additions.
+ *
+ * So walk back from the end of the range to the last line that carries code.
+ * Nothing in the range does — the whole range is blank — and the original
+ * line stands, because moving a comment somewhere arbitrary is worse than
+ * leaving it where the model meant it.
+ */
+export function anchorLine(
+  f: ReviewFinding,
+  valid?: Set<number>,
+  lineText?: Map<number, string>,
+): number {
+  if (!lineText) return f.endLine;
+  const meaningful = (n: number): boolean => {
+    const t = lineText.get(n);
+    if (t === undefined) return false;
+    const trimmed = t.trim();
+    // A brace or a bracket alone is a line of code, but it is not the line
+    // anyone wants to read a security finding against.
+    return trimmed !== '' && !/^[)\]}\s,;]*$/.test(trimmed);
+  };
+  if (meaningful(f.endLine)) return f.endLine;
+  for (let n = f.endLine - 1; n >= f.startLine; n--) {
+    if ((!valid || valid.has(n)) && meaningful(n)) return n;
+  }
+  return f.endLine;
+}
+
 export function parseDiffValidLines(diff: string): Map<string, Set<number>> {
   const map = new Map<string, Set<number>>();
   let file: string | null = null;
@@ -354,16 +389,21 @@ export function buildReviewPayload(
     else summaryOnly.push(f);
   }
 
-  const comments: ReviewComment[] = inlineable.map((f) => ({
-    path: f.file,
-    line: f.endLine,
-    ...(f.startLine !== f.endLine && (!opts.validLines || opts.validLines.get(f.file)?.has(f.startLine))
-      ? { start_line: f.startLine }
-      : {}),
-    body: renderFindingBody(f, {
-      withSuggestion: suggestionFits(f, opts.lineText?.get(f.file)?.get(f.endLine)),
-    }),
-  }));
+  const comments: ReviewComment[] = inlineable.map((f) => {
+    const line = anchorLine(f, opts.validLines?.get(f.file), opts.lineText?.get(f.file));
+    return {
+      path: f.file,
+      line,
+      ...(f.startLine !== f.endLine &&
+      f.startLine < line &&
+      (!opts.validLines || opts.validLines.get(f.file)?.has(f.startLine))
+        ? { start_line: f.startLine }
+        : {}),
+      body: renderFindingBody(f, {
+        withSuggestion: suggestionFits(f, opts.lineText?.get(f.file)?.get(line)),
+      }),
+    };
+  });
 
   let body = renderSummary(filtered, displayName);
   if (opts.droppedNits && opts.droppedNits > 0) {

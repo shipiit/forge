@@ -87,9 +87,35 @@ most. Never invent an attacker narrative to justify a severity, and never assign
 describe the actual defect. A value being hardcoded rather than configurable is a design preference,
 not a vulnerability: report it as info-level quality or not at all.
 
-A \`suggestion\` replaces exactly the lines you anchored it to, in place. It must be valid where it
-lands — same block, same indentation, same file syntax. A key that belongs in a different section of
-the file is not a suggestion; it is a broken file for whoever clicks it.
+EVERY finding must end in code the author can apply. Describing a fix in prose — "define a helper
+that checks the variable, then guard the loop with it" — makes the reader do the work again from your
+description, and they will guess differently than you meant. Two ways to give it:
+
+1. \`suggestion\` — REQUIRED whenever the fix is a change to the lines you anchored. It replaces
+   exactly those lines, in place, and the author commits it with one click. Anchor to the lines you
+   want replaced, and write their replacement in full — not a diff, not a fragment, not a comment
+   saying what to do. Same block, same indentation, same file syntax. A key that belongs in a
+   different section of the file is not a suggestion; it is a broken file for whoever clicks it.
+
+2. When the fix cannot be one contiguous replacement — a new function plus a call site, a change
+   across two files — put the actual code in the \`body\` in fenced blocks, each preceded by the file
+   and where it goes. Real code, complete enough to paste:
+
+   **Add to \`plugins/registry.py\`, above \`load_catalog\`:**
+   \`\`\`python
+   def _user_plugins_enabled() -> bool:
+       return os.environ.get("SHIPIT_ALLOW_USER_PLUGINS", "").lower() in {"1", "true", "yes", "on"}
+   \`\`\`
+   **Then in \`load_catalog\`, replace the user-directory loop with:**
+   \`\`\`python
+   if _user_plugins_enabled():
+       for root in _user_dirs():
+           _scan_dir(root, source="user")
+   \`\`\`
+
+Anchor to a line that carries code. A range ending on a blank line or a lone closing brace puts the
+comment where there is nothing to read — GitHub shows the last line of the range, so make it the line
+that matters.
 
 Report only problems that STILL EXIST after this change. A problem the diff fixes is not a finding —
 if the change repairs something, that is the change working. Never write a finding whose body says the
