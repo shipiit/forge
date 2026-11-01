@@ -2,6 +2,7 @@ import type { AgentEvent, AgentResult } from '../agent/loop.js';
 import type { LLMClient } from '../providers/types.js';
 import { estimateCost } from '../util/cost.js';
 import type { ReviewFinding } from '../github/review.js';
+import { redactSecrets } from '../util/resilience.js';
 import type { FindingRecord, Recorder, RunMeta, RunOutcome } from './types.js';
 
 /**
@@ -74,10 +75,16 @@ export function outcomeFrom(
 }
 
 /** Findings, flattened for storage so they are queryable without a file. */
+/** Enough for any real explanation; a runaway one is cut rather than stored whole. */
+const MAX_TEXT = 8000;
+
 export function findingRecords(findings: ReviewFinding[], postedInline: Set<string> = new Set()): FindingRecord[] {
   return findings.map((f) => ({
     file: f.file,
     line: f.endLine,
+    startLine: f.startLine,
+    body: redactSecrets(f.body ?? '').slice(0, MAX_TEXT),
+    ...(f.suggestion ? { suggestion: redactSecrets(f.suggestion).slice(0, MAX_TEXT) } : {}),
     lens: f.lens,
     severity: f.severity,
     ...(f.category ? { category: f.category } : {}),

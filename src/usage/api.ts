@@ -17,6 +17,7 @@ import {
   findingStats,
   findingTrend,
   findingsList,
+  findingDetail,
   outputs,
   toolErrors,
   runDetail,
@@ -217,7 +218,12 @@ export async function serveUsage(opts: ApiOptions, req: IncomingMessage, res: Se
     }
     if (route === '/api/findings/list') {
       const severity = url.searchParams.get('severity') ?? undefined;
-      return json(res, 200, findingsList(db, { ...w, ...(severity ? { severity } : {}) }, now()), cors), true;
+      const offset = Number(url.searchParams.get('offset') ?? 0) || 0;
+      return json(res, 200, findingsList(db, { ...w, offset, ...(severity ? { severity } : {}) }, now()), cors), true;
+    }
+    if (route === '/api/findings/detail') {
+      const found = findingDetail(db, url.searchParams.get('id') ?? '');
+      return found ? (json(res, 200, found, cors), true) : (json(res, 404, { error: 'no such finding' }, cors), true);
     }
     if (route === '/api/findings/trend') return json(res, 200, findingTrend(db, w, now()), cors), true;
     if (route === '/api/findings') return json(res, 200, findingStats(db, w, now()), cors), true;

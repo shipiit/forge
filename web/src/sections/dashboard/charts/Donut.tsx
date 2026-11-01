@@ -44,8 +44,8 @@ export function Donut({ slices, total, label, format, colorOf }: {
   });
 
   return (
-    <div className="grid max-w-[520px] items-center gap-5 sm:grid-cols-[168px_1fr]">
-      <svg viewBox="0 0 160 160" className="mx-auto w-[160px]" role="img" aria-label={label}>
+    <div className="flex flex-wrap items-center gap-5">
+      <svg viewBox="0 0 160 160" className="mx-auto w-[150px] shrink-0" role="img" aria-label={label}>
         {arcs.map((a) => (
           <path
             key={a.key}
@@ -66,7 +66,7 @@ export function Donut({ slices, total, label, format, colorOf }: {
         </text>
       </svg>
 
-      <div className="grid gap-2">
+      <div className="grid min-w-[220px] flex-1 gap-2">
         {slices.map((s, i) => (
           <div
             key={s.key}
@@ -76,7 +76,7 @@ export function Donut({ slices, total, label, format, colorOf }: {
             onMouseLeave={() => setHover(null)}
           >
             <i className="h-2.5 w-2.5 rounded-sm" style={{ background: colorOf ? colorOf(s.key, i) : seriesColor(i) }} />
-            <span className="truncate">{s.key}</span>
+            <span className="truncate" title={s.key}>{s.key}</span>
             <span className="font-mono text-xs tabular-nums">{format(s.value)}</span>
             <span className="text-right font-mono text-xs tabular-nums text-muted">{((s.value / total) * 100).toFixed(1)}%</span>
           </div>

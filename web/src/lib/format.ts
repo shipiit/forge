@@ -87,12 +87,13 @@ export function delta(now: number, before: number): Delta {
 }
 
 /** The series palette, in the order charts should consume it. */
+/** Eight hues no two of which are the same colour family, so a legend is readable at a glance. */
 export const SERIES = [
   'rgb(var(--accent))',
   'rgb(var(--info))',
   'rgb(var(--teal))',
-  'rgb(var(--accent-warm))',
-  'rgb(var(--accent2))',
+  'rgb(var(--series-violet))',
+  'rgb(var(--series-pink))',
   'rgb(var(--ok))',
   'rgb(var(--warn))',
   'rgb(var(--muted))',

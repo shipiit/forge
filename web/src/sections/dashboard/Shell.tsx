@@ -167,7 +167,7 @@ export function Topbar({ filters, facets, onChange, onRefresh, loading, onMenu, 
             aria-pressed={filters.days === r.days}
             onClick={() => onChange({ days: r.days })}
             className={`rounded-[7px] px-3 py-1 text-[12.5px] transition-colors duration-150 ${
-              filters.days === r.days ? 'bg-accent text-white' : 'text-muted hover:text-text'
+              filters.days === r.days ? 'bg-accent text-black' : 'text-muted hover:text-text'
             }`}
           >
             {r.label}

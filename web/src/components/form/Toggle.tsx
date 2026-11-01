@@ -24,7 +24,7 @@ export function Toggle({
       <span
         aria-hidden
         className={`mt-0.5 flex h-[18px] w-[32px] shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 motion-reduce:transition-none ${
-          checked ? 'bg-[rgb(var(--syn-keyword))]' : 'bg-white/15'
+          checked ? 'bg-accentWarm' : 'bg-white/15'
         }`}
       >
         <span
@@ -68,7 +68,7 @@ export function ChipGroup({
             onClick={() => toggle(o.value)}
             className={`rounded-full border px-3 py-1.5 font-mono text-[11.5px] transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 active:scale-[0.97] motion-reduce:transition-none ${
               on
-                ? 'border-[rgb(var(--syn-keyword))]/40 bg-[rgb(var(--syn-keyword))]/10 text-[rgb(var(--syn-keyword))]'
+                ? 'border-accentWarm/40 bg-accentWarm/10 text-accentWarm'
                 : 'border-white/[0.09] text-muted hover:border-white/25 hover:text-text'
             }`}
           >

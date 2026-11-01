@@ -11,6 +11,8 @@ const SCANS: Array<[string, string]> = [
   ['Kubernetes', 'Privileged pods and host-path mounts.'],
   ['Terraform', '0.0.0.0/0, public buckets, encryption switched off.'],
   ['Workflows', 'Mutable action pins, pull_request_target, untrusted event text reaching a shell.'],
+  ['Dependencies', 'Packages a lockfile change adds or upgrades, checked against OSV.dev for known CVEs and malicious releases.'],
+  ['Supply chain', 'Install scripts that appear in an update, packages from git, HTTP or arbitrary URLs, missing integrity hashes.'],
 ];
 
 export function ScannersSection() {
@@ -19,8 +21,8 @@ export function ScannersSection() {
       id="scanners"
       Icon={ScanSearch}
       eyebrow="Security"
-      title="Three passes, one report"
-      lead="A model is good at judging whether something is reachable and worth worrying about. It is unreliable at checking four thousand lines the same way twice. So the deterministic scanners run first — credentials, infrastructure, and the source code itself — cost no tokens, and give the same answer every time. Their findings are merged and deduplicated with the model's, so one weakness that both notice arrives as one comment rather than three."
+      title="Four passes, one report"
+      lead="A model is good at judging whether something is reachable and worth worrying about. It is unreliable at checking four thousand lines the same way twice. So the deterministic scanners run first — credentials, infrastructure, the source code itself, and the dependencies it pulls in — cost no tokens, and give the same answer every time. Their findings are merged and deduplicated with the model's, so one weakness that both notice arrives as one comment rather than three."
     >
       <div className="grid gap-6 lg:grid-cols-[1fr_460px]">
         <div>
@@ -30,13 +32,16 @@ export function ScannersSection() {
           <p className="mt-3 text-sm leading-relaxed text-muted">
             Comment <code className="text-[rgb(var(--syn-keyword))]">/secrets</code> for a report grouped by rule
             with every location, or leave{' '}
-            <code className="text-[rgb(var(--syn-keyword))]">secret_scan</code> and{' '}
-            <code className="text-[rgb(var(--syn-keyword))]">code_scan</code> on — both default to on — and it
+            <code className="text-[rgb(var(--syn-keyword))]">secret_scan</code>,{' '}
+            <code className="text-[rgb(var(--syn-keyword))]">code_scan</code> and{' '}
+            <code className="text-[rgb(var(--syn-keyword))]">dep_scan</code> on — all default to on — and it
             runs on every pull request, whatever the review cadence is, and publishes a check run that blocks
-            the merge once you mark it required. It needs no model call, so it is instant and costs nothing.
+            the merge once you mark it required. It needs no model call, so it is instant and costs nothing;
+            the dependency pass sends package names and versions, and nothing else, to OSV.dev.
             The same is true in Actions: the{' '}
-            <code className="text-[rgb(var(--syn-keyword))]">secret-scan</code> and{' '}
-            <code className="text-[rgb(var(--syn-keyword))]">code-scan</code> inputs are on unless you set them
+            <code className="text-[rgb(var(--syn-keyword))]">secret-scan</code>,{' '}
+            <code className="text-[rgb(var(--syn-keyword))]">code-scan</code> and{' '}
+            <code className="text-[rgb(var(--syn-keyword))]">dep-scan</code> inputs are on unless you set them
             to <code className="text-[rgb(var(--syn-string))]">'0'</code>.
           </p>
 

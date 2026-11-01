@@ -1,4 +1,10 @@
 import { providerMeta } from './providers';
+import { block } from './yaml';
+
+export { validate, type ValidationIssue } from './validate';
+import { branchList } from './agentYml';
+
+export { branchList, generateAgentYml, needsAgentYml } from './agentYml';
 
 /**
  * Turn the builder's answers into a workflow file.
@@ -41,6 +47,16 @@ export interface WorkflowConfig {
   concurrency: boolean;
   /** Which published ref of the Action to call, e.g. v1 or main. */
   actionRef: string;
+  /** light: one pass · standard: find, then verify · deep: three reviewers, then verify. */
+  reviewDepth: 'light' | 'standard' | 'deep';
+  /** Check changed lockfiles against OSV.dev. */
+  depScan: boolean;
+  /** Run the bundled third-party scanners on /audit. */
+  externalScanners: boolean;
+  /** /audit slices from owner/repo@<full commit SHA>; empty uses the built-ins. */
+  auditSkills: string;
+  /** Lowest severity that fails the scan's check run. */
+  scanBlockOn: 'critical' | 'high' | 'medium' | 'low' | 'none';
 }
 
 export const DEFAULT_CONFIG: WorkflowConfig = {
@@ -69,6 +85,11 @@ export const DEFAULT_CONFIG: WorkflowConfig = {
   timeout: '30',
   concurrency: true,
   actionRef: 'v2',
+  reviewDepth: 'standard',
+  depScan: true,
+  externalScanners: true,
+  auditSkills: '',
+  scanBlockOn: 'high',
 };
 
 const EVENT_TYPES: Record<string, string> = {
@@ -85,128 +106,6 @@ export function permissionsFor(events: string[]): string[] {
   const perms = ['contents: write', 'pull-requests: write', 'issues: write'];
   if (events.includes('pull_request')) perms.push('checks: write');
   return perms;
-}
-
-export interface ValidationIssue {
-  field: string;
-  message: string;
-}
-
-/** Required fields, checked as the user types. */
-export function validate(c: WorkflowConfig): ValidationIssue[] {
-  const issues: ValidationIssue[] = [];
-  const meta = providerMeta(c.provider);
-
-  if (!c.name.trim()) issues.push({ field: 'name', message: 'The workflow needs a name.' });
-  if (!c.provider) issues.push({ field: 'provider', message: 'Pick a provider.' });
-
-  if (meta.secretInput && !c.secretName.trim()) {
-    issues.push({ field: 'secretName', message: `Name the secret holding your ${meta.label} credential.` });
-  }
-  for (const e of meta.extraEnv) {
-    if (e.required && !(c.env[e.name] ?? '').trim()) {
-      issues.push({ field: e.name, message: `${meta.label} needs ${e.label} (${e.name}).` });
-    }
-  }
-
-  if (c.events.length === 0 && !c.schedule.trim()) {
-    issues.push({ field: 'events', message: 'Choose at least one event, or set a schedule.' });
-  }
-  if (c.maxTurns && !/^\d+$/.test(c.maxTurns)) {
-    issues.push({ field: 'maxTurns', message: 'Max turns must be a whole number.' });
-  }
-  if (c.maxOutputTokens && !/^\d+$/.test(c.maxOutputTokens)) {
-    issues.push({ field: 'maxOutputTokens', message: 'Token budget must be a whole number.' });
-  }
-  if (c.history) {
-    if (!c.historyPath.trim()) {
-      issues.push({ field: 'historyPath', message: 'The change-history document needs a path.' });
-    }
-    if (branchList(c.historyBranches).length === 0) {
-      issues.push({ field: 'historyBranches', message: 'Name at least one branch to document.' });
-    }
-  }
-  if (c.schedule && c.schedule.trim().split(/\s+/).length !== 5) {
-    issues.push({ field: 'schedule', message: 'A cron expression has five fields, e.g. 0 9 * * *' });
-  }
-  return issues;
-}
-
-/** Split a comma/space separated branch list. */
-export function branchList(raw: string): string[] {
-  return raw
-    .split(/[,\s]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-/** True when the configuration warrants a second file. */
-export function needsAgentYml(c: WorkflowConfig): boolean {
-  return Boolean(c.schedule.trim()) || c.history || branchList(c.baseBranches).length > 0;
-}
-
-/**
- * The companion `.github/agent.yml`, generated when a schedule is set.
- *
- * The workflow says *when* to run; the routine says *what* to run and makes it
- * addressable by name, so the same job can also be started on demand with
- * `/run <name>` from any thread.
- */
-export function generateAgentYml(c: WorkflowConfig): string {
-  if (!needsAgentYml(c)) return '';
-  const lines: string[] = ['# .github/agent.yml'];
-
-  // Change history — one documented entry per merged change.
-  if (c.history) {
-    lines.push(
-      '# One documented entry per merged change, written from that diff',
-      '# alone and opened as a pull request — never pushed directly.',
-      'history: true',
-      `history_path: ${c.historyPath.trim() || 'docs/CHANGE-HISTORY.md'}`,
-      `history_mode: ${c.historyMode}` +
-        (c.historyMode === 'per_commit'
-          ? '   # a new file per change, named after it'
-          : '        # one running document'),
-      '',
-    );
-  }
-
-  // Only act on pull requests targeting these branches.
-  const bases = branchList(c.baseBranches);
-  if (bases.length === 1) {
-    lines.push('filters:', `  - { field: base_branch, operator: equals, value: ${bases[0]} }`, '');
-  } else if (bases.length > 1) {
-    lines.push(
-      'filters:',
-      `  - { field: base_branch, operator: is_one_of, value: [${bases.join(', ')}] }`,
-      '',
-    );
-  }
-
-  if (c.schedule.trim()) {
-    const name = (c.routineName.trim() || 'scheduled-run').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-    lines.push('routines:', `  - name: ${name}`);
-    if (c.skill) lines.push(`    skill: ${c.skill}`);
-    if (c.prompt.trim()) {
-      lines.push('    prompt: |');
-      lines.push(block(c.prompt.trim(), '      '));
-    }
-    lines.push(`    schedule: "${c.schedule.trim()}"`);
-    lines.push(`    manual: true                # also: /run ${name}`);
-    if (c.allowedTools.length) lines.push(`    tools: [${c.allowedTools.join(', ')}]`);
-    lines.push('    write: false                # set true to let it edit files (opens a PR)');
-  }
-
-  return `${lines.join('\n').replace(/\n+$/, '')}\n`;
-}
-
-/** Indent a multi-line block for a YAML literal scalar. */
-function block(text: string, indent: string): string {
-  return text
-    .replace(/\r/g, '')
-    .split('\n')
-    .map((l) => `${indent}${l}`)
-    .join('\n');
 }
 
 export function generateWorkflow(c: WorkflowConfig): string {
@@ -278,6 +177,12 @@ export function generateWorkflow(c: WorkflowConfig): string {
   if (c.maxNits.trim()) lines.push(`          max-nits: "${c.maxNits.trim()}"`);
   if (c.triggerPhrase.trim()) lines.push(`          trigger-phrase: "${c.triggerPhrase.trim()}"`);
   if (!c.promptCache) lines.push('          prompt-cache: "0"');
+  // Review and scanning: emitted only when they differ from the Action's defaults.
+  if (c.reviewDepth !== 'standard') lines.push(`          review-depth: ${c.reviewDepth}`);
+  if (!c.depScan) lines.push('          dep-scan: "0"');
+  if (!c.externalScanners) lines.push('          external-scanners: "0"');
+  if (c.scanBlockOn !== 'high') lines.push(`          scan-block-on: ${c.scanBlockOn}`);
+  if (c.auditSkills.trim()) lines.push(`          audit-skills: ${c.auditSkills.trim()}`);
   if (c.prompt.trim()) {
     lines.push('          prompt: |');
     lines.push(block(c.prompt.trim(), '            '));

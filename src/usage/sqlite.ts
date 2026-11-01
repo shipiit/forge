@@ -139,8 +139,8 @@ export class SQLiteRecorder implements Recorder {
     if (!runId || findings.length === 0) return;
     this.safe(() => {
       const stmt = this.db.prepare(
-        `INSERT INTO findings (id, run_id, file, line, lens, severity, category, title, pre_existing, posted_inline)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO findings (id, run_id, file, line, lens, severity, category, title, pre_existing, posted_inline, body, suggestion, start_line)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       );
       for (const f of findings) {
         stmt.run(
@@ -154,6 +154,9 @@ export class SQLiteRecorder implements Recorder {
           f.title,
           f.preExisting ? 1 : 0,
           f.postedInline ? 1 : 0,
+          f.body ?? null,
+          f.suggestion ?? null,
+          f.startLine ?? null,
         );
       }
     });

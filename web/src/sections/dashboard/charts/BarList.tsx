@@ -7,8 +7,8 @@ export function BarList({ rows, format }: { rows: Array<{ key: string; value: nu
   return (
     <div className="grid gap-2.5">
       {rows.map((r) => (
-        <div key={r.key} className="grid grid-cols-[minmax(84px,1.1fr)_2fr_auto] items-center gap-3 text-[12.5px]">
-          <span className="truncate">{r.key}</span>
+        <div key={r.key} className="grid grid-cols-[minmax(96px,1.6fr)_1.4fr_auto] items-center gap-3 text-[12.5px]">
+          <span className="truncate" title={r.key}>{r.key}</span>
           <span className="h-2 overflow-hidden rounded-full bg-line/[0.06]">
             <span
               className="block h-full origin-left rounded-full bg-gradient-to-r from-forge1 to-forge2"

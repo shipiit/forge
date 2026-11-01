@@ -279,6 +279,22 @@ describe('the detail lists', () => {
     expect(rows[0].run_id).toBeTruthy();
   });
 
+  it('opens one finding in full, and 404s an unknown one', async () => {
+    await seed();
+    const [row] = (await call('/api/findings/list')).json();
+    const detail = await call(`/api/findings/detail?id=${row.id}`);
+    expect(detail.status).toBe(200);
+    expect(detail.json()).toMatchObject({ id: row.id, title: 'XSS', repo: 'web' });
+    expect((await call('/api/findings/detail?id=missing')).status).toBe(404);
+    expect((await call('/api/findings/detail')).status).toBe(404);
+  });
+
+  it('pages the findings list with an offset', async () => {
+    await seed();
+    expect((await call('/api/findings/list?offset=1')).json()).toHaveLength(0);
+    expect((await call('/api/findings/list?offset=junk')).json()).toHaveLength(1);
+  });
+
   it('filters findings by severity', async () => {
     await seed();
     expect((await call('/api/findings/list?severity=high')).json()).toHaveLength(1);

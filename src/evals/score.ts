@@ -1,5 +1,5 @@
 import type { ReviewFinding } from '../github/review.js';
-import { satisfies, type CaseResult, type EvalCase, type Scorecard } from './types.js';
+import { sameCategory, satisfies, type CaseResult, type EvalCase, type Scorecard } from './types.js';
 
 /**
  * Turning a set of findings into a number somebody can act on.
@@ -39,7 +39,7 @@ export function scoreCase(kase: EvalCase, findings: ReviewFinding[]): CaseResult
   const extra: ReviewFinding[] = [];
   for (const f of unmatched) {
     const banned = (kase.forbid ?? []).find(
-      (b) => b.category === f.category && (b.file === undefined || b.file === f.file),
+      (b) => sameCategory(b.category, f.category) && (b.file === undefined || b.file === f.file),
     );
     if (banned) regressions.push({ category: f.category, file: f.file, ...(banned.because ? { because: banned.because } : {}) });
     else extra.push(f);

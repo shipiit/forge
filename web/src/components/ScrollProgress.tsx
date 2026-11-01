@@ -10,7 +10,7 @@ export function ScrollProgress() {
       style={{ scaleX: x }}
       className="fixed inset-x-0 top-0 z-[100] h-[3px] origin-left"
     >
-      <div className="h-full w-full bg-gradient-to-r from-[rgb(167_139_250)] via-[rgb(236_72_153)] to-[rgb(167_139_250)]" />
+      <div className="h-full w-full bg-gradient-to-r from-[rgb(var(--forge1))] via-[rgb(var(--forge2))] to-[rgb(var(--forge1))]" />
     </motion.div>
   );
 }

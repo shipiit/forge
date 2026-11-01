@@ -89,9 +89,21 @@ export const LINE_TOLERANCE = 2;
  * enough that pinning it exactly would measure arithmetic rather than review
  * quality.
  */
+/**
+ * Are two category labels the same rule?
+ *
+ * A scanner writes `CWE-89`; a model writes `CWE-89 SQL Injection` or
+ * `cwe-89`. Where a CWE is named, it is the identity; otherwise the label is,
+ * ignoring case and surrounding space.
+ */
+export function sameCategory(a: string, b: string): boolean {
+  const key = (s: string) => /\bCWE-\d+\b/i.exec(s)?.[0].toUpperCase() ?? s.trim().toLowerCase();
+  return key(a) === key(b);
+}
+
 export function satisfies(finding: ReviewFinding, want: Expectation): boolean {
   if (finding.file !== want.file) return false;
-  if (finding.category !== want.category) return false;
+  if (!sameCategory(finding.category, want.category)) return false;
   if (want.line !== undefined && Math.abs(finding.endLine - want.line) > LINE_TOLERANCE) return false;
   if (want.minSeverity && RANK[finding.severity] < RANK[want.minSeverity]) return false;
   return true;

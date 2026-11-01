@@ -171,6 +171,14 @@ CREATE TABLE IF NOT EXISTS dashboard_sessions (
 );
 CREATE INDEX IF NOT EXISTS sessions_expiry ON dashboard_sessions (expires_at);
 `,
+
+  // What a finding said, so the dashboard can show the explanation and the
+  // fix without opening the run's transcript. Secrets are redacted on write.
+  `
+ALTER TABLE findings ADD COLUMN body TEXT;
+ALTER TABLE findings ADD COLUMN suggestion TEXT;
+ALTER TABLE findings ADD COLUMN start_line INTEGER;
+`,
 ];
 
 /** The schema version this build expects. */

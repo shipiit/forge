@@ -29,11 +29,11 @@ export function Builder() {
 
       <div className="mx-auto  px-7 pt-14">
         <motion.div {...rise}>
-          <span className="eyebrow">Workflow generator</span>
+          <span className="eyebrow eyebrow-ember">Workflow generator</span>
           <h1 className="display mt-6 text-[clamp(40px,6vw,68px)]">
             Answer a few questions.
             <br />
-            <span className="dim">Get your workflow file.</span>
+            <span className="ember">Get your workflow file.</span>
           </h1>
           <p className="mt-6 max-w-3xl text-[15px] leading-relaxed text-muted">
             Fill in the form and the file writes itself beside you, live. Copy
@@ -44,7 +44,7 @@ export function Builder() {
         </motion.div>
 
         <motion.div {...rise} className="mt-12">
-          <span className="eyebrow">Before you start</span>
+          <span className="eyebrow eyebrow-ember">Before you start</span>
           <h2 className="display mt-5 text-[clamp(24px,3vw,34px)]">
             What you need in place
           </h2>
@@ -58,7 +58,7 @@ export function Builder() {
         </motion.div>
 
         <motion.div {...rise} className="mt-14 border-t border-white/[0.07] pt-12">
-          <span className="eyebrow">Build it</span>
+          <span className="eyebrow eyebrow-ember">Build it</span>
           <h2 className="display mt-5 text-[clamp(24px,3vw,34px)]">Answer the questions</h2>
         </motion.div>
 

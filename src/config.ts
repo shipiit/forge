@@ -54,6 +54,12 @@ export interface ForgeConfig {
   secretScan: boolean;
   /** Run the source-code security rules alongside the credential scan. */
   codeScan: boolean;
+  /** Check changed lockfiles for vulnerable, malicious or unverifiable packages (queries OSV.dev). */
+  depScan: boolean;
+  /** Run installed third-party scanners (semgrep, gitleaks, trivy, osv-scanner, bandit, checkov) on /audit. */
+  externalScanners: boolean;
+  /** Audit slices from another repository, as owner/repo@<commit SHA>. Empty uses the built-ins. */
+  auditSkills: string;
   /** Lowest severity that fails the scan's check run. 'none' never blocks. */
   scanBlockOn: BlockLevel;
   /** Turn findings into issues: off, one rollup issue, or one issue each. */
@@ -97,6 +103,9 @@ export function defaultConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig
     // being missed is unbounded, and the scan is free.
     secretScan: env.FORGE_SECRET_SCAN !== '0' && env.FORGE_SECRET_SCAN !== 'false',
     codeScan: env.FORGE_CODE_SCAN !== '0' && env.FORGE_CODE_SCAN !== 'false',
+    depScan: env.FORGE_DEP_SCAN !== '0' && env.FORGE_DEP_SCAN !== 'false',
+    externalScanners: env.FORGE_EXTERNAL_SCANNERS !== '0' && env.FORGE_EXTERNAL_SCANNERS !== 'false',
+    auditSkills: env.FORGE_AUDIT_SKILLS ?? '',
     scanBlockOn: (env.FORGE_SCAN_BLOCK_ON as BlockLevel) || 'high',
     findingsToIssues: (env.FORGE_FINDINGS_TO_ISSUES as FindingIssueMode) || 'off',
     findingsMinSeverity: (env.FORGE_FINDINGS_MIN_SEVERITY as ReviewFinding['severity']) || 'high',
@@ -147,6 +156,9 @@ export function mergeConfig(raw: unknown, base: ForgeConfig = defaultConfig()): 
     showCost: typeof r.show_cost === 'boolean' ? r.show_cost : base.showCost,
     secretScan: typeof r.secret_scan === 'boolean' ? r.secret_scan : base.secretScan,
     codeScan: typeof r.code_scan === 'boolean' ? r.code_scan : base.codeScan,
+    depScan: typeof r.dep_scan === 'boolean' ? r.dep_scan : base.depScan,
+    externalScanners: typeof r.external_scanners === 'boolean' ? r.external_scanners : base.externalScanners,
+    auditSkills: typeof r.audit_skills === 'string' ? r.audit_skills.trim() : base.auditSkills,
     scanBlockOn: enumOr(
       r.scan_block_on,
       ['critical', 'high', 'medium', 'low', 'info', 'none'] as const,

@@ -88,6 +88,35 @@ inputs:
       logging, unsafe deserialization, workflow permissions) alongside the
       credential scan. On by default; set to "0" for secrets only.
     required: false
+  external-scanners:
+    description: >-
+      Run the bundled third-party scanners (semgrep, gitleaks, trivy,
+      osv-scanner, bandit, checkov) on /audit. On by default; set to "0" to
+      turn them off. They never see the GitHub token or model keys.
+    required: false
+  audit-skills:
+    description: >-
+      Take /audit's specialist slices from another repository, pinned to a full
+      commit SHA: owner/repo@<sha> (for example the shipiit/pentest-skills
+      layout). Empty uses the built-in slices. The token must be able to read
+      that repository.
+    required: false
+  review-depth:
+    description: >-
+      How thorough a pull-request review is. "light" is one pass, posted as
+      found. "standard" (the default) is one pass, then a verifier that re-reads
+      the code and drops findings it does not bear out. "deep" runs three
+      reviewers with different focus (correctness, security, failure handling)
+      and verifies what they find; it costs roughly three to four times a
+      standard review.
+    required: false
+  dep-scan:
+    description: >-
+      Check lockfiles a pull request changes for known vulnerabilities and
+      malicious releases (via OSV.dev), install scripts appearing in an update,
+      and packages fetched from outside the registry. On by default; set to "0"
+      to turn it off. No model call, but it does query api.osv.dev.
+    required: false
 
   scan-block-on:
     description: >-

@@ -23,6 +23,11 @@ export interface ScanContext {
    * scans everything. Empty means everything.
    */
   only?: Set<string>;
+  /**
+   * The commit a pull request merges into. Lets a scanner report what the
+   * change introduced rather than everything the file already contained.
+   */
+  base?: string;
 }
 
 export interface Scanner {
@@ -30,6 +35,11 @@ export interface Scanner {
   /** Cheap check so a scanner can skip a file without reading it. */
   handles(path: string): boolean;
   scan(file: ScanFile, ctx: ScanContext): ReviewFinding[];
+  /**
+   * Every handled file at once, for checks that compare files against the base
+   * or need the network. Must not throw for a reason that is not a bug.
+   */
+  scanAll?(files: ScanFile[], ctx: ScanContext): Promise<ReviewFinding[]>;
 }
 
 /**

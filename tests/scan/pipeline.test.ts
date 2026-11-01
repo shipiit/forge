@@ -2,11 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { scannersFor, SCANNERS, mergeFindings, inTestFile } from '../../src/scan/index.js';
 
 describe('what the pipeline actually is', () => {
-  it('is three scanners, and the docs have to match', () => {
-    // A diagram claiming a dependency/SCA pass would be advertising something
-    // that does not exist. This fails the day the list changes, which is the
-    // point — the README and the diagram have to move with it.
-    expect(SCANNERS.map((s) => s.name)).toEqual(['secrets', 'iac', 'code']);
+  it('is four scanners, and the docs have to match', () => {
+    // This fails the day the list changes, which is the point — the README
+    // and the diagram have to move with it.
+    expect(SCANNERS.map((s) => s.name)).toEqual(['secrets', 'iac', 'code', 'deps']);
   });
 
   it('keeps one comment when the model and a scanner find the same thing', () => {
@@ -62,7 +61,7 @@ describe('what the model is told about the scan', () => {
 
 describe('choosing which scanners run', () => {
   it('runs everything by default', () => {
-    expect(scannersFor({ secretScan: true, codeScan: true }).map((s) => s.name)).toEqual([
+    expect(scannersFor({ secretScan: true, codeScan: true, depScan: false }).map((s) => s.name)).toEqual([
       'secrets',
       'iac',
       'code',
@@ -70,17 +69,17 @@ describe('choosing which scanners run', () => {
   });
 
   it('drops the code rules when only credentials are wanted', () => {
-    expect(scannersFor({ secretScan: true, codeScan: false }).map((s) => s.name)).toEqual(['secrets', 'iac']);
+    expect(scannersFor({ secretScan: true, codeScan: false, depScan: false }).map((s) => s.name)).toEqual(['secrets', 'iac']);
   });
 
   it('keeps the configuration rules when only code scanning is on', () => {
     // A repository that switched off the credential scan still wants to know
     // its workflow hands a write token to everything it runs.
-    expect(scannersFor({ secretScan: false, codeScan: true }).map((s) => s.name)).toEqual(['iac', 'code']);
+    expect(scannersFor({ secretScan: false, codeScan: true, depScan: false }).map((s) => s.name)).toEqual(['iac', 'code']);
   });
 
   it('runs nothing when both are off', () => {
-    expect(scannersFor({ secretScan: false, codeScan: false })).toHaveLength(0);
+    expect(scannersFor({ secretScan: false, codeScan: false, depScan: false })).toHaveLength(0);
   });
 });
 

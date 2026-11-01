@@ -316,3 +316,38 @@ describe('action version', () => {
     expect(generateWorkflow(cfg({ actionRef: '  ' }))).toContain('uses: shipiit/forge@v2');
   });
 });
+
+describe('review and security inputs', () => {
+  it('emits nothing at the defaults, so the generated file stays short', () => {
+    const y = generateWorkflow(cfg());
+    for (const k of ['review-depth', 'dep-scan', 'external-scanners', 'scan-block-on', 'audit-skills']) expect(y).not.toContain(k);
+  });
+
+  it('emits each input when it differs from the default', () => {
+    const sha = 'a'.repeat(40);
+    const y = generateWorkflow(cfg({ reviewDepth: 'deep', depScan: false, externalScanners: false, scanBlockOn: 'critical', auditSkills: `shipiit/pentest-skills@${sha}` }));
+    expect(y).toContain('review-depth: deep');
+    expect(y).toContain('dep-scan: "0"');
+    expect(y).toContain('external-scanners: "0"');
+    expect(y).toContain('scan-block-on: critical');
+    expect(y).toContain(`audit-skills: shipiit/pentest-skills@${sha}`);
+  });
+
+  it.each(['shipiit/pentest-skills', 'shipiit/pentest-skills@main', 'x@' + 'a'.repeat(40), 'a/b@' + 'g'.repeat(40)])(
+    'refuses audit skills %j that are not pinned to a commit',
+    (auditSkills) => {
+      expect(validate(cfg({ auditSkills })).map((i) => i.field)).toContain('auditSkills');
+    },
+  );
+
+  it('accepts a pinned audit-skills repository, and an empty one', () => {
+    expect(validate(cfg({ auditSkills: `o/r@${'b'.repeat(40)}` })).map((i) => i.field)).not.toContain('auditSkills');
+    expect(validate(cfg({ auditSkills: '' })).map((i) => i.field)).not.toContain('auditSkills');
+  });
+
+  it('matches the inputs the Action declares', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const action = await readFile('action.yml', 'utf8');
+    for (const k of ['review-depth', 'dep-scan', 'external-scanners', 'scan-block-on', 'audit-skills']) expect(action).toContain(`  ${k}:`);
+  });
+});

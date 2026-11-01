@@ -17,6 +17,7 @@ import {
   type HandlerDeps,
 } from "./github/handlers.js";
 import { scannersFor } from "./scan/index.js";
+import { mayTrigger } from "./github/permissions.js";
 import type { OctokitLike } from "./github/pr.js";
 import { redactSecrets } from "./util/resilience.js";
 import { mergeConfig, defaultConfig, type ForgeConfig } from "./config.js";
@@ -69,6 +70,9 @@ async function deps(
     findingsMaxIssues: config.findingsMaxIssues,
     selfReview: true,
     scanners: scannersFor(config),
+    reviewDepth: config.reviewDepth,
+    externalScanners: config.externalScanners,
+    auditSkills: config.auditSkills,
     scanBlockOn: config.scanBlockOn,
   };
 }
@@ -97,6 +101,7 @@ async function dispatch(
   fn: (d: HandlerDeps) => Promise<unknown>,
 ): Promise<void> {
   const d = await deps(context, config);
+  if (!(await mayTrigger(d.octokit, context.name, context.payload, d.log))) return;
   const { flow, owner, repo, ...rest } = spec;
   await tracked(
     {
@@ -198,7 +203,7 @@ export default function app(probot: Probot, options: { getRouter?: (path?: strin
       // The credential scan runs whatever the review cadence is: it costs
       // nothing, and a key committed to a branch is already public to anyone
       // who can clone it.
-      if (config.secretScan || config.codeScan) {
+      if (config.secretScan || config.codeScan || config.depScan) {
         await dispatch(
           context,
           config,
@@ -209,6 +214,7 @@ export default function app(probot: Probot, options: { getRouter?: (path?: strin
               issueNumber: pull_request.number,
               pullNumber: pull_request.number,
               ref: pull_request.head.ref,
+              baseSha: pull_request.base.sha,
             }),
         );
       }
@@ -217,7 +223,12 @@ export default function app(probot: Probot, options: { getRouter?: (path?: strin
         context,
         config,
         { flow: "review", ...base, prNumber: pull_request.number },
-        (d) => handlePrReview(d, { ...base, pullNumber: pull_request.number }),
+        (d) =>
+          handlePrReview(d, {
+            ...base,
+            pullNumber: pull_request.number,
+            ...(context.payload.action === "synchronize" ? { incremental: true } : {}),
+          }),
       );
     },
   );

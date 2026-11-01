@@ -79,3 +79,19 @@ is read:
 `{{alnum:N}}` and `{{hex:N}}` expand at load time, deterministically from the
 placeholder's position — so the corpus scores identically on every machine and
 in CI, and nothing credential-shaped is ever stored in git.
+
+## The model half
+
+`evals/review-cases/` holds planted bugs (SQL injection, path traversal, SSRF,
+XSS, open redirect, unsafe deserialization) next to code that looks the same
+and is safe. The safe twins are the verifier's test: a review that flags them
+has a precision problem, by name.
+
+```bash
+LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=… \
+  npx tsx src/cli.ts eval --model-review --cases evals/review-cases --depth standard
+```
+
+It costs tokens, so CI does not run it. Run it before and after a prompt or
+model change, and compare `--depth light` (no verifier) with `standard` to see
+what verification is buying.

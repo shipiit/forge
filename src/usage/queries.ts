@@ -324,18 +324,37 @@ export function findingTrend(db: DatabaseSync, w: Window, now = Date.now()): Row
 }
 
 /** Findings themselves, newest first, with the run they came from. */
-export function findingsList(db: DatabaseSync, w: Window & { limit?: number; severity?: string }, now = Date.now()): Row[] {
+export function findingsList(
+  db: DatabaseSync,
+  w: Window & { limit?: number; offset?: number; severity?: string },
+  now = Date.now(),
+): Row[] {
   const { sql, params } = where(w, now, 'r.');
   const extra = w.severity ? `${sql ? `${sql} AND` : 'WHERE'} f.severity = ?` : sql;
   if (w.severity) params.push(w.severity);
-  const limit = Math.min(500, Math.max(1, w.limit ?? 100));
+  const limit = Math.min(500, Math.max(1, Math.floor(w.limit ?? 100)));
+  const offset = Math.max(0, Math.floor(w.offset ?? 0));
+  // The list leaves out body and suggestion: a page of fifty stays small, and
+  // the text is fetched for the one finding somebody opens.
   return all(
     db,
-    `SELECT f.*, r.owner, r.repo, r.flow, r.started_at, r.result_url, r.pr_number, r.issue_number
+    `SELECT f.id, f.run_id, f.file, f.line, f.start_line, f.lens, f.severity, f.category, f.title,
+            f.pre_existing, f.posted_inline, (f.suggestion IS NOT NULL) has_fix,
+            r.owner, r.repo, r.flow, r.started_at, r.result_url, r.pr_number, r.issue_number
        FROM findings f JOIN runs r ON r.id = f.run_id ${extra}
-      ORDER BY r.started_at DESC LIMIT ${limit}`,
+      ORDER BY r.started_at DESC, f.id LIMIT ${limit} OFFSET ${offset}`,
     params,
   );
+}
+
+/** One finding in full: its explanation, its fix, and where it came from. */
+export function findingDetail(db: DatabaseSync, id: string): Row | undefined {
+  return all(
+    db,
+    `SELECT f.*, r.owner, r.repo, r.flow, r.model, r.started_at, r.result_url, r.pr_number, r.issue_number
+       FROM findings f JOIN runs r ON r.id = f.run_id WHERE f.id = ?`,
+    [id],
+  )[0];
 }
 
 /**

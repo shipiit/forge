@@ -42,11 +42,19 @@ trigger_label: agent-fix
 trigger_phrase: "@our-bot"
 
 # --- how it reviews --------------------------------------------
-review_depth: standard       # light | standard | deep
+review_depth: standard       # light: one pass · standard: find, then verify · deep: 3 reviewers, then verify
 max_nits: 5                  # -1 disables the cap
 max_iterations: 25
 sarif_path: results.sarif    # ingest CodeQL / Semgrep output
 ignore_paths: [dist/, vendor/]
+
+# --- scanning and the whole-repository audit -------------------
+secret_scan: true            # committed credentials on every PR
+code_scan: true              # source-code security rules
+dep_scan: true               # changed lockfiles vs OSV.dev: CVEs, malicious releases, install scripts
+scan_block_on: high          # what fails the scan's check run; none never blocks
+external_scanners: true      # /audit also runs semgrep, gitleaks, trivy, osv-scanner, bandit, checkov
+audit_skills: ""             # /audit slices from owner/repo@<full commit SHA>
 
 # --- only run on what matters ----------------------------------
 filters:

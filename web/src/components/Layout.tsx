@@ -185,7 +185,7 @@ export function Header({ onLanding = false }: { onLanding?: boolean }) {
           <NavLink
             to="/builder"
             className={({ isActive }) =>
-              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+              `hover:text-text ${isActive ? "text-accentWarm font-bold" : ""}`
             }
           >
             Get Github Code
@@ -193,7 +193,7 @@ export function Header({ onLanding = false }: { onLanding?: boolean }) {
           <NavLink
             to="/schedules"
             className={({ isActive }) =>
-              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+              `hover:text-text ${isActive ? "text-accentWarm font-bold" : ""}`
             }
           >
             Schedules
@@ -227,7 +227,7 @@ export function Footer() {
           <NavLink
             to="/builder"
             className={({ isActive }) =>
-              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+              `hover:text-text ${isActive ? "text-accentWarm font-bold" : ""}`
             }
           >
             Get Github Code
@@ -235,7 +235,7 @@ export function Footer() {
           <NavLink
             to="/schedules"
             className={({ isActive }) =>
-              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+              `hover:text-text ${isActive ? "text-accentWarm font-bold" : ""}`
             }
           >
             Schedules
@@ -243,7 +243,7 @@ export function Footer() {
           <NavLink
             to="/examples"
             className={({ isActive }) =>
-              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+              `hover:text-text ${isActive ? "text-accentWarm font-bold" : ""}`
             }
           >
             Examples
@@ -251,7 +251,7 @@ export function Footer() {
           <NavLink
             to="/github#install"
             className={({ isActive }) =>
-              `hover:text-text ${isActive ? "text-[rgb(var(--syn-prop))] font-bold" : ""}`
+              `hover:text-text ${isActive ? "text-accentWarm font-bold" : ""}`
             }
           >
             Install

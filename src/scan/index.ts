@@ -5,13 +5,15 @@ import type { ReviewFinding } from '../github/review.js';
 import { secretsScanner } from './secrets.js';
 import { iacScanner } from './iac.js';
 import { codeScanner } from './code.js';
+import { depsScanner } from './deps/index.js';
 import { applySuppressions } from './suppress.js';
-import { dedupe, type ScanContext, type Scanner } from './types.js';
+import { dedupe, type ScanContext, type ScanFile, type Scanner } from './types.js';
 
 export { dedupe, findingKey, inTestFile, TEST_PATH, type Scanner, type ScanContext } from './types.js';
 export { secretsScanner, entropy, looksRandom } from './secrets.js';
 export { iacScanner } from './iac.js';
 export { codeScanner } from './code.js';
+export { depsScanner, type DepsScannerOptions, type FetchLike } from './deps/index.js';
 export { applySuppressions, parseSuppressions, type Suppression } from './suppress.js';
 
 /**
@@ -21,7 +23,7 @@ export { applySuppressions, parseSuppressions, type Suppression } from './suppre
  * and are deduplicated with them, so one weakness that three sources notice
  * arrives as one comment rather than three.
  */
-export const SCANNERS: Scanner[] = [secretsScanner, iacScanner, codeScanner];
+export const SCANNERS: Scanner[] = [secretsScanner, iacScanner, codeScanner, depsScanner()];
 
 /**
  * The scanners a repository has switched on.
@@ -31,9 +33,15 @@ export const SCANNERS: Scanner[] = [secretsScanner, iacScanner, codeScanner];
  * and the other is "is this code dangerous", which a repository already paying
  * for CodeQL may not want twice.
  */
-export function scannersFor(opts: { secretScan: boolean; codeScan: boolean }): Scanner[] {
+export function scannersFor(opts: { secretScan: boolean; codeScan: boolean; depScan: boolean }): Scanner[] {
   return SCANNERS.filter((s) =>
-    s.name === 'code' ? opts.codeScan : s.name === 'secrets' ? opts.secretScan : opts.secretScan || opts.codeScan,
+    s.name === 'code'
+      ? opts.codeScan
+      : s.name === 'secrets'
+        ? opts.secretScan
+        : s.name === 'deps'
+          ? opts.depScan
+          : opts.secretScan || opts.codeScan,
   );
 }
 
@@ -42,6 +50,9 @@ const SKIP_DIR = /^(?:node_modules|\.git|dist|build|coverage|vendor|\.next|targe
 
 /** Files too large to be hand-written, so not worth scanning line by line. */
 const MAX_BYTES = 512 * 1024;
+
+/** Lockfiles are machine-written and routinely run to megabytes; they are still read. */
+const MAX_WHOLE_FILE_BYTES = 32 * 1024 * 1024;
 
 /**
  * Walk a repository, bounded.
@@ -97,28 +108,42 @@ export async function collectFiles(cwd: string, only?: Set<string>, limit = 4000
 export async function runScanners(ctx: ScanContext, scanners: Scanner[] = SCANNERS): Promise<ReviewFinding[]> {
   const files = await collectFiles(ctx.cwd, ctx.only);
   const findings: ReviewFinding[] = [];
+  const whole = new Map<NonNullable<Scanner['scanAll']>, ScanFile[]>();
 
   for (const rel of files) {
     const applicable = scanners.filter((s) => s.handles(rel));
     if (applicable.length === 0) continue;
 
     let text: string;
+    let size: number;
     try {
       const abs = path.join(ctx.cwd, rel);
       const stat = await fs.stat(abs);
-      if (!stat.isFile() || stat.size > MAX_BYTES) continue;
+      size = stat.size;
+      const limit = applicable.some((s) => s.scanAll) ? MAX_WHOLE_FILE_BYTES : MAX_BYTES;
+      if (!stat.isFile() || size > limit) continue;
       text = await fs.readFile(abs, 'utf8');
     } catch {
       continue; // deleted, binary, or unreadable
     }
 
     for (const scanner of applicable) {
+      if (scanner.scanAll) whole.set(scanner.scanAll, [...(whole.get(scanner.scanAll) ?? []), { path: rel, text }]);
+      if (size > MAX_BYTES) continue;
       try {
         // The file gets to dismiss its own findings, in writing, on the line.
         findings.push(...applySuppressions(scanner.scan({ path: rel, text }, ctx), text, scanner.name));
       } catch {
         /* one scanner, one file — not the whole review */
       }
+    }
+  }
+
+  for (const [scanAll, batch] of whole) {
+    try {
+      findings.push(...(await scanAll(batch, ctx)));
+    } catch {
+      /* one scanner — not the whole review */
     }
   }
 

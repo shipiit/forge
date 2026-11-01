@@ -119,6 +119,41 @@ describe('the code scan toggle', () => {
   });
 });
 
+describe('the dependency scan toggle', () => {
+  it('is on unless somebody turns it off', () => {
+    expect(defaultConfig({}).depScan).toBe(true);
+    expect(defaultConfig({ FORGE_DEP_SCAN: '0' } as NodeJS.ProcessEnv).depScan).toBe(false);
+    expect(defaultConfig({ FORGE_DEP_SCAN: 'false' } as NodeJS.ProcessEnv).depScan).toBe(false);
+  });
+
+  it('can be switched off in the repository config, independently of the others', () => {
+    const c = mergeConfig({ dep_scan: false }, defaultConfig({}));
+    expect(c.depScan).toBe(false);
+    expect(c.secretScan).toBe(true);
+    expect(c.codeScan).toBe(true);
+  });
+
+  it('ignores a value that is not a boolean', () => {
+    expect(mergeConfig({ dep_scan: 'no' }, defaultConfig({})).depScan).toBe(true);
+  });
+});
+
+describe('the audit settings', () => {
+  it('runs external scanners unless turned off', () => {
+    expect(defaultConfig({}).externalScanners).toBe(true);
+    expect(defaultConfig({ FORGE_EXTERNAL_SCANNERS: '0' } as NodeJS.ProcessEnv).externalScanners).toBe(false);
+    expect(mergeConfig({ external_scanners: false }, defaultConfig({})).externalScanners).toBe(false);
+    expect(mergeConfig({ external_scanners: 'no' }, defaultConfig({})).externalScanners).toBe(true);
+  });
+
+  it('takes audit slices from a repository only when named', () => {
+    expect(defaultConfig({}).auditSkills).toBe('');
+    expect(defaultConfig({ FORGE_AUDIT_SKILLS: 'o/r@x' } as NodeJS.ProcessEnv).auditSkills).toBe('o/r@x');
+    expect(mergeConfig({ audit_skills: '  o/r@y  ' }, defaultConfig({})).auditSkills).toBe('o/r@y');
+    expect(mergeConfig({ audit_skills: 42 }, defaultConfig({})).auditSkills).toBe('');
+  });
+});
+
 describe('what the scan blocks on', () => {
   it('defaults to high — real things stop a merge, arguments do not', () => {
     expect(defaultConfig({}).scanBlockOn).toBe('high');

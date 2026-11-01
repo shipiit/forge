@@ -75,6 +75,11 @@ export interface ToolRecord {
 export interface FindingRecord {
   file: string;
   line?: number;
+  startLine?: number;
+  /** The explanation, secrets redacted and capped. */
+  body?: string;
+  /** Replacement code for the lines, when the finding offered one. */
+  suggestion?: string;
   lens: string;
   severity: string;
   category?: string;

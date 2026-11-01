@@ -15,7 +15,7 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 [![License: MIT](https://img.shields.io/badge/License-MIT-22D3EE.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-401%20passing-FF8A3D.svg)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-1192%20passing-FF8A3D.svg)](#-testing)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-7C5CFF.svg)](#-contributing)
 
 <br/>
@@ -42,11 +42,11 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 | | Capability | How you trigger it |
 |---|---|---|
 | 🛠️ | **Fix an issue → open a PR** — investigates the repo, writes the fix on a branch, runs the tests, opens a PR that closes the issue | Label `agent-fix`, or comment `/fix` |
-| 🔍 | **Review a PR** — inline comments + summary verdict, quality **and** security lenses, **scoped strictly to the changed files** | Open a PR, or comment `/review` / `/review always` |
+| 🔍 | **Review a PR** — inline comments + summary verdict, quality **and** security lenses, **scoped strictly to the changed files**. Every finding is **verified** by a second agent that re-reads the code before it is posted; `review_depth: deep` runs three focused reviewers (correctness, security, failure handling) first. **A push re-reviews only the files it changed**; if none of the PR's files moved, the previous review stands and nothing is spent | Open a PR, or comment `/review` / `/review always` |
 | 🛡️ | **Security review** — flags SSRF, injection, secrets, authz… with **severity**, a **CWE**, and a **suggested-fix** block | Auto on PRs, or comment `/security` |
-| 🔎 | **Deterministic scanners** — secrets (provider shapes + entropy + context), infrastructure (Dockerfile, compose, Kubernetes, Terraform, workflows) and source code (injection, traversal, clear-text logging, deserialization), run before the model at no token cost and merged with its findings | Automatic on every review and audit |
-| 🔐 | **Security scan** — every committed credential, misconfiguration and code weakness, grouped by rule with every location, and a check run that can block the merge. **No model call: instant and free** | Automatic on each PR, or comment `/secrets` |
-| 🔬 | **Whole-repo audit** — maps entry points, follows untrusted input to dangerous sinks, one grouped report | Comment `/audit` |
+| 🔎 | **Deterministic scanners** — secrets (provider shapes + entropy + context), infrastructure (Dockerfile, compose, Kubernetes, Terraform, workflows) source code (injection, traversal, clear-text logging, deserialization) and dependencies (known CVEs and malicious releases via OSV.dev, new install scripts, off-registry sources), run before the model at no token cost and merged with its findings | Automatic on every review and audit |
+| 🔐 | **Security scan** — every committed credential, misconfiguration, code weakness and vulnerable or malicious dependency, grouped by rule with every location, and a check run that can block the merge. **No model call: instant and free** (the dependency check queries OSV.dev) | Automatic on each PR, or comment `/secrets` |
+| 🔬 | **Whole-repo audit** — up to eight specialist agents (auth, access control/IDOR, injection/SSRF/crypto, config & CI, business logic, personal data, frontend, LLM/agents) adapted from the pentest-skills deep audit, plus semgrep, gitleaks, trivy, osv-scanner, bandit and checkov; a verifier re-checks every finding, and the report includes a 17-row coverage map of what was and was not tested | Comment `/audit` |
 | 📜 | **Change-history document** — one entry per merged change, written **from that diff alone**; arrives as a PR | `history: true` in `agent.yml` |
 | ⏰ | **Routines** — a saved skill plus its triggers: cron, on-demand, or any repository event, each with filters | `routines:` in `agent.yml`, `/run <name>` |
 | 🧩 | **Skills** — 8 built-in prompt packs with enforced tool allowlists; override from your repo or the workflow | `/code-review`, `/triage`, … |
@@ -59,6 +59,15 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 
 **It never merges and never approves.** Every change is a pull request you control, and the review check run
 always completes as `neutral` so it can't block a merge through branch protection.
+
+**Only people with write access can start it from a comment or an issue.** A comment, `/command`,
+`@mention` or new issue from anyone else is ignored before any model call, so a stranger cannot start a
+run from a thread or get Forge to push a commit. Pull requests are different: opening one is how outside
+contributions arrive, so automatic review still runs on them, read-only. On a busy public repository, bound
+that with `max_runs_per_hour` and `spend_cap_per_run_usd`. Reviews of pull requests from forks read the fork's code by pull
+request number, never a same-named branch of yours, and Forge never pushes to a fork. The rules a review
+follows (`REVIEW.md`, `FORGE.md`, `AGENTS.md`, security guidance, `.forge/skills`) are read from the branch
+being merged into, so a pull request cannot rewrite the instructions it is reviewed by.
 
 ### 🧠 The agent
 
@@ -350,6 +359,7 @@ jobs:
           provider: vertex
           secret-scan: '1'   # committed credentials — on by default
           code-scan: '1'     # source-code security rules — on by default
+          dep-scan: '1'      # vulnerable / malicious dependencies via OSV.dev — on by default
         env:
           LLM_PROVIDER: vertex
           VERTEX_PROJECT: ${{ vars.VERTEX_PROJECT }}
@@ -509,9 +519,12 @@ auto_fix: label                # label | opened | off
 auto_review: always            # always | requested | off
 secret_scan: true              # scan every PR for committed credentials (default true)
 code_scan: true                # source-code security rules alongside it (default true)
+dep_scan: true                 # changed lockfiles vs OSV.dev: CVEs, malicious releases, install scripts (default true)
+external_scanners: true        # /audit also runs semgrep, gitleaks, trivy, osv-scanner, bandit, checkov when installed
+audit_skills: ""               # /audit slices from owner/repo@<full commit SHA>, e.g. the shipiit/pentest-skills layout
 scan_block_on: high            # critical | high | medium | low | none — what fails the check run
 test_command: "npm test"       # else auto-detected
-review_depth: standard         # light | standard | deep
+review_depth: standard         # light: one pass · standard: find, then verify · deep: 3 focused reviewers, then verify
 ignore_paths: ["dist/**", "*.lock"]
 ```
 
@@ -550,13 +563,21 @@ issue / PR event ─▶ Probot webhook ─▶ clone repo (sandbox)
   network), `run_tests` (auto-detected).
 - **Agent loop** (`src/agent/loop.ts`) — chat → tool calls → results → repeat, with retries,
   iteration + token limits, and a repo-map for fast orientation.
-- **Scanners** (`src/scan`) — three deterministic passes that run *before* the model and cost nothing:
+- **Scanners** (`src/scan`) — four deterministic passes that run *before* the model and cost no tokens:
   secrets (provider shapes + Shannon entropy + file context), infrastructure (Dockerfile, compose,
-  Kubernetes, Terraform, workflows) and source code (taint reaching a dangerous call on the same
-  line). A model reads past the fourth key in a config file; these do not, and they give the same
+  Kubernetes, Terraform, workflows), source code (taint reaching a dangerous call on the same
+  line) and dependencies (`src/scan/deps`). The dependency pass reads the lockfiles a pull request
+  changes (npm, pnpm, Yarn, pip, Poetry, uv, Pipenv, Cargo), compares them with the base commit, and
+  checks only the packages that were added or moved against OSV.dev — known CVEs, and releases on
+  the OpenSSF malicious-packages list, which are reported as critical. It also flags an install
+  script that appears in an update (the signature of a hijacked maintainer account), packages
+  fetched over HTTP, from git or from arbitrary URLs, and entries with no integrity hash. It sends
+  only package names and versions to `api.osv.dev`; if OSV cannot be reached the report says the
+  check did not run rather than reporting a clean result. A model reads past the fourth key in a config file; these do not, and they give the same
   answer twice. Their findings are merged and deduplicated with the model's, so one weakness that
-  both notice arrives as **one** comment. Either scan can be switched off with `secret_scan` /
-  `code_scan`, or with the `secret-scan` / `code-scan` inputs on the Action.
+  both notice arrives as **one** comment. Each scan can be switched off with `secret_scan` /
+  `code_scan` / `dep_scan` (`FORGE_DEP_SCAN=0`), or with the `secret-scan` / `code-scan` / `dep-scan`
+  inputs on the Action.
 - **GitHub layer** (`src/github`) — vision image extraction, workspace clone/branch/commit/push,
   PR composer, diff-aware security review composer; wired to webhooks in `src/app.ts`.
 - **Dismissal** — resolving a review conversation dismisses that finding for the pull request;

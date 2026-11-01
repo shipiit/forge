@@ -5,7 +5,7 @@ export interface OctokitLike {
     pulls: {
       create(params: Record<string, unknown>): Promise<{ data: { number: number; html_url: string } }>;
       createReview(params: Record<string, unknown>): Promise<unknown>;
-      get(params: Record<string, unknown>): Promise<{ data: { body: string | null; title: string; head: { ref: string; sha: string }; base: { ref: string } } }>;
+      get(params: Record<string, unknown>): Promise<{ data: { body: string | null; title: string; head: { ref: string; sha: string; repo?: { full_name?: string } | null }; base: { ref: string; sha?: string } } }>;
       list(params: Record<string, unknown>): Promise<{ data: Array<{ number: number; html_url: string }> }>;
       listReviewComments?(params: Record<string, unknown>): Promise<unknown>;
       /**
@@ -37,6 +37,10 @@ export interface OctokitLike {
       listCommits(params: Record<string, unknown>): Promise<{ data: Array<{ commit: { message: string } }> }>;
       /** Optional: release-notes generation is skipped when unavailable. */
       updateRelease?(params: Record<string, unknown>): Promise<unknown>;
+      /** Who may start a run from a comment. Absent means nobody may. */
+      getCollaboratorPermissionLevel?(params: Record<string, unknown>): Promise<{
+        data: { permission?: string; role_name?: string };
+      }>;
     };
     dependabot?: {
       listAlertsForRepo(params: Record<string, unknown>): Promise<{ data: unknown[] }>;

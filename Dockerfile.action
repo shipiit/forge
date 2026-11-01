@@ -1,9 +1,43 @@
 # Docker image for the ShipIT Forge GitHub Action (runs once per triggering event).
 FROM node:22-slim
 
+ARG TARGETARCH
+
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ripgrep ca-certificates \
+  && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl python3 python3-venv \
   && rm -rf /var/lib/apt/lists/*
+
+# Third-party scanners for /audit, pinned by version and verified by the
+# SHA-256 each project publishes for its release. A scanner is code that reads
+# every repository Forge audits; one swapped binary would see all of them, so
+# nothing here is fetched as "latest" and nothing is installed unchecked.
+RUN set -eux; \
+  arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+  case "$arch" in \
+    amd64) gl=x64; gl_sha=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb; \
+           tv=64bit; tv_sha=c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0; \
+           osv=amd64; osv_sha=160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b ;; \
+    arm64) gl=arm64; gl_sha=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080; \
+           tv=ARM64; tv_sha=e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f; \
+           osv=arm64; osv_sha=4061ef4c021ed3c47f203b818f337e351336cc5cd67c0274fc36bd1dfc728dd7 ;; \
+    *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
+  esac; \
+  cd /tmp; \
+  curl -fsSLo gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_${gl}.tar.gz"; \
+  echo "${gl_sha}  gitleaks.tgz" | sha256sum -c -; \
+  tar -xzf gitleaks.tgz gitleaks && install -m 0755 gitleaks /usr/local/bin/gitleaks; \
+  curl -fsSLo trivy.tgz "https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-${tv}.tar.gz"; \
+  echo "${tv_sha}  trivy.tgz" | sha256sum -c -; \
+  tar -xzf trivy.tgz trivy && install -m 0755 trivy /usr/local/bin/trivy; \
+  curl -fsSLo osv-scanner "https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_${osv}"; \
+  echo "${osv_sha}  osv-scanner" | sha256sum -c -; \
+  install -m 0755 osv-scanner /usr/local/bin/osv-scanner; \
+  rm -rf /tmp/*
+
+# Python scanners in their own virtualenv, pinned.
+RUN python3 -m venv /opt/scanners \
+  && /opt/scanners/bin/pip install --no-cache-dir semgrep==1.183.0 bandit==1.9.4 checkov==3.4.0 \
+  && ln -s /opt/scanners/bin/semgrep /opt/scanners/bin/bandit /opt/scanners/bin/checkov /usr/local/bin/
 
 WORKDIR /action
 
