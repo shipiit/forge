@@ -62,7 +62,7 @@ import {
   historyFilename,
   type HistoryEntry,
 } from './history.js';
-import { buildIssueContent, buildReviewContent, type CommentLike } from './context.js';
+import { buildIssueContent, buildReviewContent, stripHidden, UNTRUSTED_NOTE, type CommentLike } from './context.js';
 import {
   buildReviewPayload,
   parseFindings,
@@ -1105,7 +1105,7 @@ async function doPrFollowup(
       system: prompt(deps, mentionSystemPrompt()),
       initialContent: [
         { type: 'text', text: repoMap },
-        { type: 'text', text: `You are working on the branch of PR #${args.pullNumber}. Request:\n\n${args.question}\n\nIf code changes are needed, make them and verify with tests.` },
+        { type: 'text', text: `You are working on the branch of PR #${args.pullNumber}. Request:\n\n${stripHidden(args.question)}\n\nIf code changes are needed, make them and verify with tests.` },
       ],
       tools: pick(deps, editToolset({ testCommand: deps.testCommand })),
       limits: limitsFor(deps),
@@ -1178,7 +1178,7 @@ async function doMention(
 
     // `/skill-name …` runs a named prompt pack — built-in, or one the repo
     // committed under .forge/skills/.
-    const invocation = parseSkillInvocation(args.question);
+    const invocation = parseSkillInvocation(stripHidden(args.question));
     const skills = await skillsFor(deps, ws.dir);
     // A workflow-selected skill applies when the comment didn't name one.
     // A command that picked a skill (/help) wins over the workflow default,
@@ -1210,11 +1210,13 @@ async function doMention(
           ? [
               {
                 type: 'text' as const,
-                text: `The thread you were called into — issue #${args.issueNumber}: ${args.issueTitle ?? ''}\n\n${args.issueBody ?? '(no description)'}`,
+                text:
+                  `The thread you were called into — issue #${args.issueNumber}: ${stripHidden(args.issueTitle ?? '')}\n\n` +
+                  `${UNTRUSTED_NOTE}\n\n${args.issueBody ? stripHidden(args.issueBody) : '(no description)'}`,
               },
             ]
           : []),
-        { type: 'text', text: args.question },
+        { type: 'text', text: stripHidden(args.question) },
       ],
       tools: pick(deps, selectTools(reviewToolset(), { allowed: skill?.tools ?? [] })),
       limits: limitsFor(deps),
