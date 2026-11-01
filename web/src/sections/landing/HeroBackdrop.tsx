@@ -19,7 +19,7 @@ export function HeroBackdrop() {
         transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
       />
       <motion.div
-        className="absolute -bottom-48 left-[-10%] h-[480px] w-[480px] rounded-full bg-[radial-gradient(circle,rgba(167,139,250,0.14),transparent_62%)] blur-3xl"
+        className="absolute -bottom-48 left-[-10%] h-[480px] w-[480px] rounded-full bg-[radial-gradient(circle,rgba(245,158,11,0.10),transparent_62%)] blur-3xl"
         animate={reduce ? undefined : { x: [0, 80, 0], y: [0, -30, 0] }}
         transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
       />

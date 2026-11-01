@@ -16,12 +16,12 @@
   --text: 245 246 250;
   --muted: 138 141 153;
   --faint: 100 103 118;
-  --accent: 167 139 250;      /* violet — used sparingly */
-  --accent2: 236 72 153;      /* pink */
-  --accent-soft: 196 181 253;
+  --accent: 251 146 60;       /* ember — the one warm colour, used sparingly */
+  --accent2: 245 158 11;      /* amber, the gradient's far end */
+  --accent-soft: 253 186 116;
   --accent-warm: 251 146 60;
-  --forge1: 167 139 250;
-  --forge2: 236 72 153;
+  --forge1: 251 146 60;
+  --forge2: 245 158 11;
 
   /* Status + series colours. Charts need more than one hue, and picking them
      here keeps a legend and a pill referring to the same thing the same way. */
@@ -30,6 +30,8 @@
   --bad: 248 113 113;
   --info: 96 165 250;
   --teal: 45 212 191;
+  --series-violet: 167 139 250; /* chart-only hues, so no two series share the accent */
+  --series-pink: 244 114 182;
   --panel-tint: 14 14 18;     /* what .panel fills with */
   --panel-tint-alpha: 0.8;
 
@@ -57,18 +59,20 @@
   --text: 18 21 30;
   --muted: 100 107 124;
   --faint: 138 145 162;
-  --accent: 106 62 232;       /* darkened: violet-400 on white fails AA */
-  --accent2: 219 39 119;
-  --accent-soft: 139 92 246;
-  --accent-warm: 217 119 6;
-  --forge1: 106 62 232;
-  --forge2: 219 39 119;
+  --accent: 194 65 12;        /* darkened: orange-400 on white fails AA; orange-700 passes */
+  --accent2: 180 83 9;
+  --accent-soft: 234 88 12;
+  --accent-warm: 194 65 12;
+  --forge1: 194 65 12;
+  --forge2: 180 83 9;
 
   --ok: 5 150 105;
   --warn: 176 118 8;
   --bad: 208 48 48;
   --info: 37 99 235;
   --teal: 13 148 136;
+  --series-violet: 109 40 217;
+  --series-pink: 190 24 93;
   --panel-tint: 255 255 255;
   --panel-tint-alpha: 1;
 

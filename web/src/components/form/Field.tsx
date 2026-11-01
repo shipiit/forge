@@ -27,7 +27,7 @@ export function Field({
       >
         {label}
         {required ? (
-          <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[rgb(var(--syn-prop))]">
+          <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-accentWarm">
             required
           </span>
         ) : (
