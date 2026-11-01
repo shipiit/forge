@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.4.0
 
 ### Security
 - **Only collaborators with write access can start a run from a comment, `@mention` or issue.** Everyone

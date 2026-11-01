@@ -15,7 +15,7 @@ Multi-provider · Vision-aware · Self-hosted · Original open-source code.
 [![License: MIT](https://img.shields.io/badge/License-MIT-22D3EE.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-401%20passing-FF8A3D.svg)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-1192%20passing-FF8A3D.svg)](#-testing)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-7C5CFF.svg)](#-contributing)
 
 <br/>
