@@ -11,9 +11,9 @@ import { orchestratorToolset } from '../agent/subagent.js';
 import {
   fixSystemPrompt,
   reviewSystemPrompt,
+  verifySystemPrompt,
   mentionSystemPrompt,
   analyzeSystemPrompt,
-  auditSystemPrompt,
   ciFixSystemPrompt,
   historySystemPrompt,
   releaseNotesSystemPrompt,
@@ -22,9 +22,16 @@ import { detectTestCommand, detectInstallCommand } from '../agent/tools/tests.js
 import { runCommand } from '../agent/tools/bash.js';
 import { buildRepoMap } from '../agent/repomap.js';
 import { createWorkspaceScanner } from '../agent/tools/security.js';
-import { applySkill, parseSkillInvocation, renderSkillList, resolveSkills, type Skill } from '../agent/skills.js';
+import { applySkill, parseSkillInvocation, renderSkillList, resolveSkills, SKILL_DIRS, type Skill } from '../agent/skills.js';
 import type { Routine } from '../routines.js';
-import { loadRepoInstructions, renderProjectContextBlock, composeReviewSystemPrompt } from './conventions.js';
+import {
+  loadRepoInstructions,
+  renderProjectContextBlock,
+  composeReviewSystemPrompt,
+  PROJECT_CONTEXT_FILES,
+  REVIEW_INSTRUCTIONS_FILE,
+  SECURITY_GUIDANCE_FILES,
+} from './conventions.js';
 import { buildCheckRunRequest } from './checkrun.js';
 import {
   REVIEW_THREADS_QUERY,
@@ -81,7 +88,15 @@ import { MAX_READ_CHARS } from '../agent/tools/fs.js';
 import type { ContentPart } from '../providers/types.js';
 import { blocking, renderReviewAck, renderReviewDone, renderScanReport, type BlockLevel } from '../scan/report.js';
 import { fetchDependabotFindings } from './dependabot.js';
-import { isSafeRef, realWorkspace, type RepoRef, type WorkspacePort } from './workspace.js';
+import { combineResults, renderVerification, reviewPasses, splitSpend, type ReviewDepth } from './verify.js';
+import { runAudit, type AuditOutcome } from '../audit/run.js';
+import { BUILT_IN_SLICES, type AuditSlice } from '../audit/slices.js';
+import { applicableSlices } from '../audit/select.js';
+import { FALSE_POSITIVE_SHAPES, slicePrompt } from '../audit/prompt.js';
+import { renderCoverage } from '../audit/report.js';
+import { loadAuditSlices } from '../audit/override.js';
+import { renderToolRuns, runExternalScanners } from '../scan/external/index.js';
+import { isSafeRef, realWorkspace, trustedView, type RepoRef, type WorkspacePort } from './workspace.js';
 import {
   composeFixPrBody,
   fetchPrDiff,
@@ -90,6 +105,10 @@ import {
 } from './pr.js';
 
 const MAX_ITER = Number(process.env.MAX_ITERATIONS || 25);
+/** The verifier re-reads named lines; it needs far fewer turns than finding them did. */
+const VERIFY_ITER = 15;
+/** The verifier has tools to read any file; the diff is orientation, not the whole story. */
+const MAX_VERIFY_DIFF = 60_000;
 /** Output-token budget per model turn — one value for every flow (16k default). */
 const MAX_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS;
 const DISPLAY = process.env.FORGE_DISPLAY_NAME || 'ShipIT Forge';
@@ -101,6 +120,12 @@ export interface HandlerDeps {
   client: LLMClient;
   token: string; // installation token for clone + image download
   log: (msg: string) => void;
+  /** Run installed third-party scanners on /audit. Default true. */
+  externalScanners?: boolean;
+  /** owner/repo@<sha> to take audit slices from; empty uses the built-ins. */
+  auditSkills?: string;
+  /** How thorough a pull-request review is: one pass, find-then-verify, or three finders then verify. */
+  reviewDepth?: ReviewDepth;
   /** Run a self-review pass over the fix diff before opening the PR (default true). */
   selfReview?: boolean;
   /** Which deterministic scanners to run. Defaults to all of them. */
@@ -167,11 +192,11 @@ function deadlineMs(env: NodeJS.ProcessEnv = process.env): number {
   return Math.min(Math.max(raw, 60_000), 6 * 3_600_000);
 }
 
-function limitsFor(deps: HandlerDeps, maxIterations = MAX_ITER): AgentLimits {
+function limitsFor(deps: HandlerDeps, maxIterations = MAX_ITER, maxSpendUsd = deps.spendCapPerRunUsd ?? NO_CAP): AgentLimits {
   return {
     maxIterations,
     maxOutputTokens: MAX_TOKENS,
-    maxSpendUsd: deps.spendCapPerRunUsd ?? NO_CAP,
+    maxSpendUsd,
     maxWallClockMs: deadlineMs(),
   };
 }
@@ -215,6 +240,36 @@ async function allowRun(
     }
   }
   return false;
+}
+
+/** A file's text for a quick look, or undefined. Large files are cut, not read whole. */
+async function readCapped(dir: string, rel: string, max = 64 * 1024): Promise<string | undefined> {
+  try {
+    return (await fs.readFile(path.join(dir, rel), 'utf8')).slice(0, max);
+  } catch {
+    return undefined;
+  }
+}
+
+/** What an audit did not do, said plainly: failed specialists, skipped ones, unverified findings. */
+function renderAuditNotes(o: AuditOutcome, skipped: Array<{ slice: AuditSlice; why: string }>): string {
+  const lines = [
+    ...(o.verified ? [`🔎 Every finding was re-checked against the code; ${o.rejected.length} dropped.`] : ['⚠️ Verification did not complete; these findings are unverified.']),
+    ...o.failed.map((id) => `⚠️ The ${id} specialist failed; its areas are NOT TESTED.`),
+    ...skipped.map((s) => `➖ Skipped ${s.slice.title}: ${s.why}.`),
+  ];
+  return lines.length ? `<sub>${lines.join('<br>')}</sub>` : '';
+}
+
+/** Files whose content steers the agent, and so must come from trusted history. */
+function trustedPaths(deps: HandlerDeps): string[] {
+  return [
+    ...PROJECT_CONTEXT_FILES,
+    REVIEW_INSTRUCTIONS_FILE,
+    ...SECURITY_GUIDANCE_FILES,
+    ...SKILL_DIRS,
+    ...(deps.skillsPath ? [deps.skillsPath] : []),
+  ];
 }
 
 /** Resolve every skill available to this run: built-ins, repo files, workflow-inline. */
@@ -912,7 +967,13 @@ async function doPrReview(
     .filter((c) => c.body && !isFromForge(c.user?.login))
     .map((c) => ({ user: c.user?.login ?? 'user', body: c.body! }));
 
-  const ws = await (deps.workspace ?? realWorkspace).clone({ owner: args.owner, repo: args.repo, ref: prRes.data.head.ref }, token);
+  const ws = await (deps.workspace ?? realWorkspace).clone(
+    { owner: args.owner, repo: args.repo, ref: prRes.data.base.ref, pull: args.pullNumber },
+    token,
+  );
+  // The rules a review follows come from the branch it merges into, never from
+  // the change under review.
+  const trusted = await trustedView(ws, prRes.data.base.ref, trustedPaths(deps));
   try {
     const initialContent = await buildReviewContent(
       { number: args.pullNumber, title: prRes.data.title, body: prRes.data.body },
@@ -922,15 +983,18 @@ async function doPrReview(
       { securityOnly: args.securityOnly },
       log,
     );
-    const instructions = await loadRepoInstructions(ws.dir);
-    if (instructions.found.length) log(`repo instructions: ${instructions.found.join(', ')}`);
+    const instructions = await loadRepoInstructions(trusted.dir);
+    if (instructions.found.length) log(`repo instructions (from ${prRes.data.base.ref}): ${instructions.found.join(', ')}`);
 
     // Scan before the model, not after. Two reasons: the deterministic pass
     // costs nothing, so a review that stops early for budget still carries the
     // findings that were free; and the model is told what was already found,
     // so it spends its turns judging whether those are reachable rather than
     // rediscovering a key it would have read past anyway.
-    const all = await runScanners({ cwd: ws.dir, only: new Set(parseDiffValidLines(diff).keys()) }, deps.scanners);
+    const all = await runScanners(
+      { cwd: ws.dir, only: new Set(parseDiffValidLines(diff).keys()), base: prRes.data.base?.sha },
+      deps.scanners,
+    );
 
     // A finding in a test file does not become an inline review comment.
     //
@@ -960,34 +1024,64 @@ async function doPrReview(
     const seeded = await seedChangedFiles(ws.dir, diff, log);
     const content = [...initialContent, ...(seeded ? [seeded] : [])];
 
-    const result = await runAgent({
-      client,
-      // REVIEW.md overrides the default guidance; FORGE.md is context whose
-      // newly-introduced violations are nits.
-      system: await withSkill(
-        deps,
-        ws.dir,
-        prompt(deps, composeReviewSystemPrompt(reviewSystemPrompt({ securityOnly: args.securityOnly }), instructions)),
-      ),
-      initialContent: scanned.length ? [...content, scanSummary(scanned)] : content,
-      tools: pick(deps, reviewToolset()),
-      limits: limitsFor(deps),
-      cwd: ws.dir,
-      onEvent: watch(deps, 'main', progress(log)),
+    // REVIEW.md overrides the default guidance; FORGE.md is context whose
+    // newly-introduced violations are nits.
+    const system = await withSkill(
+      deps,
+      trusted.dir,
+      prompt(deps, composeReviewSystemPrompt(reviewSystemPrompt({ securityOnly: args.securityOnly }), instructions)),
+    );
+    const initial = scanned.length ? [...content, scanSummary(scanned)] : content;
+    const depth = deps.reviewDepth ?? 'standard';
+    const spend = splitSpend(depth, deps.spendCapPerRunUsd ?? NO_CAP);
+    const passes = await reviewPasses({
+      depth,
+      find: (focus) =>
+        runAgent({
+          client,
+          system,
+          initialContent: focus ? [...initial, { type: 'text', text: focus }] : initial,
+          tools: pick(deps, reviewToolset()),
+          limits: limitsFor(deps, MAX_ITER, spend.finder),
+          cwd: ws.dir,
+          onEvent: watch(deps, focus ? 'finder' : 'main', progress(log)),
+        }),
+      verify: (candidates) =>
+        runAgent({
+          client,
+          system: prompt(deps, verifySystemPrompt()),
+          initialContent: [
+            {
+              type: 'text',
+              text: `The pull request diff:\n\n${diff.slice(0, MAX_VERIFY_DIFF)}\n\nCandidate findings:\n\n${candidates}`,
+            },
+          ],
+          tools: pick(deps, reviewToolset()),
+          limits: limitsFor(deps, VERIFY_ITER, spend.verify),
+          cwd: ws.dir,
+          onEvent: watch(deps, 'verify', progress(log)),
+        }),
+      log,
     });
-    deps.run?.add(result);
+    for (const r of passes.results) deps.run?.add(r);
+    const result = combineResults(passes.results);
 
     // Hard-enforce the scope: the prompt asks for changed files only, this
     // guarantees it even if the model wanders.
-    const findings = scopeFindingsToDiff(
-      mergeFindings(parseFindings(result.finalText), scanned),
-      diff,
-    );
+    const findings = scopeFindingsToDiff(mergeFindings(passes.findings, scanned), diff);
     deps.run?.findings(findings);
     deps.run?.artifact('diff', diff);
 
-    // Merge live Dependabot alerts (current CVEs from GitHub's Advisory Database).
-    findings.push(...(await fetchDependabotFindings(octokit, args.owner, args.repo, log)));
+    // Dependabot alerts describe the default branch, not this change. Only the
+    // ones on a manifest this pull request touches are worth mentioning here,
+    // and they never block it: up to fifty repository-wide alerts used to land
+    // on every pull request and turn each one into "changes requested".
+    const touched = new Set(changedFiles(diff));
+    findings.push(
+      ...(await fetchDependabotFindings(octokit, args.owner, args.repo, log))
+        .filter((f) => touched.has(f.file))
+        .map((f) => ({ ...f, preExisting: true })),
+    );
 
     // Optionally merge static-analysis (SARIF) findings, e.g. from CodeQL.
     if (deps.sarifPath) {
@@ -1066,11 +1160,12 @@ async function doPrReview(
               fromScanners: scanned.length,
               inTestFiles: inTests,
               includeCoverage: false,
-            }) + renderSkipped(plan),
+            }) + renderSkipped(plan) + renderVerification(depth, passes),
           ) +
           costFooter(result.usage, client.model, deps.showCost),
     });
   } finally {
+    await trusted.cleanup();
     await ws.cleanup();
   }
 }
@@ -1095,6 +1190,23 @@ async function doPrFollowup(
   const { octokit, client, token, log } = deps;
   const pr = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
   const headRef = pr.data.head.ref;
+
+  // A fork's branch lives in the fork. Cloning it by name from this repository
+  // gets whatever branch here shares the name — `main`, quite possibly — and
+  // pushing would commit to that instead.
+  const headRepo = pr.data.head.repo?.full_name;
+  if (headRepo?.toLowerCase() !== `${args.owner}/${args.repo}`.toLowerCase()) {
+    log(`followup: #${args.pullNumber} comes from ${headRepo ?? 'a deleted fork'}; not pushing`);
+    await octokit.rest.issues.createComment({
+      owner: args.owner,
+      repo: args.repo,
+      issue_number: args.pullNumber,
+      body:
+        `${DISPLAY} can't push to this pull request: its branch is in ${headRepo ? `\`${headRepo}\`` : 'a fork that no longer exists'}, ` +
+        `not in this repository. Comment \`/review\` for a review with suggested changes you can apply.`,
+    });
+    return;
+  }
 
   const wsOps = deps.workspace ?? realWorkspace;
   const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: headRef }, token);
@@ -1245,7 +1357,7 @@ async function doMention(
  */
 export function handleScan(
   deps: HandlerDeps,
-  args: { owner: string; repo: string; issueNumber: number; ref: string; pullNumber?: number },
+  args: { owner: string; repo: string; issueNumber: number; ref: string; pullNumber?: number; baseSha?: string },
 ): Promise<void> {
   return withLock(`scan:${args.owner}/${args.repo}#${args.issueNumber}`, deps.log, () => doScan(deps, args));
 }
@@ -1297,11 +1409,29 @@ async function touchedPaths(
 
 async function doScan(
   deps: HandlerDeps,
-  args: { owner: string; repo: string; issueNumber: number; ref: string; pullNumber?: number },
+  args: { owner: string; repo: string; issueNumber: number; ref: string; pullNumber?: number; baseSha?: string },
 ): Promise<void> {
   const { octokit, token, log } = deps;
   const wsOps = deps.workspace ?? realWorkspace;
-  const ws = await wsOps.clone({ owner: args.owner, repo: args.repo, ref: args.ref }, token);
+
+  // A scan of a pull request reads the pull request's code. `/secrets` arrives
+  // naming the default branch, and scanning that while the check run lands on
+  // the pull request's head would pass code nobody read.
+  let pr: Awaited<ReturnType<typeof octokit.rest.pulls.get>> | undefined;
+  if (args.pullNumber) {
+    try {
+      pr = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
+    } catch (err) {
+      log(`scan: could not read pull request #${args.pullNumber} (${err instanceof Error ? err.message : 'unknown'}); not scanning`);
+      return;
+    }
+  }
+  const ws = await wsOps.clone(
+    pr && args.pullNumber
+      ? { owner: args.owner, repo: args.repo, ref: pr.data.base?.ref ?? args.ref, pull: args.pullNumber }
+      : { owner: args.owner, repo: args.repo, ref: args.ref },
+    token,
+  );
 
   try {
     // A pull-request review scans the change; an audit scans everything.
@@ -1323,9 +1453,12 @@ async function doScan(
     const changed = args.pullNumber
       ? await touchedPaths(deps, args.owner, args.repo, args.pullNumber)
       : undefined;
+    // Without the base a lockfile is judged whole, and every advisory already
+    // on the default branch would land on this pull request.
+    const base = args.baseSha ?? pr?.data.base?.sha;
 
     const files = await collectFiles(ws.dir, changed);
-    const findings = await runScanners({ cwd: ws.dir, only: changed }, deps.scanners);
+    const findings = await runScanners({ cwd: ws.dir, only: changed, base }, deps.scanners);
     deps.run?.findings(findings);
     log(
       `scan: ${findings.length} finding(s) across ${files.length} ${changed ? 'changed file(s)' : 'file(s)'}`,
@@ -1382,9 +1515,8 @@ async function doScan(
     //
     // The rest still appear in the comment, under their own heading, so the
     // debt stays visible without holding a README change hostage.
-    if (args.pullNumber && octokit.rest.checks?.create) {
+    if (pr && octokit.rest.checks?.create) {
       try {
-        const pr = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
         const stop = blocking(findings, deps.scanBlockOn ?? 'high');
         await octokit.rest.checks.create({
           owner: args.owner,
@@ -1466,27 +1598,51 @@ async function doAudit(
   const ws = await (deps.workspace ?? realWorkspace).clone({ owner: args.owner, repo: args.repo, ref: args.ref }, token);
   try {
     const repoMap = await buildRepoMap(ws.dir, { maxEntries: 800 });
-    // Same order as a review: the free pass first, and the model is told what
-    // it already found so it spends its turns on reachability instead.
-    const scannedRepo = await runScanners({ cwd: ws.dir }, deps.scanners);
+    // Same order as a review: the free passes first, and every specialist is
+    // told what they found so it spends its turns on reachability instead.
+    const files = await collectFiles(ws.dir);
+    const external = deps.externalScanners === false ? { findings: [], runs: [] } : await runExternalScanners(ws.dir, { log });
+    const scannedRepo = mergeFindings([], [...(await runScanners({ cwd: ws.dir }, deps.scanners)), ...external.findings]);
     if (scannedRepo.length) log(`scanners: ${scannedRepo.length} finding(s) before the model ran`);
 
-    const result = await runAgent({
-      client,
-      system: prompt(deps, auditSystemPrompt()),
-      initialContent: [{ type: 'text', text: `${repoMap}\n\nAudit this repository for security vulnerabilities. Be thorough; follow untrusted input to dangerous sinks.` }],
-      tools: pick(deps, reviewToolset()),
-      limits: limitsFor(deps, Math.max(MAX_ITER, 40)),
-      cwd: ws.dir,
-      onEvent: watch(deps, 'main', progress(log)),
+    const library = (deps.auditSkills ? await loadAuditSlices(octokit, deps.auditSkills, log) : undefined) ?? BUILT_IN_SLICES;
+    const { run: slices, skipped } = await applicableSlices(library, files, (p) => readCapped(ws.dir, p));
+    // The run's cap covers every specialist and the verifier together.
+    const cap = deps.spendCapPerRunUsd ?? NO_CAP;
+    const perSlice = (cap * 0.75) / Math.max(1, slices.length);
+    const orientation = { type: 'text' as const, text: `${repoMap}\n\nAudit this whole repository for your slice. Follow untrusted input to dangerous sinks.` };
+    const outcome = await runAudit({
+      slices,
+      log,
+      find: (slice) =>
+        runAgent({
+          client,
+          system: prompt(deps, slicePrompt(slice)),
+          initialContent: scannedRepo.length ? [orientation, scanSummary(scannedRepo)] : [orientation],
+          tools: pick(deps, reviewToolset()),
+          limits: limitsFor(deps, Math.max(MAX_ITER, 30), perSlice),
+          cwd: ws.dir,
+          onEvent: watch(deps, `slice:${slice.id}`, progress(log)),
+        }),
+      verify: (candidates) =>
+        runAgent({
+          client,
+          system: prompt(deps, `${verifySystemPrompt()}\n\n${FALSE_POSITIVE_SHAPES}`),
+          initialContent: [{ type: 'text', text: `Candidate findings from a whole-repository audit:\n\n${candidates}` }],
+          tools: pick(deps, reviewToolset()),
+          limits: limitsFor(deps, VERIFY_ITER * 2, cap * 0.25),
+          cwd: ws.dir,
+          onEvent: watch(deps, 'verify', progress(log)),
+        }),
     });
-    deps.run?.add(result);
+    for (const r of outcome.results) deps.run?.add(r);
+    const result = combineResults(outcome.results);
     // An audit keeps its test-file findings, where a pull-request review drops
     // them. The asymmetry is deliberate: a review comments on a diff somebody
     // is about to merge, and nits about its own fixtures are noise there. An
     // audit is somebody asking what is in the repository — and a key committed
     // to a test file is one of the things they are asking about.
-    const findings = mergeFindings(parseFindings(result.finalText), scannedRepo);
+    const findings = mergeFindings(outcome.findings, scannedRepo);
     deps.run?.findings(findings);
     // Merge live Dependabot alerts (current CVEs from GitHub's Advisory Database).
     findings.push(...(await fetchDependabotFindings(octokit, args.owner, args.repo, log)));
@@ -1501,7 +1657,16 @@ async function doAudit(
       repo: args.repo,
       comment_id: ack.data.id,
       body:
-        withBudgetNotice(result, client.model, renderAuditReport(findings, DISPLAY)) +
+        withBudgetNotice(
+          result,
+          client.model,
+          [
+            renderAuditReport(findings, DISPLAY),
+            renderCoverage(outcome.coverage, outcome.ran),
+            renderToolRuns(external.runs),
+            renderAuditNotes(outcome, skipped),
+          ].filter(Boolean).join('\n\n'),
+        ) +
         issueNote +
         costFooter(result.usage, client.model, deps.showCost),
     });
@@ -1528,6 +1693,20 @@ async function doCiFailure(
   // Token safety: only auto-fix CI on Forge's OWN PR branches, and cap attempts.
   if (!args.headBranch.startsWith('forge/')) {
     log(`CI failure on ${args.headBranch} is not a Forge branch; skipping.`);
+    return;
+  }
+  // A fork can name its branch `forge/…` too. Its CI logs are the fork's to
+  // write, and the push below goes to this repository's branch of that name.
+  let headRepo: string | undefined;
+  try {
+    const pr = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
+    headRepo = pr.data.head.repo?.full_name;
+  } catch (err) {
+    log(`CI fix: could not read #${args.pullNumber} (${err instanceof Error ? err.message : 'unknown'}); skipping`);
+    return;
+  }
+  if (headRepo?.toLowerCase() !== `${args.owner}/${args.repo}`.toLowerCase()) {
+    log(`CI fix: #${args.pullNumber} comes from ${headRepo ?? 'a deleted fork'}; skipping`);
     return;
   }
   const wsOps = deps.workspace ?? realWorkspace;

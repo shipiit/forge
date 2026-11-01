@@ -1,0 +1,150 @@
+[
+  {
+    "name": "string-built SQL from a query parameter is injection",
+    "files": {
+      "src/users.ts": "import { db } from './db';\n\nexport async function findUser(req, res) {\n  const rows = await db.query(`SELECT * FROM users WHERE email = '${req.query.email}'`);\n  res.json(rows);\n}\n"
+    },
+    "expect": [
+      {
+        "file": "src/users.ts",
+        "category": "CWE-89",
+        "minSeverity": "high",
+        "because": "Request data concatenated into SQL."
+      }
+    ]
+  },
+  {
+    "name": "a parameterised query is not injection",
+    "files": {
+      "src/users.ts": "import { db } from './db';\n\nexport async function findUser(req, res) {\n  const rows = await db.query('SELECT * FROM users WHERE email = $1', [req.query.email]);\n  res.json(rows);\n}\n"
+    },
+    "forbid": [
+      {
+        "category": "CWE-89",
+        "because": "The driver binds the value; the verifier must drop this."
+      }
+    ]
+  },
+  {
+    "name": "a file path from the URL can climb out of the upload directory",
+    "files": {
+      "src/files.ts": "import path from 'node:path';\n\nconst ROOT = '/srv/uploads';\n\nexport function download(req, res) {\n  res.sendFile(path.join(ROOT, req.params.name));\n}\n"
+    },
+    "expect": [
+      {
+        "file": "src/files.ts",
+        "category": "CWE-22",
+        "minSeverity": "high",
+        "because": "path.join does not stop ../ sequences."
+      }
+    ]
+  },
+  {
+    "name": "a path checked against its root after resolving is not traversal",
+    "files": {
+      "src/files.ts": "import path from 'node:path';\n\nconst ROOT = path.resolve('/srv/uploads');\n\nexport function download(req, res) {\n  const target = path.resolve(ROOT, req.params.name);\n  if (!target.startsWith(ROOT + path.sep)) return res.status(400).end();\n  res.sendFile(target);\n}\n"
+    },
+    "forbid": [
+      {
+        "category": "CWE-22",
+        "because": "Resolved and confined to ROOT before use."
+      }
+    ]
+  },
+  {
+    "name": "fetching a URL the caller chose is server-side request forgery",
+    "files": {
+      "src/preview.ts": "export async function preview(req, res) {\n  const page = await fetch(req.query.url);\n  res.send(await page.text());\n}\n"
+    },
+    "expect": [
+      {
+        "file": "src/preview.ts",
+        "category": "CWE-918",
+        "minSeverity": "high",
+        "because": "Reaches internal services and cloud metadata."
+      }
+    ]
+  },
+  {
+    "name": "writing the URL fragment into innerHTML is DOM XSS",
+    "files": {
+      "web/banner.js": "const banner = document.getElementById('banner');\nbanner.innerHTML = decodeURIComponent(location.hash.slice(1));\n"
+    },
+    "expect": [
+      {
+        "file": "web/banner.js",
+        "category": "CWE-79",
+        "minSeverity": "medium",
+        "because": "Attacker-controlled fragment rendered as HTML."
+      }
+    ]
+  },
+  {
+    "name": "textContent is not XSS",
+    "files": {
+      "web/banner.js": "const banner = document.getElementById('banner');\nbanner.textContent = decodeURIComponent(location.hash.slice(1));\n"
+    },
+    "forbid": [
+      {
+        "category": "CWE-79",
+        "because": "textContent never parses HTML."
+      }
+    ]
+  },
+  {
+    "name": "redirecting to a caller-supplied URL is an open redirect",
+    "files": {
+      "src/login.ts": "export function afterLogin(req, res) {\n  res.redirect(req.query.next);\n}\n"
+    },
+    "expect": [
+      {
+        "file": "src/login.ts",
+        "category": "CWE-601",
+        "minSeverity": "medium",
+        "because": "Phishing via a trusted domain."
+      }
+    ]
+  },
+  {
+    "name": "yaml.load on a request body runs arbitrary constructors",
+    "files": {
+      "app/config_api.py": "import yaml\nfrom flask import request\n\n\ndef upload():\n    return yaml.load(request.data, Loader=yaml.Loader)\n"
+    },
+    "expect": [
+      {
+        "file": "app/config_api.py",
+        "category": "CWE-502",
+        "minSeverity": "high",
+        "because": "Full loader on untrusted input."
+      }
+    ]
+  },
+  {
+    "name": "yaml.safe_load is not unsafe deserialization",
+    "files": {
+      "app/config_api.py": "import yaml\nfrom flask import request\n\n\ndef upload():\n    return yaml.safe_load(request.data)\n"
+    },
+    "forbid": [
+      {
+        "category": "CWE-502",
+        "because": "safe_load builds plain data only."
+      }
+    ]
+  },
+  {
+    "name": "a hardcoded default is a preference, not a vulnerability",
+    "files": {
+      "src/server.ts": "const PORT = 8080;\n\nexport function listen(app) {\n  app.listen(PORT, '127.0.0.1');\n}\n"
+    },
+    "forbid": [
+      {
+        "category": "CWE-798",
+        "because": "A port number is not a credential."
+      },
+      {
+        "category": "CWE-1327",
+        "because": "Bound to loopback, not every interface."
+      }
+    ]
+  }
+]

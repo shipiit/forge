@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+### Security
+- **Only collaborators with write access can start a run from a comment, `@mention` or issue.** Everyone
+  else is ignored before any model call. Community-opened issues are no longer analysed automatically, and
+  triage-only users can no longer start `agent-fix` by label.
+- **Fork pull requests are read by number** (`refs/pull/N/head`), never by a same-named branch of the base
+  repository. Forge never pushes a follow-up or a CI fix to a fork.
+- **`REVIEW.md`, `FORGE.md`, `AGENTS.md`, security guidance and skills come from the base branch**, so a pull
+  request cannot rewrite the rules it is reviewed by.
+- **`/secrets` on a pull request scans the pull request's code.** It used to scan the default branch and
+  post a passing check on the pull request's head.
+
+### Review
+- **Every finding is verified** by a second agent that re-reads the code before it is posted.
+  `review_depth` (previously accepted and ignored) now means: `light` one pass, `standard` (default) find
+  then verify, `deep` three focused reviewers then verify. Standard reviews cost more than before; set
+  `review_depth: light` for the old behaviour. The run's spend cap is shared across the passes.
+- Dependabot alerts on a review are limited to manifests the pull request touches, and never block it.
+
+### Scanning
+- **New dependency scanner** (`dep_scan`, on by default): changed lockfiles are checked against OSV.dev for
+  known CVEs and malicious releases, plus new install scripts, off-registry sources and missing integrity
+  hashes. It sends package names and versions to `api.osv.dev`.
+
+### Audit
+- **`/audit` is a specialist team**: up to eight static slices (adapted from shipiit/pentest-skills) run in
+  parallel within the run's spend cap, then one verifier with known false-positive shapes. Slices with
+  nothing to look at (no frontend, no model SDK) are skipped. The report adds a coverage map.
+- **Third-party scanners** (`external_scanners`, on by default): semgrep, gitleaks, trivy, osv-scanner, bandit
+  and checkov run when installed — and the Action image now bundles them, pinned and checksum-verified. They
+  run with no GitHub token or model key in their environment. Pull-request reviews do not run them.
+- **`audit_skills: owner/repo@<sha>`** replaces the built-in slices with a repository's own, pinned to a commit.
+
+### Evals
+- `forge eval --model-review --cases evals/review-cases` scores the model review against planted bugs and
+  their safe look-alikes.
+
 ## 2.0.0
 
 The agent grows past reviewing pull requests: it now runs on a schedule, documents

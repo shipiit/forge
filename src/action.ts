@@ -23,6 +23,7 @@ import {
   type HandlerDeps,
 } from './github/handlers.js';
 import { scannersFor } from './scan/index.js';
+import { mayTrigger } from './github/permissions.js';
 import { loadRepoConfig } from './github/repoConfig.js';
 import { findRoutine } from './routines.js';
 import type { OctokitLike } from './github/pr.js';
@@ -90,6 +91,12 @@ async function main(): Promise<void> {
   // repository's own setting, which is on.
   if (offSwitch(actionInput('secret-scan'))) config.secretScan = false;
   if (offSwitch(actionInput('code-scan'))) config.codeScan = false;
+  if (offSwitch(actionInput('dep-scan'))) config.depScan = false;
+  if (offSwitch(actionInput('external-scanners'))) config.externalScanners = false;
+  const auditSkills = actionInput('audit-skills');
+  if (auditSkills) config.auditSkills = auditSkills;
+  const depth = actionInput('review-depth');
+  if (depth === 'light' || depth === 'standard' || depth === 'deep') config.reviewDepth = depth;
   const blockOn = actionInput('scan-block-on');
   if (blockOn && ['critical', 'high', 'medium', 'low', 'info', 'none'].includes(blockOn)) {
     config.scanBlockOn = blockOn as typeof config.scanBlockOn;
@@ -117,7 +124,7 @@ async function main(): Promise<void> {
   // surface give the same answer on the same pull request.
   const prAction: string = payload?.action ?? '';
   const prScan =
-    (config.secretScan || config.codeScan) &&
+    (config.secretScan || config.codeScan || config.depScan) &&
     eventName === 'pull_request' &&
     ['opened', 'synchronize', 'reopened', 'ready_for_review'].includes(prAction) &&
     payload?.pull_request &&
@@ -129,6 +136,7 @@ async function main(): Promise<void> {
           issueNumber: payload.pull_request.number as number,
           pullNumber: payload.pull_request.number as number,
           ref: (payload.pull_request.head?.ref ?? '') as string,
+          baseSha: typeof payload.pull_request.base?.sha === 'string' ? payload.pull_request.base.sha : undefined,
         }
       : undefined;
 
@@ -136,6 +144,8 @@ async function main(): Promise<void> {
     log(`ShipIT Forge: nothing to do (${route.reason}).`);
     return;
   }
+  // A comment or an issue can come from anyone who can see the repository.
+  if (!(await mayTrigger(octokit, eventName, payload, log))) return;
 
   const deps: HandlerDeps = {
     octokit,
@@ -160,6 +170,9 @@ async function main(): Promise<void> {
     findingsMaxIssues: config.findingsMaxIssues,
     selfReview: true,
     scanners: scannersFor(config),
+    reviewDepth: config.reviewDepth,
+    externalScanners: config.externalScanners,
+    auditSkills: config.auditSkills,
     scanBlockOn: config.scanBlockOn,
   };
 

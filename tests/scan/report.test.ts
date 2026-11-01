@@ -259,3 +259,32 @@ describe('the same table, before and after', () => {
     expect(after).toContain('survived');
   });
 });
+
+describe('the dependency pass in the report', () => {
+  it('says what it covers and that it contacts OSV, only when it ran', () => {
+    const on = renderScanReport([], { ...opts, scanners: ['secrets', 'deps'] });
+    expect(on).toContain('**Dependencies**');
+    expect(on).toContain('no vulnerable or malicious dependency.');
+    expect(on).toContain('api.osv.dev');
+    const off = renderScanReport([], { ...opts, scanners: ['secrets'] });
+    expect(off).not.toContain('Dependencies');
+    expect(off).not.toContain('osv');
+  });
+
+  it('is named in the review note when switched on', () => {
+    expect(renderReviewAck('ShipIT Forge', ['deps'])).toContain('📦 Dependencies');
+    expect(renderReviewAck('ShipIT Forge', ['secrets'])).not.toContain('Dependencies');
+  });
+});
+
+describe('dismissing a dependency finding', () => {
+  it('says how, since a lockfile cannot hold a forge-ignore marker', () => {
+    const body = renderScanReport([f({ file: 'web/package-lock.json', category: 'CWE-1395' })], opts);
+    expect(body).toContain('cannot carry a <code>forge-ignore</code> marker');
+    expect(body).toContain('dep_scan: false');
+  });
+
+  it('stays out of a report with no dependency findings', () => {
+    expect(renderScanReport([f()], opts)).not.toContain('dep_scan');
+  });
+});

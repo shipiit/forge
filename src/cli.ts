@@ -16,6 +16,7 @@ import { buildDoctorReport, renderDoctorReport } from './doctor.js';
 import { startDashboard } from './usage/serve.js';
 import { addAccount, changePassword, deleteAccount, renderAccounts } from './usage/accounts.js';
 import { loadCases, runSuite } from './evals/run.js';
+import { isProviderId, modelReviewer } from './evals/model.js';
 import { renderScorecard, regressedAgainst } from './evals/score.js';
 import { cliRun } from './usage/cli.js';
 import { SUPPORTED_PROVIDERS } from './providers/index.js';
@@ -106,7 +107,19 @@ program
   .option('--cases <dir>', 'Directory of case files', 'evals/cases')
   .option('--baseline <file>', 'Fail if quality dropped against this scorecard', '')
   .option('--save-baseline <file>', 'Write this run to a file to compare against later', '')
-  .action(async (opts: { cases: string; baseline: string; saveBaseline: string }) => {
+  .option('--model-review', 'Also put each case through the model review (needs provider credentials; costs tokens)')
+  .option('--provider <id>', 'Provider for --model-review', process.env.LLM_PROVIDER || 'anthropic')
+  .option('--model <name>', 'Model for --model-review')
+  .option('--depth <depth>', 'Review depth for --model-review: light | standard | deep', 'standard')
+  .action(async (opts: {
+    cases: string;
+    baseline: string;
+    saveBaseline: string;
+    modelReview?: boolean;
+    provider: string;
+    model?: string;
+    depth: string;
+  }) => {
     const cases = await loadCases(opts.cases);
     if (cases.length === 0) {
       console.error(`No cases in ${opts.cases}.`);
@@ -114,8 +127,22 @@ program
       return;
     }
 
-    console.log(`Scoring ${cases.length} case(s) from ${opts.cases}…\n`);
-    const card = await runSuite(cases);
+    const depth = opts.depth === 'light' || opts.depth === 'deep' ? opts.depth : 'standard';
+    const provider = opts.provider;
+    if (opts.modelReview && !isProviderId(provider)) {
+      console.error(`Unknown provider "${provider}".`);
+      process.exitCode = 1;
+      return;
+    }
+    const review = opts.modelReview && isProviderId(provider)
+      ? modelReviewer({
+          client: createLLMClient({ provider, model: opts.model }),
+          depth,
+          log: (m) => console.log(`  ${m}`),
+        })
+      : undefined;
+    console.log(`Scoring ${cases.length} case(s) from ${opts.cases}${review ? ` with the model review (${depth})` : ''}…\n`);
+    const card = await runSuite(cases, { review });
     console.log(renderScorecard(card));
 
     if (opts.saveBaseline) {
