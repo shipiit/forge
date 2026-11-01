@@ -146,6 +146,22 @@ body::before {
   }
   .row-line { border-top: 1px solid rgb(var(--line) / 0.08); }
 
+  /* Editorial accents: one warm colour, used for the one word and the one action that matter. */
+  .eyebrow-ember { @apply text-accentWarm; }
+  .eyebrow-ember::before { background: rgb(var(--accent-warm) / 0.8); }
+  .ember { color: rgb(var(--accent-warm)); }
+  .btn-ember { @apply rounded-none uppercase tracking-[0.14em] text-black; background: rgb(var(--accent-warm)); }
+  .btn-ember:hover { transform: translateY(-1px); filter: brightness(1.08); }
+  .frame-offset { position: relative; }
+  .frame-offset::before {
+    content: ''; position: absolute; inset: -20px 20px 20px -20px; pointer-events: none;
+    border: 1px solid rgb(var(--line) / 0.12);
+  }
+  .paper-tag {
+    @apply absolute px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-black/80 shadow-glow;
+    background: rgb(232 222 200);
+  }
+
   /* Syntax highlighting — one class per token type, all token-driven. */
   .tok-keyword { color: rgb(var(--syn-keyword)); }
   .tok-string  { color: rgb(var(--syn-string)); }

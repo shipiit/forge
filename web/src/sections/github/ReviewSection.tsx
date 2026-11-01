@@ -26,6 +26,7 @@ export function ReviewSection() {
                   ['/review', 'One review now, without subscribing to future pushes.'],
                   ['/review always', 'Reviews now and on every later push — stored as a PR label.'],
                   ['review_requested', 'Reviews when Forge is added as a reviewer — drafts included.'],
+                  ['Who may comment a command', 'Only collaborators with write access. Anyone else is ignored before any model call.'],
                 ]}
               />
             ),
@@ -48,6 +49,34 @@ filters:                      # only review what matters
   - { field: is_draft,    operator: equals, value: false }
   - { field: labels, operator: is_not_one_of, value: [skip-review] }`}
               />
+            ),
+          },
+          {
+            id: 'depth',
+            label: 'Depth & verification',
+            hint: 'Every finding is re-checked against the code before it is posted, unless you choose light.',
+            content: (
+              <>
+                <Cards
+                  items={[
+                    { t: 'light', d: 'One reviewer, posted as found. The cheapest review; for docs and routine changes.' },
+                    { t: 'standard — default', d: 'One reviewer, then a verifier that re-opens every candidate at its line and drops what the code does not bear out.' },
+                    { t: 'deep', d: 'Three reviewers in parallel — correctness, security, failure handling — then the verifier. Roughly three to four times standard.' },
+                  ]}
+                />
+                <div className="mt-4">
+                  <Code
+                    label=".github/agent.yml"
+                    lang="yaml"
+                    code={`review_depth: standard        # light | standard | deep
+spend_cap_per_run_usd: 2      # shared by every reviewer and the verifier`}
+                  />
+                </div>
+                <p className="mt-3 text-sm text-muted">
+                  The review summary says how many candidates were kept and dropped, or warns when verification did not
+                  complete — an unverified review never passes for a verified one.
+                </p>
+              </>
             ),
           },
           {
