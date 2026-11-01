@@ -26,7 +26,7 @@ const config: Config = {
       },
       boxShadow: {
         glow: '0 18px 80px rgba(0,0,0,0.34)',
-        glowAccent: '0 18px 60px -18px rgba(124,92,255,0.6)',
+        glowAccent: '0 18px 60px -18px rgba(251,146,60,0.55)',
         insetLine: 'inset 0 1px 0 rgba(255,255,255,0.06)',
       },
       backgroundImage: {
