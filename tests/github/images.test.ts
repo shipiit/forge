@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { extractImageUrls, downloadImages } from '../../src/github/images.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { extractImageUrls, downloadImages, makeFetcher } from '../../src/github/images.js';
 
 describe('extractImageUrls', () => {
   it('extracts markdown image URLs', () => {
@@ -74,5 +74,42 @@ describe('downloadImages', () => {
       bytes: big,
     }));
     expect(parts).toHaveLength(0);
+  });
+});
+
+describe('makeFetcher', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const authSentTo = async (url: string, token?: string): Promise<string | undefined> => {
+    const fetchSpy = vi.fn(async () => new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } }));
+    vi.stubGlobal('fetch', fetchSpy);
+    await makeFetcher(token)(url);
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
+    return (init?.headers as Record<string, string> | undefined)?.Authorization;
+  };
+
+  it.each([
+    'https://github.com/acme/repo/assets/1/a.png',
+    'https://user-images.githubusercontent.com/1/a.png',
+    'https://private-user-images.githubusercontent.com/1/a.png?jwt=x',
+  ])('sends the token to GitHub attachment host %s', async (url) => {
+    expect(await authSentTo(url, 'secret-token')).toBe('Bearer secret-token');
+  });
+
+  it.each([
+    'https://attacker.example/github.png',
+    'https://github.com.attacker.example/a.png',
+    'https://attacker.example/?u=github.com',
+    'https://evilgithub.com/a.png',
+    'https://githubusercontent.com.attacker.example/a.png',
+    'http://github.com/acme/repo/assets/1/a.png',
+    'https://github.com@attacker.example/a.png',
+    'not a url github',
+  ])('never sends the token to %s', async (url) => {
+    expect(await authSentTo(url, 'secret-token')).toBeUndefined();
+  });
+
+  it('sends no auth header when there is no token', async () => {
+    expect(await authSentTo('https://github.com/acme/repo/assets/1/a.png')).toBeUndefined();
   });
 });

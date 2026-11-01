@@ -43,11 +43,29 @@ export interface ImageFetcher {
   (url: string): Promise<{ contentType: string | null; bytes: Uint8Array }>;
 }
 
+// The URL comes from issue text anyone may have written, so the token goes only
+// to the hosts that serve GitHub attachments — never to a URL that merely
+// mentions github.
+const TOKEN_HOSTS = new Set([
+  'github.com',
+  'user-images.githubusercontent.com',
+  'private-user-images.githubusercontent.com',
+]);
+
+function sendsToken(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && !u.username && !u.password && TOKEN_HOSTS.has(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /** Default fetcher using global fetch with an auth header for private attachments. */
 export function makeFetcher(token?: string): ImageFetcher {
   return async (url: string) => {
     const headers: Record<string, string> = {};
-    if (token && url.includes('github')) headers.Authorization = `Bearer ${token}`;
+    if (token && sendsToken(url)) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(url, { headers });
     if (!res.ok) throw new Error(`fetch ${url} → ${res.status}`);
     const buf = new Uint8Array(await res.arrayBuffer());
