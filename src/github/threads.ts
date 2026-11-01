@@ -28,6 +28,8 @@ export interface ExistingComment {
   body: string;
   /** Whether the thread is already resolved. */
   resolved: boolean;
+  /** The file the thread is on. */
+  path?: string;
 }
 
 export interface ThreadPlan {
@@ -45,7 +47,7 @@ export interface ThreadPlan {
  * Pure, so the interesting behaviour — never duplicate, always resolve what is
  * fixed — is testable without touching GitHub.
  */
-export function planThreads(findings: ReviewFinding[], existing: ExistingComment[]): ThreadPlan {
+export function planThreads(findings: ReviewFinding[], existing: ExistingComment[], scope?: ReadonlySet<string>): ThreadPlan {
   const live = new Map<string, ExistingComment>();
   for (const c of existing) {
     const m = c.body?.match(/<!-- forge-f: ([0-9a-f]{12}) -->/);
@@ -66,7 +68,10 @@ export function planThreads(findings: ReviewFinding[], existing: ExistingComment
 
   const toResolve: string[] = [];
   for (const [fp, c] of live) {
-    if (!current.has(fp) && !c.resolved && c.threadId) toResolve.push(c.threadId);
+    // A review that only read some files cannot say a finding in another file
+    // is fixed — it never looked. Only threads in the files reviewed resolve.
+    const inScope = !scope || (c.path !== undefined && scope.has(c.path));
+    if (!current.has(fp) && !c.resolved && c.threadId && inScope) toResolve.push(c.threadId);
   }
 
   return { toPost, alreadyPosted, toResolve };
@@ -81,6 +86,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
         nodes {
           id
           isResolved
+          path
           comments(first: 1) { nodes { body author { login } } }
         }
       }
@@ -101,6 +107,7 @@ export interface ThreadsResponse {
         nodes?: Array<{
           id: string;
           isResolved: boolean;
+          path?: string | null;
           comments?: { nodes?: Array<{ body?: string; author?: { login?: string } | null }> };
         }>;
       };
@@ -118,7 +125,7 @@ export function parseThreads(res: ThreadsResponse, isOwnComment: (login?: string
     // Only ever consider our own comments — resolving someone else's thread
     // would be a genuinely rude thing for a bot to do.
     if (!isOwnComment(first.author?.login ?? undefined)) continue;
-    out.push({ threadId: t.id, body: first.body, resolved: Boolean(t.isResolved) });
+    out.push({ threadId: t.id, body: first.body, resolved: Boolean(t.isResolved), ...(t.path ? { path: t.path } : {}) });
   }
   return out;
 }

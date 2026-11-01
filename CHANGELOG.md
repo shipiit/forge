@@ -19,6 +19,10 @@
   then verify, `deep` three focused reviewers then verify. Standard reviews cost more than before; set
   `review_depth: light` for the old behaviour. The run's spend cap is shared across the passes.
 - Dependabot alerts on a review are limited to manifests the pull request touches, and never block it.
+- **A push re-reviews only what it changed.** Forge records the commit each review covered and, on the
+  next push, reviews the pull request's changes in the files that moved since. When none did, the previous
+  review stands and no model is called. A force-push, or anything Forge cannot establish, falls back to a
+  full review; `/review` is always full. Threads in files a partial review did not read are left alone.
 
 ### Scanning
 - **New dependency scanner** (`dep_scan`, on by default): changed lockfiles are checked against OSV.dev for

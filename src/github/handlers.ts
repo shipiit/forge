@@ -89,6 +89,7 @@ import type { ContentPart } from '../providers/types.js';
 import { blocking, renderReviewAck, renderReviewDone, renderScanReport, type BlockLevel } from '../scan/report.js';
 import { fetchDependabotFindings } from './dependabot.js';
 import { combineResults, renderVerification, reviewPasses, splitSpend, type ReviewDepth } from './verify.js';
+import { filesChangedSince, filterDiff, parseReviewedSha, reviewedMarker } from './incremental.js';
 import { runAudit, type AuditOutcome } from '../audit/run.js';
 import { BUILT_IN_SLICES, type AuditSlice } from '../audit/slices.js';
 import { applicableSlices } from '../audit/select.js';
@@ -578,6 +579,7 @@ async function reconcileThreads(
   deps: HandlerDeps,
   args: { owner: string; repo: string; pullNumber: number },
   findings: ReviewFinding[],
+  scope?: ReadonlySet<string>,
 ): Promise<ThreadPlan> {
   const fallback: ThreadPlan = { toPost: findings, alreadyPosted: [], toResolve: [] };
   const graphql = deps.octokit.graphql;
@@ -590,7 +592,7 @@ async function reconcileThreads(
       number: args.pullNumber,
     });
     const existing = parseThreads(res as never, (login) => isFromForge(login));
-    const plan = planThreads(findings, existing);
+    const plan = planThreads(findings, existing, scope);
 
     for (const threadId of plan.toResolve) {
       try {
@@ -895,14 +897,14 @@ async function doIssueFix(
 /** Review a PR: clone head → analyze diff → post a review with inline findings. */
 export function handlePrReview(
   deps: HandlerDeps,
-  args: { owner: string; repo: string; pullNumber: number; securityOnly?: boolean; subscribe?: boolean },
+  args: { owner: string; repo: string; pullNumber: number; securityOnly?: boolean; subscribe?: boolean; incremental?: boolean },
 ): Promise<void> {
   return withLock(`review:${args.owner}/${args.repo}#${args.pullNumber}`, deps.log, () => doPrReview(deps, args));
 }
 
 async function doPrReview(
   deps: HandlerDeps,
-  args: { owner: string; repo: string; pullNumber: number; securityOnly?: boolean; subscribe?: boolean },
+  args: { owner: string; repo: string; pullNumber: number; securityOnly?: boolean; subscribe?: boolean; incremental?: boolean },
 ): Promise<void> {
   const { octokit, client, token, log } = deps;
 
@@ -940,6 +942,8 @@ async function doPrReview(
   // Three runs, three of them, and the finished review buried above the two
   // that never finished. The scan report already worked this way; the ack was
   // the one that got missed.
+  // Read the commit the last review covered before the comment is rewritten.
+  const lastSha = args.incremental ? await lastReviewedSha(octokit, args) : undefined;
   const previous = await findForgeComment(octokit, args, '<!-- forge-review -->');
   let ackId = previous;
   if (previous) {
@@ -960,7 +964,35 @@ async function doPrReview(
   }
 
   const prRes = await octokit.rest.pulls.get({ owner: args.owner, repo: args.repo, pull_number: args.pullNumber });
-  const diff = await fetchPrDiff(octokit, args.owner, args.repo, args.pullNumber);
+  const fullDiff = await fetchPrDiff(octokit, args.owner, args.repo, args.pullNumber);
+  const headSha = prRes.data.head.sha;
+
+  // On a push, review only the pull request's changes in files that moved
+  // since the last review. Anything uncertain falls back to the whole diff.
+  let scope: Set<string> | undefined;
+  if (lastSha) {
+    const moved = lastSha === headSha ? new Set<string>() : await filesChangedSince(octokit, args, lastSha, headSha, log);
+    if (moved) {
+      const prFiles = new Set(changedFiles(fullDiff));
+      scope = new Set([...moved].filter((f) => prFiles.has(f)));
+      log(`incremental: ${scope.size} of ${prFiles.size} file(s) changed since ${lastSha.slice(0, 7)}`);
+    }
+  }
+  const since = lastSha?.slice(0, 7) ?? '';
+  if (scope && scope.size === 0) {
+    if (ackId !== undefined) {
+      await octokit.rest.issues.updateComment({
+        owner: args.owner,
+        repo: args.repo,
+        comment_id: ackId,
+        body:
+          `<!-- forge-review -->\n\n✅ **${DISPLAY}** — nothing this pull request changes was touched since the last review ` +
+          `(\`${since}\`), so that review stands. Comment \`/review\` for a full one.\n\n${reviewedMarker(headSha)}`,
+      });
+    }
+    return;
+  }
+  const diff = scope ? filterDiff(fullDiff, scope) : fullDiff;
 
   const commentsRes = await octokit.rest.issues.listComments({ owner: args.owner, repo: args.repo, issue_number: args.pullNumber });
   const comments: CommentLike[] = commentsRes.data
@@ -1106,7 +1138,7 @@ async function doPrReview(
     }
 
     // Do not repeat what is already on the PR, and resolve what is now fixed.
-    const plan = await reconcileThreads(deps, args, findings);
+    const plan = await reconcileThreads(deps, args, findings, scope);
 
     const { kept, dropped } = capNits(plan.toPost, deps.maxNits ?? 5);
     const validLines = parseDiffValidLines(diff);
@@ -1162,7 +1194,9 @@ async function doPrReview(
               includeCoverage: false,
             }) + renderSkipped(plan) + renderVerification(depth, passes),
           ) +
-          costFooter(result.usage, client.model, deps.showCost),
+          costFooter(result.usage, client.model, deps.showCost) +
+          (scope ? `\n\n<sub>Incremental: reviewed the ${scope.size} file(s) changed since \`${since}\`. Comment \`/review\` for a full review.</sub>` : '') +
+          `\n\n${reviewedMarker(headSha)}`,
     });
   } finally {
     await trusted.cleanup();
@@ -1550,6 +1584,17 @@ async function doScan(
  * Never throws: not being able to list comments is a reason to post a new one,
  * not a reason to lose the report.
  */
+/** The head commit the last completed review covered, from the marker in Forge's review comment. */
+async function lastReviewedSha(octokit: HandlerDeps['octokit'], args: { owner: string; repo: string; pullNumber: number }): Promise<string | undefined> {
+  try {
+    const res = await octokit.rest.issues.listComments({ owner: args.owner, repo: args.repo, issue_number: args.pullNumber, per_page: 100 });
+    const mine = (res.data as Array<{ body?: string }>).filter((c) => c.body?.includes('<!-- forge-review -->'));
+    return parseReviewedSha(mine.at(-1)?.body);
+  } catch {
+    return undefined;
+  }
+}
+
 async function findForgeComment(
   octokit: HandlerDeps['octokit'],
   args: { owner?: string; repo?: string; issueNumber?: number; pullNumber?: number } & Record<string, unknown>,

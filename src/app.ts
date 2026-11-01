@@ -223,7 +223,12 @@ export default function app(probot: Probot, options: { getRouter?: (path?: strin
         context,
         config,
         { flow: "review", ...base, prNumber: pull_request.number },
-        (d) => handlePrReview(d, { ...base, pullNumber: pull_request.number }),
+        (d) =>
+          handlePrReview(d, {
+            ...base,
+            pullNumber: pull_request.number,
+            ...(context.payload.action === "synchronize" ? { incremental: true } : {}),
+          }),
       );
     },
   );

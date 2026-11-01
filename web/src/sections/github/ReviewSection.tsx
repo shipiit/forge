@@ -22,7 +22,8 @@ export function ReviewSection() {
             content: (
               <Triggers
                 rows={[
-                  ['pull_request opened / synchronize', 'Automatic review, per your review_behavior setting.'],
+                  ['pull_request opened', 'Automatic review of the whole pull request, per your review_behavior setting.'],
+                  ['pull_request synchronize (a push)', 'Reviews only the files changed since the last review. Nothing moved? The previous review stands and nothing is spent.'],
                   ['/review', 'One review now, without subscribing to future pushes.'],
                   ['/review always', 'Reviews now and on every later push — stored as a PR label.'],
                   ['review_requested', 'Reviews when Forge is added as a reviewer — drafts included.'],

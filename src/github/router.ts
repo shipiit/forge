@@ -32,7 +32,7 @@ interface RepoBits {
 
 export type Route =
   | ({ kind: 'fix'; issueNumber: number; issueTitle: string; issueBody: string | null } & RepoBits)
-  | ({ kind: 'review'; pullNumber: number; securityOnly: boolean; subscribe?: boolean } & RepoBits)
+  | ({ kind: 'review'; pullNumber: number; securityOnly: boolean; subscribe?: boolean; incremental?: boolean } & RepoBits)
   | ({ kind: 'followup'; pullNumber: number; question: string } & RepoBits)
   | ({
       kind: 'mention';
@@ -212,7 +212,9 @@ export function routeEvent(eventName: string, payload: any, opts: RouteOpts): Ro
         if (subject.isDraft && action !== 'review_requested') {
           return { kind: 'none', reason: 'pull request is a draft' };
         }
-        return { kind: 'review', ...bits, pullNumber: pr.number, securityOnly: false };
+        // A push re-reviews only what it changed; opening, readiness and an
+        // explicit invitation get the whole pull request.
+        return { kind: 'review', ...bits, pullNumber: pr.number, securityOnly: false, ...(action === 'synchronize' ? { incremental: true } : {}) };
       }
       return { kind: 'none', reason: `pull_request.${action} not actionable` };
     }
